@@ -9,6 +9,18 @@ export async function GET(request: NextRequest) {
   const to = searchParams.get("to") ?? "9999-12-31";
 
   const db = getDb();
+  const groupBy = searchParams.get("groupBy");
+  if (groupBy === "month") {
+    const rows = db
+      .prepare(
+        `SELECT strftime('%Y-%m', o.date_created) as month, COALESCE(SUM(oi.net_profit), 0) as netProfit
+         FROM order_items oi JOIN orders o ON o.id = oi.order_id
+         WHERE o.date_created BETWEEN ? AND ?
+         GROUP BY month ORDER BY month`
+      )
+      .all(from, to);
+    return NextResponse.json(rows);
+  }
   const totals = db
     .prepare(
       `SELECT
