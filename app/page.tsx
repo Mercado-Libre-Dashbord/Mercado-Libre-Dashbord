@@ -4,49 +4,205 @@ import { useEffect, useState } from "react";
 import { SyncButton } from "./SyncButton";
 
 interface Summary {
+  orders: number;
   grossSales: number;
-  totalCommission: number;
-  totalShipping: number;
-  totalAds: number;
-  totalCost: number;
+  aov: number;
   netProfit: number;
+  profitPct: number;
+  netRevenue: number;
+  adSpend: number;
+  mer: number;
+  roas: number;
+  cpa: number;
+  netAov: number;
+  trueCpa: number;
   itemsMissingCost: number;
+}
+
+interface OrderLine {
+  id: number;
+  orderId: string;
+  productTitle: string;
+  unitPrice: number;
+  quantity: number;
+  mlCommission: number;
+  shippingCost: number;
+  adsCostAllocated: number;
+  costApplied: number | null;
+  netProfit: number | null;
+}
+
+interface OrderSummaryRow {
+  orderId: string;
+  estadoPago: string;
+  dateCreated: string;
+  totalOrder: number;
+  totalNeto: number;
 }
 
 function fmt(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 }
+function pct(n: number) {
+  return `${(n * 100).toFixed(2)}%`;
+}
+
+function WaterfallRow({
+  label,
+  value,
+  max,
+  tone,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  tone: "negative" | "positive";
+}) {
+  const width = max > 0 ? Math.min(100, (Math.abs(value) / max) * 100) : 0;
+  return (
+    <div className="waterfall-row">
+      <span>{label}</span>
+      <div className="waterfall-track">
+        <div className={`waterfall-fill ${tone}`} style={{ width: `${width}%` }} />
+      </div>
+      <span style={{ textAlign: "right", color: tone === "negative" ? "var(--negative)" : "var(--positive)" }}>
+        {tone === "negative" ? "-" : "+"}
+        {fmt(Math.abs(value))}
+      </span>
+    </div>
+  );
+}
 
 export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
+  const [orders, setOrders] = useState<OrderSummaryRow[]>([]);
+  const [adForm, setAdForm] = useState({ channel: "meta", date: new Date().toISOString().slice(0, 10), amount: "" });
 
-  useEffect(() => {
-    fetch("/api/summary")
-      .then((r) => r.json())
-      .then(setSummary);
-  }, []);
+  function loadAll() {
+    fetch("/api/summary").then((r) => r.json()).then(setSummary);
+    fetch("/api/orders").then((r) => r.json()).then((rows: OrderLine[]) => setLastOrder(rows[0] ?? null));
+    fetch("/api/orders?groupBy=order").then((r) => r.json()).then(setOrders);
+  }
+
+  useEffect(loadAll, []);
+
+  async function submitAdSpend(e: React.FormEvent) {
+    e.preventDefault();
+    const amount = Number(adForm.amount);
+    if (Number.isNaN(amount) || amount < 0) return;
+    await fetch("/api/ads-spend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: adForm.channel, date: adForm.date, amount }),
+    });
+    setAdForm((prev) => ({ ...prev, amount: "" }));
+    loadAll();
+  }
 
   return (
     <div>
       <h1>Resumen de cuenta</h1>
       <SyncButton />
-      {!summary ? (
-        <p>Cargando...</p>
-      ) : (
-        <div className="kpi-grid">
-          <div className="kpi-card"><div>Ventas brutas</div><div className="value">{fmt(summary.grossSales)}</div></div>
-          <div className="kpi-card"><div>Comisión ML</div><div className="value">{fmt(summary.totalCommission)}</div></div>
-          <div className="kpi-card"><div>Envío</div><div className="value">{fmt(summary.totalShipping)}</div></div>
-          <div className="kpi-card"><div>Publicidad</div><div className="value">{fmt(summary.totalAds)}</div></div>
-          <div className="kpi-card"><div>Costo productos</div><div className="value">{fmt(summary.totalCost)}</div></div>
-          <div className="kpi-card"><div>Rentabilidad neta</div><div className="value">{fmt(summary.netProfit)}</div></div>
-          {summary.itemsMissingCost > 0 && (
-            <div className="kpi-card missing-cost">
-              {summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas del cálculo
-            </div>
-          )}
-        </div>
+
+      <h2 className="section-title">Tienda</h2>
+      <div className="kpi-grid">
+        <div className="kpi-card"><div className="label">Orders</div><div className="value">{summary?.orders ?? "-"}</div></div>
+        <div className="kpi-card"><div className="label">Revenue</div><div className="value">{summary ? fmt(summary.grossSales) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">AOV</div><div className="value">{summary ? fmt(summary.aov) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Net Profit</div><div className="value">{summary ? fmt(summary.netProfit) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Profit %</div><div className="value">{summary ? pct(summary.profitPct) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Net Rev.</div><div className="value">{summary ? fmt(summary.netRevenue) : "-"}</div></div>
+      </div>
+
+      <h2 className="section-title">Anuncios</h2>
+      <div className="kpi-grid">
+        <div className="kpi-card"><div className="label">Ad Spend</div><div className="value">{summary ? fmt(summary.adSpend) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">MER</div><div className="value">{summary ? summary.mer.toFixed(2) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">ROAS</div><div className="value">{summary ? summary.roas.toFixed(2) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">CPA</div><div className="value">{summary ? fmt(summary.cpa) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Net AOV</div><div className="value">{summary ? fmt(summary.netAov) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">True CPA</div><div className="value">{summary ? fmt(summary.trueCpa) : "-"}</div></div>
+      </div>
+      {summary && summary.itemsMissingCost > 0 && (
+        <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Net Profit</p>
       )}
+
+      <h2 className="section-title">Cargar publicidad externa</h2>
+      <form className="ad-form" onSubmit={submitAdSpend}>
+        <label>
+          Canal
+          <select value={adForm.channel} onChange={(e) => setAdForm((p) => ({ ...p, channel: e.target.value }))}>
+            <option value="meta">Meta</option>
+            <option value="google">Google Ads</option>
+            <option value="tiktok">TikTok</option>
+          </select>
+        </label>
+        <label>
+          Fecha
+          <input type="date" value={adForm.date} onChange={(e) => setAdForm((p) => ({ ...p, date: e.target.value }))} />
+        </label>
+        <label>
+          Monto
+          <input
+            type="number"
+            min="0"
+            value={adForm.amount}
+            onChange={(e) => setAdForm((p) => ({ ...p, amount: e.target.value }))}
+          />
+        </label>
+        <button type="submit">Cargar</button>
+      </form>
+
+      {lastOrder && (
+        <>
+          <h2 className="section-title">Última venta · {lastOrder.productTitle}</h2>
+          <div className="waterfall-card">
+            <WaterfallRow
+              label="Facturación"
+              value={lastOrder.unitPrice * lastOrder.quantity}
+              max={lastOrder.unitPrice * lastOrder.quantity}
+              tone="positive"
+            />
+            <WaterfallRow label="Comisión ML" value={lastOrder.mlCommission} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
+            <WaterfallRow label="Envío" value={lastOrder.shippingCost} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
+            <WaterfallRow label="Publicidad" value={lastOrder.adsCostAllocated} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
+            <WaterfallRow
+              label="Costo"
+              value={(lastOrder.costApplied ?? 0) * lastOrder.quantity}
+              max={lastOrder.unitPrice * lastOrder.quantity}
+              tone="negative"
+            />
+            <WaterfallRow label="Ganancia neta" value={lastOrder.netProfit ?? 0} max={lastOrder.unitPrice * lastOrder.quantity} tone="positive" />
+          </div>
+        </>
+      )}
+
+      <h2 className="section-title">Últimas órdenes</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Order Id</th>
+            <th>Estado Pago</th>
+            <th>Created at</th>
+            <th>Total Order</th>
+            <th>Total Neto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => (
+            <tr key={o.orderId}>
+              <td>{o.orderId}</td>
+              <td>
+                <span className={`badge ${o.estadoPago === "paid" ? "badge-paid" : "badge-other"}`}>{o.estadoPago}</span>
+              </td>
+              <td>{new Date(o.dateCreated).toLocaleString("es-AR")}</td>
+              <td>{fmt(o.totalOrder)}</td>
+              <td>{fmt(o.totalNeto)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
