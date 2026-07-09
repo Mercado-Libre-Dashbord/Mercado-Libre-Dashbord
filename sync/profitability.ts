@@ -4,10 +4,13 @@ export interface ProductCostEntry {
 }
 
 export function getCostAtDate(costs: ProductCostEntry[], date: string): number | null {
-  const applicable = costs
-    .filter((c) => c.validFrom <= date)
-    .sort((a, b) => (a.validFrom < b.validFrom ? 1 : -1));
-  return applicable.length > 0 ? applicable[0].cost : null;
+  let best: ProductCostEntry | null = null;
+  for (const c of costs) {
+    if (c.validFrom <= date && (best === null || c.validFrom >= best.validFrom)) {
+      best = c;
+    }
+  }
+  return best ? best.cost : null;
 }
 
 export function allocateAdsCost(
