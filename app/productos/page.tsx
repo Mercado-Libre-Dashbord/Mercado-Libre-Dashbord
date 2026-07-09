@@ -9,6 +9,9 @@ interface Product {
   currentPrice: number;
   stock: number;
   currentCost: number | null;
+  unitsSold: number;
+  totalProfit: number;
+  marginPct: number | null;
 }
 
 export default function ProductosPage() {
@@ -46,6 +49,9 @@ export default function ProductosPage() {
             <th>Precio</th>
             <th>Stock</th>
             <th>Costo vigente</th>
+            <th>Margen %</th>
+            <th>Unidades vendidas</th>
+            <th>Rentabilidad total</th>
             <th>Nuevo costo</th>
           </tr>
         </thead>
@@ -59,6 +65,9 @@ export default function ProductosPage() {
               <td className={p.currentCost === null ? "missing-cost" : undefined}>
                 {p.currentCost === null ? "Sin costo cargado" : p.currentCost}
               </td>
+              <td>{p.marginPct === null ? "-" : `${(p.marginPct * 100).toFixed(1)}%`}</td>
+              <td>{p.unitsSold}</td>
+              <td>{p.totalProfit.toFixed(2)}</td>
               <td>
                 <input
                   type="number"

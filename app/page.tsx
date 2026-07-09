@@ -47,6 +47,36 @@ function pct(n: number) {
   return `${(n * 100).toFixed(2)}%`;
 }
 
+type Period = "hoy" | "ayer" | "semana" | "mes" | "custom";
+
+function toDateStr(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function rangeForPeriod(period: Period, customFrom: string, customTo: string): { from: string; to: string } {
+  const today = new Date();
+  if (period === "hoy") {
+    const d = toDateStr(today);
+    return { from: d, to: d };
+  }
+  if (period === "ayer") {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const d = toDateStr(yesterday);
+    return { from: d, to: d };
+  }
+  if (period === "semana") {
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    return { from: toDateStr(weekAgo), to: toDateStr(today) };
+  }
+  if (period === "mes") {
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { from: toDateStr(firstOfMonth), to: toDateStr(today) };
+  }
+  return { from: customFrom, to: customTo };
+}
+
 function WaterfallRow({
   label,
   value,
@@ -78,14 +108,19 @@ export default function HomePage() {
   const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
   const [orders, setOrders] = useState<OrderSummaryRow[]>([]);
   const [adForm, setAdForm] = useState({ channel: "meta", date: new Date().toISOString().slice(0, 10), amount: "" });
+  const [period, setPeriod] = useState<Period>("mes");
+  const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
+  const [customTo, setCustomTo] = useState(toDateStr(new Date()));
+
+  const { from, to } = rangeForPeriod(period, customFrom, customTo);
 
   function loadAll() {
-    fetch("/api/summary").then((r) => r.json()).then(setSummary);
+    fetch(`/api/summary?from=${from}&to=${to}`).then((r) => r.json()).then(setSummary);
     fetch("/api/orders").then((r) => r.json()).then((rows: OrderLine[]) => setLastOrder(rows[0] ?? null));
     fetch("/api/orders?groupBy=order").then((r) => r.json()).then(setOrders);
   }
 
-  useEffect(loadAll, []);
+  useEffect(loadAll, [from, to]);
 
   async function submitAdSpend(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +139,31 @@ export default function HomePage() {
     <div>
       <h1>Resumen de cuenta</h1>
       <SyncButton />
+
+      <div className="ad-form" style={{ marginBottom: 24 }}>
+        <label>
+          Período
+          <select value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
+            <option value="hoy">Hoy</option>
+            <option value="ayer">Ayer</option>
+            <option value="semana">Últimos 7 días</option>
+            <option value="mes">Este mes</option>
+            <option value="custom">Rango custom</option>
+          </select>
+        </label>
+        {period === "custom" && (
+          <>
+            <label>
+              Desde
+              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+            </label>
+            <label>
+              Hasta
+              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+            </label>
+          </>
+        )}
+      </div>
 
       <h2 className="section-title">Tienda</h2>
       <div className="kpi-grid">

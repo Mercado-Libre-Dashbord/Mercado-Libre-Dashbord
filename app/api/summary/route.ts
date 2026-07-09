@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       .prepare(
         `SELECT strftime('%Y-%m', o.date_created) as month, COALESCE(SUM(oi.net_profit), 0) as netProfit
          FROM order_items oi JOIN orders o ON o.id = oi.order_id
-         WHERE o.date_created BETWEEN ? AND ?
+         WHERE date(o.date_created) BETWEEN date(?) AND date(?)
          GROUP BY month ORDER BY month`
       )
       .all(from, to);
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
          COUNT(DISTINCT CASE WHEN oi.cost_applied IS NOT NULL THEN o.id END) as ordersWithCost
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
-       WHERE o.date_created BETWEEN ? AND ?`
+       WHERE date(o.date_created) BETWEEN date(?) AND date(?)`
     )
     .get(from, to) as any;
 
