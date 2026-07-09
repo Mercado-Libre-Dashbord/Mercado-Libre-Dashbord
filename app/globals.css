@@ -1,0 +1,11 @@
+* { box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; margin: 0; background: #f5f6f8; color: #1a1a1a; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+nav { display: flex; gap: 16px; padding: 16px 24px; background: #1a1a2e; }
+nav a { color: #fff; text-decoration: none; font-weight: 500; }
+table { width: 100%; border-collapse: collapse; background: #fff; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e2e2e2; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.kpi-card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.kpi-card .value { font-size: 24px; font-weight: 700; }
+.missing-cost { color: #b00020; font-weight: 600; }
