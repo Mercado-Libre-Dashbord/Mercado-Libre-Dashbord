@@ -6,7 +6,9 @@
 
 **Architecture:** Single Next.js project. `mcp/tools.ts` holds plain async functions that call the ML REST API (via `mcp/ml-client.ts`) — these are registered as MCP tools on an `McpServer` instance (`mcp/server.ts`) so the integration is genuinely MCP-based and could later be exposed over HTTP for Claude Desktop. For v1, `sync/sync-service.ts` calls the tool functions directly (in-process) to avoid pointless JSON-RPC round-trips, and persists results — including a precomputed `net_profit` per order line — into a local SQLite database. Next.js API routes expose that data to a plain React UI.
 
-**Tech Stack:** Next.js 14 (App Router, TypeScript), better-sqlite3, @modelcontextprotocol/sdk, zod, recharts, vitest.
+**Tech Stack:** Next.js 14 (App Router, TypeScript), `node:sqlite` (Node's built-in synchronous SQLite, `DatabaseSync` — requires Node >= 22.5; no native compilation needed, unlike better-sqlite3), @modelcontextprotocol/sdk, zod, recharts, vitest.
+
+**Environment note (discovered during Task 1):** `better-sqlite3` was the original plan choice but failed to install on this machine — no prebuilt binary exists for this Node version and there's no Visual Studio C++ Build Tools to compile it from source. Switched to Node's built-in `node:sqlite` (`DatabaseSync`), which ships with the Node binary itself: zero install-time native compilation, same synchronous `.prepare().run()/.get()/.all()` API including named (`@param`) parameters and `ON CONFLICT ... DO UPDATE`. Requires Node >= 22.5 (confirmed installed: v24).
 
 ## Global Constraints
 
@@ -54,16 +56,14 @@
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "better-sqlite3": "^11.3.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.23.0",
     "recharts": "^2.12.0"
   },
   "devDependencies": {
     "typescript": "^5.5.0",
-    "@types/node": "^20.14.0",
+    "@types/node": "^22.10.0",
     "@types/react": "^18.3.0",
-    "@types/better-sqlite3": "^7.6.0",
     "vitest": "^2.0.0",
     "vite-tsconfig-paths": "^5.0.0"
   }
@@ -191,7 +191,7 @@ export default function HomePage() {
 - [ ] **Step 10: Install dependencies**
 
 Run: `npm install`
-Expected: installs without errors (better-sqlite3 compiles its native binding — if it fails, install `node-gyp` build tools per the error message).
+Expected: installs without errors (no native module to compile — `node:sqlite` ships with Node itself).
 
 - [ ] **Step 11: Verify the scaffold builds**
 
@@ -217,7 +217,7 @@ git commit -m "chore: scaffold Next.js project"
 - Create: `db/tokens.test.ts`
 
 **Interfaces:**
-- Produces: `getDb(): Database.Database` (opens/creates the SQLite file at `process.env.DB_PATH`, applies schema); `saveTokens(db, tokens: AuthTokens): void`; `getTokens(db): AuthTokens | null`; type `AuthTokens = { accessToken: string; refreshToken: string; expiresAt: string }`.
+- Produces: `getDb(): DatabaseSync` (opens/creates the SQLite file at `process.env.DB_PATH`, applies schema); `saveTokens(db, tokens: AuthTokens): void`; `getTokens(db): AuthTokens | null`; type `AuthTokens = { accessToken: string; refreshToken: string; expiresAt: string }`. `DatabaseSync` is imported from Node's built-in `node:sqlite` module (no external package).
 
 - [ ] **Step 1: Create `db/schema.sql`**
 
@@ -331,17 +331,17 @@ Expected: FAIL — `Cannot find module './client'`
 - [ ] **Step 4: Implement `db/client.ts`**
 
 ```ts
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 
-let db: Database.Database | null = null;
+let db: DatabaseSync | null = null;
 
-export function getDb(): Database.Database {
+export function getDb(): DatabaseSync {
   if (db) return db;
   const dbPath = process.env.DB_PATH || "./data/ml-dashboard.db";
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  db = new Database(dbPath);
+  db = new DatabaseSync(dbPath);
   const schema = fs.readFileSync(path.join(process.cwd(), "db", "schema.sql"), "utf-8");
   db.exec(schema);
   return db;
@@ -397,7 +397,7 @@ Expected: FAIL — `Cannot find module './tokens'`
 - [ ] **Step 8: Implement `db/tokens.ts`**
 
 ```ts
-import type Database from "better-sqlite3";
+import type { DatabaseSync } from "node:sqlite";
 
 export interface AuthTokens {
   accessToken: string;
@@ -405,7 +405,7 @@ export interface AuthTokens {
   expiresAt: string;
 }
 
-export function saveTokens(db: Database.Database, tokens: AuthTokens): void {
+export function saveTokens(db: DatabaseSync, tokens: AuthTokens): void {
   db.prepare(
     `INSERT INTO auth_tokens (id, access_token, refresh_token, expires_at)
      VALUES (1, ?, ?, ?)
@@ -416,7 +416,7 @@ export function saveTokens(db: Database.Database, tokens: AuthTokens): void {
   ).run(tokens.accessToken, tokens.refreshToken, tokens.expiresAt);
 }
 
-export function getTokens(db: Database.Database): AuthTokens | null {
+export function getTokens(db: DatabaseSync): AuthTokens | null {
   const row = db
     .prepare("SELECT access_token, refresh_token, expires_at FROM auth_tokens WHERE id = 1")
     .get() as { access_token: string; refresh_token: string; expires_at: string } | undefined;
@@ -1253,7 +1253,7 @@ git commit -m "feat: register ML tools on an MCP server"
 - Create: `sync/sync-service.test.ts`
 
 **Interfaces:**
-- Consumes: `listProducts`, `listOrders`, `getOrderDetail`, `getAdsSpend` from `@/mcp/tools`; `getCostAtDate`, `allocateAdsCost`, `calculateNetProfit` from `./profitability`; a `better-sqlite3` `Database.Database` instance.
+- Consumes: `listProducts`, `listOrders`, `getOrderDetail`, `getAdsSpend` from `@/mcp/tools`; `getCostAtDate`, `allocateAdsCost`, `calculateNetProfit` from `./profitability`; a `node:sqlite` `DatabaseSync` instance.
 - Produces: `runSync(db, sellerId: string, sinceIso: string): Promise<SyncResult>` where `SyncResult = { productsSynced: number; ordersSynced: number; adsRowsSynced: number }`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1396,7 +1396,7 @@ Expected: FAIL — `Cannot find module './sync-service'`
 - [ ] **Step 3: Implement `sync/sync-service.ts`**
 
 ```ts
-import type Database from "better-sqlite3";
+import type { DatabaseSync } from "node:sqlite";
 import { listProducts, listOrders, getOrderDetail, getAdsSpend } from "@/mcp/tools";
 import { getCostAtDate, allocateAdsCost, calculateNetProfit } from "./profitability";
 
@@ -1406,7 +1406,7 @@ export interface SyncResult {
   adsRowsSynced: number;
 }
 
-export async function runSync(db: Database.Database, sellerId: string, sinceIso: string): Promise<SyncResult> {
+export async function runSync(db: DatabaseSync, sellerId: string, sinceIso: string): Promise<SyncResult> {
   const now = new Date().toISOString();
 
   const products = await listProducts(sellerId);
@@ -1495,7 +1495,7 @@ export async function runSync(db: Database.Database, sellerId: string, sinceIso:
   return { productsSynced: products.length, ordersSynced, adsRowsSynced };
 }
 
-function reallocateAdsCosts(db: Database.Database): void {
+function reallocateAdsCosts(db: DatabaseSync): void {
   const items = db
     .prepare(
       `SELECT oi.id, oi.product_id as productId, oi.quantity, o.date_created as dateCreated,
