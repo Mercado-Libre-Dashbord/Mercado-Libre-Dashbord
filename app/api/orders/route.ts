@@ -10,6 +10,22 @@ export async function GET(request: NextRequest) {
   const productId = searchParams.get("productId");
 
   const db = getDb();
+  const groupBy = searchParams.get("groupBy");
+  if (groupBy === "order") {
+    const rows = db
+      .prepare(
+        `SELECT o.id as orderId, o.status as estadoPago, o.date_created as dateCreated,
+                COALESCE(SUM(oi.unit_price * oi.quantity), 0) as totalOrder,
+                COALESCE(SUM(oi.net_profit), 0) as totalNeto
+         FROM orders o JOIN order_items oi ON oi.order_id = o.id
+         WHERE o.date_created BETWEEN ? AND ?
+         GROUP BY o.id
+         ORDER BY o.date_created DESC
+         LIMIT 20`
+      )
+      .all(from, to);
+    return NextResponse.json(rows);
+  }
   const query = `
     SELECT oi.id, o.id as orderId, o.date_created as dateCreated, oi.product_id as productId,
            p.title as productTitle, oi.unit_price as unitPrice, oi.quantity,
