@@ -138,6 +138,60 @@ Prioridad:
   cambio de costo a mitad de período, sin ads_spend, etc.).
 - Sin suite e2e ni cobertura mínima obligatoria para el resto del código en el v1.
 
+## Adenda: referencia visual y métricas de marketing (post-aprobación inicial)
+
+Tras aprobar el diseño original, el usuario compartió como referencia visual la
+app Escalafy (escalafy.com) y pidió replicar su estilo y sus datos. Se resolvieron
+dos decisiones que esa referencia tocaba directamente:
+
+- **El costo sigue siendo único por producto** (no se separa en Producto / Com. MP
+  / Cuotas / Variables / Impuestos como en la referencia). El desglose visual de
+  "última venta" usa los componentes que ya tenemos: Facturación, Comisión ML,
+  Envío, Publicidad, Costo cargado, Ganancia neta.
+- **Meta Ads, Google Ads y TikTok Ads se cargan a mano**, no por API. Conectar
+  esas 3 plataformas por API real requiere crear una app y pasar revisión en cada
+  una (a diferencia de ML, donde ya existe la app) — no es compatible con "rápido
+  y fácil". Se agrega un formulario simple para cargar gasto diario total por
+  canal (`ads_spend.channel`: `mercado_ads` | `meta` | `google` | `tiktok`).
+  Importante: el gasto cargado a mano es **a nivel cuenta**, no por producto (no
+  hay forma de atribuir ese gasto a un SKU sin píxel/UTM), así que **no** entra en
+  el prorrateo por producto (`order_items.net_profit` sigue usando solo el gasto
+  de Mercado Ads, que sí viene con `product_id`). Sí entra en las métricas de
+  cuenta (Ad Spend total, MER, ROAS, CPA).
+
+### Estilo visual
+
+Tema oscuro (fondo casi negro, acentos magenta/rosa como la referencia), grillas
+de tarjetas KPI agrupadas por sección ("Tienda", "Anuncios"), tabla de últimas
+órdenes, y una tarjeta "Última venta" con barras horizontales tipo waterfall.
+
+### Métricas nuevas en el Resumen
+
+Definiciones propias (la referencia no publica sus fórmulas exactas, así que se
+documentan acá para poder ajustarlas si no coinciden con lo esperado):
+
+| Métrica | Fórmula |
+|---|---|
+| Orders | Cantidad de órdenes en el período |
+| Revenue | Suma de `unit_price * quantity` (ventas brutas) |
+| AOV | Revenue / Orders |
+| Net Profit | Suma de `net_profit` (excluye líneas sin costo cargado) |
+| Profit % | Net Profit / Revenue |
+| Net Rev. | Revenue − Comisión ML − Envío (margen antes de costo propio y ads) |
+| Ad Spend | Publicidad ML (prorrateada) + gasto manual Meta/Google/TikTok del período |
+| MER | Revenue / Ad Spend |
+| ROAS | Revenue / Ad Spend (mismo cálculo que MER: sin atribución por canal no se pueden distinguir) |
+| CPA | Ad Spend / Orders |
+| Net AOV | Net Profit / Orders |
+| True CPA | Ad Spend / Orders con costo cargado (excluye órdenes sin costo, más realista) |
+
+### Últimas órdenes
+
+Tabla a nivel orden (no por línea): Order Id, Estado Pago, Created At, Total
+Order, Total Neto (suma de `net_profit` de sus líneas). La columna "Camino de
+compra" de la referencia (atribución de marketing) queda fuera de alcance: no
+tenemos fuente de datos de atribución y no se va a inventar.
+
 ## Decisiones abiertas descartadas explícitamente
 
 - No se versiona el costo con reglas complejas de prorrateo entre costos (ej.

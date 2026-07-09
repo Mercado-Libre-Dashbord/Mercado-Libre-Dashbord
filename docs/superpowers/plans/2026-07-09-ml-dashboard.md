@@ -261,10 +261,13 @@ CREATE TABLE IF NOT EXISTS order_items (
 
 CREATE TABLE IF NOT EXISTS ads_spend (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  product_id TEXT NOT NULL REFERENCES products(id),
+  product_id TEXT REFERENCES products(id),
   date TEXT NOT NULL,
-  amount REAL NOT NULL
+  amount REAL NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'mercado_ads'
 );
+-- channel: 'mercado_ads' (por producto, sincronizado automático) |
+-- 'meta' | 'google' | 'tiktok' (cargados a mano, a nivel cuenta, product_id NULL)
 
 CREATE TABLE IF NOT EXISTS auth_tokens (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1467,9 +1470,15 @@ export async function runSync(db: Database.Database, sellerId: string, sinceIso:
   try {
     const dateTo = now.slice(0, 10);
     const adsRows = await getAdsSpend(sellerId, sinceIso.slice(0, 10), dateTo);
-    const deleteAdsForRange = db.prepare(`DELETE FROM ads_spend WHERE date >= ? AND date <= ?`);
+    // Solo borra filas de Mercado Ads: las cargadas a mano (Meta/Google/TikTok,
+    // Task 15) tienen otro channel y no deben tocarse en un re-sync de ML.
+    const deleteAdsForRange = db.prepare(
+      `DELETE FROM ads_spend WHERE channel = 'mercado_ads' AND date >= ? AND date <= ?`
+    );
     deleteAdsForRange.run(sinceIso.slice(0, 10), dateTo);
-    const upsertAds = db.prepare(`INSERT INTO ads_spend (product_id, date, amount) VALUES (?, ?, ?)`);
+    const upsertAds = db.prepare(
+      `INSERT INTO ads_spend (product_id, date, amount, channel) VALUES (?, ?, ?, 'mercado_ads')`
+    );
     for (const row of adsRows) {
       upsertAds.run(row.productId, row.date, row.amount);
     }
@@ -1503,7 +1512,9 @@ function reallocateAdsCosts(db: Database.Database): void {
   }
 
   const adsByProductDate = new Map<string, number>();
-  for (const row of db.prepare(`SELECT product_id as productId, date, amount FROM ads_spend`).all() as any[]) {
+  for (const row of db
+    .prepare(`SELECT product_id as productId, date, amount FROM ads_spend WHERE channel = 'mercado_ads'`)
+    .all() as any[]) {
     adsByProductDate.set(`${row.productId}|${row.date}`, row.amount);
   }
 
@@ -2223,4 +2234,676 @@ cuenta usando el costo final que vos cargás por producto.
 ```bash
 git add README.md
 git commit -m "docs: add setup instructions"
+```
+
+---
+
+## Adenda: referencia visual Escalafy (métricas de marketing + rediseño)
+
+Tareas agregadas después de que el usuario compartió una referencia visual
+(escalafy.com) y pidió replicar su estilo y sus métricas. Ver
+`docs/superpowers/specs/2026-07-09-ml-dashboard-design.md`, sección "Adenda",
+para las decisiones (costo sigue siendo único; Meta/Google/TikTok se cargan a
+mano y no se prorratean por producto). El schema de `ads_spend` y el sync-service
+ya se actualizaron en las Tareas 2 y 8 de este documento para soportar `channel`.
+
+### Task 15: Carga manual de publicidad externa (Meta/Google/TikTok)
+
+**Files:**
+- Create: `app/api/ads-spend/route.ts`
+- Create: `app/api/ads-spend/route.test.ts`
+
+**Interfaces:**
+- Consumes: `getDb` from `@/db/client`.
+- Produces: `POST /api/ads-spend` (`{ channel: 'meta'|'google'|'tiktok', date: 'YYYY-MM-DD', amount: number }` → inserts a row with `product_id = NULL`); `GET /api/ads-spend?from&to` (lists manual entries, excludes `mercado_ads` rows).
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `app/api/ads-spend/route.test.ts`:
+
+```ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("@/db/client", () => ({ getDb: vi.fn() }));
+
+import { POST, GET } from "./route";
+import { getDb } from "@/db/client";
+
+describe("POST /api/ads-spend", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects an unknown channel", async () => {
+    const request = { json: async () => ({ channel: "mercado_ads", date: "2026-01-10", amount: 100 }) } as any;
+    const res = await POST(request);
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a malformed date", async () => {
+    const request = { json: async () => ({ channel: "meta", date: "10-01-2026", amount: 100 }) } as any;
+    const res = await POST(request);
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a negative amount", async () => {
+    const request = { json: async () => ({ channel: "meta", date: "2026-01-10", amount: -1 }) } as any;
+    const res = await POST(request);
+    expect(res.status).toBe(400);
+  });
+
+  it("inserts a manual ad spend row with product_id NULL", async () => {
+    const run = vi.fn();
+    vi.mocked(getDb).mockReturnValue({ prepare: () => ({ run }) } as any);
+    const request = { json: async () => ({ channel: "google", date: "2026-01-10", amount: 500 }) } as any;
+
+    const res = await POST(request);
+
+    expect(await res.json()).toEqual({ ok: true });
+    expect(run).toHaveBeenCalledWith("2026-01-10", 500, "google");
+  });
+});
+
+describe("GET /api/ads-spend", () => {
+  it("returns manual entries excluding mercado_ads rows", async () => {
+    const all = vi.fn().mockReturnValue([{ id: 1, date: "2026-01-10", amount: 500, channel: "google" }]);
+    vi.mocked(getDb).mockReturnValue({ prepare: () => ({ all }) } as any);
+
+    const request = { nextUrl: { searchParams: new URLSearchParams() } } as any;
+    const res = await GET(request);
+
+    expect(await res.json()).toEqual([{ id: 1, date: "2026-01-10", amount: 500, channel: "google" }]);
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npx vitest run app/api/ads-spend/route.test.ts`
+Expected: FAIL — `Cannot find module './route'`
+
+- [ ] **Step 3: Implement `app/api/ads-spend/route.ts`**
+
+```ts
+import { NextRequest, NextResponse } from "next/server";
+import { getDb } from "@/db/client";
+
+export const runtime = "nodejs";
+
+const MANUAL_CHANNELS = ["meta", "google", "tiktok"] as const;
+type ManualChannel = (typeof MANUAL_CHANNELS)[number];
+
+function isManualChannel(value: unknown): value is ManualChannel {
+  return typeof value === "string" && (MANUAL_CHANNELS as readonly string[]).includes(value);
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = request.nextUrl;
+  const from = searchParams.get("from") ?? "1970-01-01";
+  const to = searchParams.get("to") ?? "9999-12-31";
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT id, date, amount, channel FROM ads_spend
+       WHERE channel != 'mercado_ads' AND date BETWEEN ? AND ?
+       ORDER BY date DESC`
+    )
+    .all(from, to);
+  return NextResponse.json(rows);
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json();
+  const { channel, date, amount } = body as { channel: unknown; date: unknown; amount: unknown };
+
+  if (!isManualChannel(channel)) {
+    return NextResponse.json({ error: "channel debe ser 'meta', 'google' o 'tiktok'" }, { status: 400 });
+  }
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json({ error: "date debe tener formato YYYY-MM-DD" }, { status: 400 });
+  }
+  if (typeof amount !== "number" || amount < 0) {
+    return NextResponse.json({ error: "amount debe ser un número >= 0" }, { status: 400 });
+  }
+
+  const db = getDb();
+  db.prepare(`INSERT INTO ads_spend (product_id, date, amount, channel) VALUES (NULL, ?, ?, ?)`).run(
+    date,
+    amount,
+    channel
+  );
+  return NextResponse.json({ ok: true });
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npx vitest run app/api/ads-spend/route.test.ts`
+Expected: PASS (5 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/api/ads-spend
+git commit -m "feat: add manual ad spend entry for Meta/Google/TikTok"
+```
+
+---
+
+### Task 16: Marketing KPIs on the summary endpoint
+
+**Files:**
+- Modify: `app/api/orders/route.ts`
+- Modify: `app/api/summary/route.ts`
+- Create: `app/api/summary/route.test.ts`
+
+**Interfaces:**
+- Produces: `GET /api/orders?groupBy=order` returns `{ orderId, estadoPago, dateCreated, totalOrder, totalNeto }[]`. `GET /api/summary` (no `groupBy`) now returns `{ orders, grossSales, aov, netProfit, profitPct, netRevenue, totalCommission, totalShipping, totalCost, adSpend, mer, roas, cpa, netAov, trueCpa, itemsMissingCost }`. `GET /api/summary?groupBy=month` unchanged from Task 13.
+
+- [ ] **Step 1: Add the order-level grouping branch to `app/api/orders/route.ts`**
+
+Insert this right after `const db = getDb();` in the existing `GET` handler, before the per-line `query` constant:
+
+```ts
+  const groupBy = searchParams.get("groupBy");
+  if (groupBy === "order") {
+    const rows = db
+      .prepare(
+        `SELECT o.id as orderId, o.status as estadoPago, o.date_created as dateCreated,
+                COALESCE(SUM(oi.unit_price * oi.quantity), 0) as totalOrder,
+                COALESCE(SUM(oi.net_profit), 0) as totalNeto
+         FROM orders o JOIN order_items oi ON oi.order_id = o.id
+         WHERE o.date_created BETWEEN ? AND ?
+         GROUP BY o.id
+         ORDER BY o.date_created DESC
+         LIMIT 20`
+      )
+      .all(from, to);
+    return NextResponse.json(rows);
+  }
+```
+
+- [ ] **Step 2: Write the failing tests for the new summary shape**
+
+Create `app/api/summary/route.test.ts`:
+
+```ts
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@/db/client", () => ({ getDb: vi.fn() }));
+
+import { GET } from "./route";
+import { getDb } from "@/db/client";
+
+describe("GET /api/summary", () => {
+  it("computes derived KPIs from the raw totals and manual ad spend", async () => {
+    vi.mocked(getDb).mockReturnValue({
+      prepare: (sql: string) => {
+        if (sql.includes("ads_spend")) {
+          return { get: () => ({ total: 200 }) };
+        }
+        return {
+          get: () => ({
+            orders: 2,
+            grossSales: 2000,
+            totalCommission: 260,
+            totalShipping: 180,
+            totalMercadoAds: 100,
+            totalCost: 600,
+            netProfit: 860,
+            itemsMissingCost: 0,
+            ordersWithCost: 2,
+          }),
+        };
+      },
+    } as any);
+
+    const request = { nextUrl: { searchParams: new URLSearchParams() } } as any;
+    const body = await (await GET(request)).json();
+
+    expect(body.orders).toBe(2);
+    expect(body.aov).toBe(1000);
+    expect(body.adSpend).toBe(300);
+    expect(body.mer).toBeCloseTo(2000 / 300);
+    expect(body.cpa).toBe(150);
+    expect(body.netAov).toBe(430);
+    expect(body.trueCpa).toBe(150);
+  });
+
+  it("returns zeroed rates instead of dividing by zero when there is no data", async () => {
+    vi.mocked(getDb).mockReturnValue({
+      prepare: (sql: string) => {
+        if (sql.includes("ads_spend")) return { get: () => ({ total: 0 }) };
+        return {
+          get: () => ({
+            orders: 0,
+            grossSales: 0,
+            totalCommission: 0,
+            totalShipping: 0,
+            totalMercadoAds: 0,
+            totalCost: 0,
+            netProfit: 0,
+            itemsMissingCost: 0,
+            ordersWithCost: 0,
+          }),
+        };
+      },
+    } as any);
+
+    const request = { nextUrl: { searchParams: new URLSearchParams() } } as any;
+    const body = await (await GET(request)).json();
+
+    expect(body.aov).toBe(0);
+    expect(body.mer).toBe(0);
+    expect(body.cpa).toBe(0);
+  });
+});
+```
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+Run: `npx vitest run app/api/summary/route.test.ts`
+Expected: FAIL (either module resolves but assertions fail, since the old handler doesn't return these fields — `body.orders` will be `undefined`)
+
+- [ ] **Step 4: Replace `app/api/summary/route.ts` entirely with this**
+
+```ts
+import { NextRequest, NextResponse } from "next/server";
+import { getDb } from "@/db/client";
+
+export const runtime = "nodejs";
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = request.nextUrl;
+  const from = searchParams.get("from") ?? "1970-01-01";
+  const to = searchParams.get("to") ?? "9999-12-31";
+  const db = getDb();
+
+  const groupBy = searchParams.get("groupBy");
+  if (groupBy === "month") {
+    const rows = db
+      .prepare(
+        `SELECT strftime('%Y-%m', o.date_created) as month, COALESCE(SUM(oi.net_profit), 0) as netProfit
+         FROM order_items oi JOIN orders o ON o.id = oi.order_id
+         WHERE o.date_created BETWEEN ? AND ?
+         GROUP BY month ORDER BY month`
+      )
+      .all(from, to);
+    return NextResponse.json(rows);
+  }
+
+  const totals = db
+    .prepare(
+      `SELECT
+         COUNT(DISTINCT o.id) as orders,
+         COALESCE(SUM(oi.unit_price * oi.quantity), 0) as grossSales,
+         COALESCE(SUM(oi.ml_commission), 0) as totalCommission,
+         COALESCE(SUM(oi.shipping_cost), 0) as totalShipping,
+         COALESCE(SUM(oi.ads_cost_allocated), 0) as totalMercadoAds,
+         COALESCE(SUM(oi.cost_applied * oi.quantity), 0) as totalCost,
+         COALESCE(SUM(oi.net_profit), 0) as netProfit,
+         SUM(CASE WHEN oi.cost_applied IS NULL THEN 1 ELSE 0 END) as itemsMissingCost,
+         COUNT(DISTINCT CASE WHEN oi.cost_applied IS NOT NULL THEN o.id END) as ordersWithCost
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE o.date_created BETWEEN ? AND ?`
+    )
+    .get(from, to) as any;
+
+  const manualAdsRow = db
+    .prepare(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM ads_spend
+       WHERE channel != 'mercado_ads' AND date BETWEEN ? AND ?`
+    )
+    .get(from, to) as { total: number };
+
+  const adSpend = totals.totalMercadoAds + manualAdsRow.total;
+  const revenue = totals.grossSales;
+  const orders = totals.orders;
+  const netProfit = totals.netProfit;
+
+  return NextResponse.json({
+    orders,
+    grossSales: revenue,
+    aov: orders > 0 ? revenue / orders : 0,
+    netProfit,
+    profitPct: revenue > 0 ? netProfit / revenue : 0,
+    netRevenue: revenue - totals.totalCommission - totals.totalShipping,
+    totalCommission: totals.totalCommission,
+    totalShipping: totals.totalShipping,
+    totalCost: totals.totalCost,
+    adSpend,
+    mer: adSpend > 0 ? revenue / adSpend : 0,
+    roas: adSpend > 0 ? revenue / adSpend : 0,
+    cpa: orders > 0 ? adSpend / orders : 0,
+    netAov: orders > 0 ? netProfit / orders : 0,
+    trueCpa: totals.ordersWithCost > 0 ? adSpend / totals.ordersWithCost : 0,
+    itemsMissingCost: totals.itemsMissingCost,
+  });
+}
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `npx vitest run app/api/summary/route.test.ts`
+Expected: PASS (2 tests)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add app/api/orders/route.ts app/api/summary/route.ts app/api/summary/route.test.ts
+git commit -m "feat: add marketing KPIs (MER, ROAS, CPA, AOV) and order-level summary"
+```
+
+---
+
+### Task 17: Dark theme redesign (Resumen page)
+
+**Files:**
+- Modify: `app/globals.css`
+- Modify: `app/page.tsx`
+
+**Interfaces:**
+- Consumes: `GET /api/summary`, `GET /api/orders`, `GET /api/orders?groupBy=order`, `POST /api/ads-spend` (Tasks 9, 15, 16).
+
+- [ ] **Step 1: Replace `app/globals.css` entirely with the dark theme**
+
+```css
+:root {
+  --bg: #0b0b0d;
+  --surface: #17171c;
+  --border: #26262c;
+  --text: #f2f2f4;
+  --text-dim: #9a9aa2;
+  --accent: #ff2f7e;
+  --positive: #3ddc84;
+  --negative: #ff5470;
+}
+
+* { box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+nav { display: flex; gap: 16px; padding: 16px 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
+nav a { color: var(--text); text-decoration: none; font-weight: 500; }
+nav a:hover { color: var(--accent); }
+
+h1 { font-weight: 700; }
+h2.section-title { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin: 24px 0 12px; }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 8px; overflow: hidden; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+th { color: var(--text-dim); font-weight: 500; font-size: 13px; }
+
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.kpi-card .label { color: var(--text-dim); font-size: 13px; }
+.kpi-card .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.missing-cost { color: var(--negative); font-weight: 600; }
+
+.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge-paid { background: rgba(61, 220, 132, 0.15); color: var(--positive); }
+.badge-other { background: rgba(154, 154, 162, 0.15); color: var(--text-dim); }
+
+.waterfall-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 24px; }
+.waterfall-row { display: grid; grid-template-columns: 110px 1fr 90px; align-items: center; gap: 12px; margin: 8px 0; font-size: 13px; }
+.waterfall-track { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
+.waterfall-fill { height: 100%; border-radius: 4px; }
+.waterfall-fill.negative { background: var(--negative); }
+.waterfall-fill.positive { background: var(--positive); }
+
+.ad-form { display: flex; gap: 8px; align-items: end; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.ad-form label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-dim); gap: 4px; }
+.ad-form input, .ad-form select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; }
+.ad-form button { background: var(--accent); border: none; color: #fff; padding: 9px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+```
+
+- [ ] **Step 2: Replace `app/page.tsx` entirely with the redesigned Resumen page**
+
+```tsx
+"use client";
+
+import { useEffect, useState } from "react";
+import { SyncButton } from "./SyncButton";
+
+interface Summary {
+  orders: number;
+  grossSales: number;
+  aov: number;
+  netProfit: number;
+  profitPct: number;
+  netRevenue: number;
+  adSpend: number;
+  mer: number;
+  roas: number;
+  cpa: number;
+  netAov: number;
+  trueCpa: number;
+  itemsMissingCost: number;
+}
+
+interface OrderLine {
+  id: number;
+  orderId: string;
+  productTitle: string;
+  unitPrice: number;
+  quantity: number;
+  mlCommission: number;
+  shippingCost: number;
+  adsCostAllocated: number;
+  costApplied: number | null;
+  netProfit: number | null;
+}
+
+interface OrderSummaryRow {
+  orderId: string;
+  estadoPago: string;
+  dateCreated: string;
+  totalOrder: number;
+  totalNeto: number;
+}
+
+function fmt(n: number) {
+  return n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+}
+function pct(n: number) {
+  return `${(n * 100).toFixed(2)}%`;
+}
+
+function WaterfallRow({
+  label,
+  value,
+  max,
+  tone,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  tone: "negative" | "positive";
+}) {
+  const width = max > 0 ? Math.min(100, (Math.abs(value) / max) * 100) : 0;
+  return (
+    <div className="waterfall-row">
+      <span>{label}</span>
+      <div className="waterfall-track">
+        <div className={`waterfall-fill ${tone}`} style={{ width: `${width}%` }} />
+      </div>
+      <span style={{ textAlign: "right", color: tone === "negative" ? "var(--negative)" : "var(--positive)" }}>
+        {tone === "negative" ? "-" : "+"}
+        {fmt(Math.abs(value))}
+      </span>
+    </div>
+  );
+}
+
+export default function HomePage() {
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
+  const [orders, setOrders] = useState<OrderSummaryRow[]>([]);
+  const [adForm, setAdForm] = useState({ channel: "meta", date: new Date().toISOString().slice(0, 10), amount: "" });
+
+  function loadAll() {
+    fetch("/api/summary").then((r) => r.json()).then(setSummary);
+    fetch("/api/orders").then((r) => r.json()).then((rows: OrderLine[]) => setLastOrder(rows[0] ?? null));
+    fetch("/api/orders?groupBy=order").then((r) => r.json()).then(setOrders);
+  }
+
+  useEffect(loadAll, []);
+
+  async function submitAdSpend(e: React.FormEvent) {
+    e.preventDefault();
+    const amount = Number(adForm.amount);
+    if (Number.isNaN(amount) || amount < 0) return;
+    await fetch("/api/ads-spend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: adForm.channel, date: adForm.date, amount }),
+    });
+    setAdForm((prev) => ({ ...prev, amount: "" }));
+    loadAll();
+  }
+
+  return (
+    <div>
+      <h1>Resumen de cuenta</h1>
+      <SyncButton />
+
+      <h2 className="section-title">Tienda</h2>
+      <div className="kpi-grid">
+        <div className="kpi-card"><div className="label">Orders</div><div className="value">{summary?.orders ?? "-"}</div></div>
+        <div className="kpi-card"><div className="label">Revenue</div><div className="value">{summary ? fmt(summary.grossSales) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">AOV</div><div className="value">{summary ? fmt(summary.aov) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Net Profit</div><div className="value">{summary ? fmt(summary.netProfit) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Profit %</div><div className="value">{summary ? pct(summary.profitPct) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Net Rev.</div><div className="value">{summary ? fmt(summary.netRevenue) : "-"}</div></div>
+      </div>
+
+      <h2 className="section-title">Anuncios</h2>
+      <div className="kpi-grid">
+        <div className="kpi-card"><div className="label">Ad Spend</div><div className="value">{summary ? fmt(summary.adSpend) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">MER</div><div className="value">{summary ? summary.mer.toFixed(2) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">ROAS</div><div className="value">{summary ? summary.roas.toFixed(2) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">CPA</div><div className="value">{summary ? fmt(summary.cpa) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Net AOV</div><div className="value">{summary ? fmt(summary.netAov) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">True CPA</div><div className="value">{summary ? fmt(summary.trueCpa) : "-"}</div></div>
+      </div>
+      {summary && summary.itemsMissingCost > 0 && (
+        <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Net Profit</p>
+      )}
+
+      <h2 className="section-title">Cargar publicidad externa</h2>
+      <form className="ad-form" onSubmit={submitAdSpend}>
+        <label>
+          Canal
+          <select value={adForm.channel} onChange={(e) => setAdForm((p) => ({ ...p, channel: e.target.value }))}>
+            <option value="meta">Meta</option>
+            <option value="google">Google Ads</option>
+            <option value="tiktok">TikTok</option>
+          </select>
+        </label>
+        <label>
+          Fecha
+          <input type="date" value={adForm.date} onChange={(e) => setAdForm((p) => ({ ...p, date: e.target.value }))} />
+        </label>
+        <label>
+          Monto
+          <input
+            type="number"
+            min="0"
+            value={adForm.amount}
+            onChange={(e) => setAdForm((p) => ({ ...p, amount: e.target.value }))}
+          />
+        </label>
+        <button type="submit">Cargar</button>
+      </form>
+
+      {lastOrder && (
+        <>
+          <h2 className="section-title">Última venta · {lastOrder.productTitle}</h2>
+          <div className="waterfall-card">
+            <WaterfallRow
+              label="Facturación"
+              value={lastOrder.unitPrice * lastOrder.quantity}
+              max={lastOrder.unitPrice * lastOrder.quantity}
+              tone="positive"
+            />
+            <WaterfallRow label="Comisión ML" value={lastOrder.mlCommission} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
+            <WaterfallRow label="Envío" value={lastOrder.shippingCost} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
+            <WaterfallRow label="Publicidad" value={lastOrder.adsCostAllocated} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
+            <WaterfallRow
+              label="Costo"
+              value={(lastOrder.costApplied ?? 0) * lastOrder.quantity}
+              max={lastOrder.unitPrice * lastOrder.quantity}
+              tone="negative"
+            />
+            <WaterfallRow label="Ganancia neta" value={lastOrder.netProfit ?? 0} max={lastOrder.unitPrice * lastOrder.quantity} tone="positive" />
+          </div>
+        </>
+      )}
+
+      <h2 className="section-title">Últimas órdenes</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Order Id</th>
+            <th>Estado Pago</th>
+            <th>Created at</th>
+            <th>Total Order</th>
+            <th>Total Neto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => (
+            <tr key={o.orderId}>
+              <td>{o.orderId}</td>
+              <td>
+                <span className={`badge ${o.estadoPago === "paid" ? "badge-paid" : "badge-other"}`}>{o.estadoPago}</span>
+              </td>
+              <td>{new Date(o.dateCreated).toLocaleString("es-AR")}</td>
+              <td>{fmt(o.totalOrder)}</td>
+              <td>{fmt(o.totalNeto)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: Manual verification**
+
+Run `npm run dev`, open `http://localhost:3000/`.
+Expected: dark background, KPI cards grouped under "Tienda" and "Anuncios", the ad-spend form inserts a row you can confirm via `sqlite3 data/ml-dashboard.db "SELECT * FROM ads_spend WHERE channel != 'mercado_ads'"`, and after syncing real data the "Última venta" bars and "Últimas órdenes" table populate.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add app/globals.css app/page.tsx
+git commit -m "feat: redesign Resumen page with dark theme and marketing KPIs"
+```
+
+---
+
+### Task 18: Update README for the marketing KPIs adenda
+
+**Files:**
+- Modify: `README.md`
+
+- [ ] **Step 1: Append this section to `README.md`**
+
+```markdown
+
+## Publicidad externa (Meta / Google / TikTok)
+
+El gasto de Mercado Ads se sincroniza solo con el botón "Sincronizar". El gasto
+de Meta, Google Ads y TikTok se carga a mano desde la sección "Cargar publicidad
+externa" en el Resumen (no hay integración por API con esas plataformas — ver
+la adenda del spec para el porqué). Ese gasto entra en Ad Spend/MER/ROAS/CPA a
+nivel cuenta, pero no se prorratea por producto porque no tenemos forma de saber
+qué venta vino de qué canal sin datos de atribución.
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add README.md
+git commit -m "docs: document manual ad spend workflow"
 ```
