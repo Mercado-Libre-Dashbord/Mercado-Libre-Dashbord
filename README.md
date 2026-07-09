@@ -26,3 +26,12 @@ cuenta usando el costo final que vos cargás por producto.
 - Si `getAdsSpend` (en `mcp/tools.ts`) no coincide con la respuesta real de la API de
   Mercado Ads en tu cuenta, ajustá el mapeo de campos ahí — es el único punto marcado
   como "a validar" en el plan de implementación.
+
+## Publicidad externa (Meta / Google / TikTok)
+
+El gasto de Mercado Ads se sincroniza solo con el botón "Sincronizar". El gasto
+de Meta, Google Ads y TikTok se carga a mano desde la sección "Cargar publicidad
+externa" en el Resumen (no hay integración por API con esas plataformas — ver
+la adenda del spec para el porqué). Ese gasto entra en Ad Spend/MER/ROAS/CPA a
+nivel cuenta, pero no se prorratea por producto porque no tenemos forma de saber
+qué venta vino de qué canal sin datos de atribución.
