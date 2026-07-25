@@ -11,7 +11,7 @@ describe("listProducts", () => {
 
   it("returns an empty array when the seller has no active items", async () => {
     vi.mocked(mlFetch).mockResolvedValueOnce({ results: [] });
-    expect(await listProducts("123")).toEqual([]);
+    expect(await listProducts("acc1", "123")).toEqual([]);
   });
 
   it("fetches details for each item id found in the search", async () => {
@@ -21,7 +21,7 @@ describe("listProducts", () => {
         { body: { id: "MLA1", title: "Producto 1", seller_custom_field: "SKU1", price: 1000, available_quantity: 5, permalink: "url1" } },
         { body: { id: "MLA2", title: "Producto 2", seller_custom_field: null, price: 2000, available_quantity: 3, permalink: "url2" } },
       ]);
-    const products = await listProducts("123");
+    const products = await listProducts("acc1", "123");
     expect(products).toHaveLength(2);
     expect(products[0]).toEqual({ id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url1" });
   });
@@ -39,7 +39,7 @@ describe("getOrderDetail", () => {
       shipping: { cost: 90 },
       order_items: [{ item: { id: "MLA1" }, unit_price: 500, quantity: 2, sale_fee: 65 }],
     });
-    const order = await getOrderDetail("999");
+    const order = await getOrderDetail("acc1", "999");
     expect(order.items).toEqual([{ productId: "MLA1", unitPrice: 500, quantity: 2, mlCommission: 65, shippingCost: 90 }]);
   });
 
@@ -51,7 +51,7 @@ describe("getOrderDetail", () => {
       total_amount: 500,
       order_items: [{ item: { id: "MLA1" }, unit_price: 500, quantity: 1, sale_fee: 65 }],
     });
-    const order = await getOrderDetail("1000");
+    const order = await getOrderDetail("acc1", "1000");
     expect(order.items[0].shippingCost).toBe(0);
   });
 });
@@ -59,6 +59,6 @@ describe("getOrderDetail", () => {
 describe("listOrders", () => {
   it("returns order ids from the search results", async () => {
     vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: 1 }, { id: 2 }] });
-    expect(await listOrders("123", "2026-01-01T00:00:00Z")).toEqual(["1", "2"]);
+    expect(await listOrders("acc1", "123", "2026-01-01T00:00:00Z")).toEqual(["1", "2"]);
   });
 });

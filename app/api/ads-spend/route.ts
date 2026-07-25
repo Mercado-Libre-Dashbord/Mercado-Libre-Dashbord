@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db/client";
+import { resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
 
@@ -11,21 +12,26 @@ function isManualChannel(value: unknown): value is ManualChannel {
 }
 
 export async function GET(request: NextRequest) {
+  const account = await resolveCurrentAccount();
+  if (!account) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   const { searchParams } = request.nextUrl;
   const from = searchParams.get("from") ?? "1970-01-01";
   const to = searchParams.get("to") ?? "9999-12-31";
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT id, date, amount, channel FROM ads_spend
-       WHERE channel != 'mercado_ads' AND date BETWEEN ? AND ?
-       ORDER BY date DESC`
-    )
-    .all(from, to);
-  return NextResponse.json(rows);
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT id, date, amount, channel FROM ads_spend
+          WHERE account_id = ? AND channel != 'mercado_ads' AND date BETWEEN ? AND ?
+          ORDER BY date DESC`,
+    args: [account.id, from, to],
+  });
+  return NextResponse.json(result.rows);
 }
 
 export async function POST(request: NextRequest) {
+  const account = await resolveCurrentAccount();
+  if (!account) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   const body = await request.json();
   const { channel, date, amount } = body as { channel: unknown; date: unknown; amount: unknown };
 
@@ -39,11 +45,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "amount debe ser un número >= 0" }, { status: 400 });
   }
 
-  const db = getDb();
-  db.prepare(`INSERT INTO ads_spend (product_id, date, amount, channel) VALUES (NULL, ?, ?, ?)`).run(
-    date,
-    amount,
-    channel
-  );
+  const db = await getDb();
+  await db.execute({
+    sql: `INSERT INTO ads_spend (account_id, product_id, date, amount, channel) VALUES (?, NULL, ?, ?, ?)`,
+    args: [account.id, date, amount, channel],
+  });
   return NextResponse.json({ ok: true });
 }

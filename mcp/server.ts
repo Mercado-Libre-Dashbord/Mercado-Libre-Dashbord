@@ -5,27 +5,35 @@ import { listProducts, listOrders, getOrderDetail, getAdsSpend } from "./tools";
 export function createMcpServer(): McpServer {
   const server = new McpServer({ name: "ml-dashboard-mcp", version: "1.0.0" });
 
-  server.tool("list_products", { sellerId: z.string() }, async ({ sellerId }) => ({
-    content: [{ type: "text", text: JSON.stringify(await listProducts(sellerId)) }],
-  }));
-
   server.tool(
-    "list_orders",
-    { sellerId: z.string(), sinceIso: z.string() },
-    async ({ sellerId, sinceIso }) => ({
-      content: [{ type: "text", text: JSON.stringify(await listOrders(sellerId, sinceIso)) }],
+    "list_products",
+    { accountId: z.string(), sellerId: z.string() },
+    async ({ accountId, sellerId }) => ({
+      content: [{ type: "text", text: JSON.stringify(await listProducts(accountId, sellerId)) }],
     })
   );
 
-  server.tool("get_order_detail", { orderId: z.string() }, async ({ orderId }) => ({
-    content: [{ type: "text", text: JSON.stringify(await getOrderDetail(orderId)) }],
-  }));
+  server.tool(
+    "list_orders",
+    { accountId: z.string(), sellerId: z.string(), sinceIso: z.string() },
+    async ({ accountId, sellerId, sinceIso }) => ({
+      content: [{ type: "text", text: JSON.stringify(await listOrders(accountId, sellerId, sinceIso)) }],
+    })
+  );
+
+  server.tool(
+    "get_order_detail",
+    { accountId: z.string(), orderId: z.string() },
+    async ({ accountId, orderId }) => ({
+      content: [{ type: "text", text: JSON.stringify(await getOrderDetail(accountId, orderId)) }],
+    })
+  );
 
   server.tool(
     "get_ads_spend",
-    { sellerId: z.string(), dateFrom: z.string(), dateTo: z.string() },
-    async ({ sellerId, dateFrom, dateTo }) => ({
-      content: [{ type: "text", text: JSON.stringify(await getAdsSpend(sellerId, dateFrom, dateTo)) }],
+    { accountId: z.string(), sellerId: z.string(), dateFrom: z.string(), dateTo: z.string() },
+    async ({ accountId, sellerId, dateFrom, dateTo }) => ({
+      content: [{ type: "text", text: JSON.stringify(await getAdsSpend(accountId, sellerId, dateFrom, dateTo)) }],
     })
   );
 

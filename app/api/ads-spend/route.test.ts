@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/db/client", () => ({ getDb: vi.fn() }));
+vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 
 import { POST, GET } from "./route";
 import { getDb } from "@/db/client";
+import { resolveCurrentAccount } from "@/lib/current-account";
+
+const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", createdAt: "2026-01-01" };
 
 describe("POST /api/ads-spend", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
+  });
 
   it("rejects an unknown channel", async () => {
     const request = { json: async () => ({ channel: "mercado_ads", date: "2026-01-10", amount: 100 }) } as any;
@@ -26,22 +33,29 @@ describe("POST /api/ads-spend", () => {
     expect(res.status).toBe(400);
   });
 
-  it("inserts a manual ad spend row with product_id NULL", async () => {
-    const run = vi.fn();
-    vi.mocked(getDb).mockReturnValue({ prepare: () => ({ run }) } as any);
+  it("inserts a manual ad spend row scoped to the current account with product_id NULL", async () => {
+    const execute = vi.fn().mockResolvedValue({ rows: [] });
+    vi.mocked(getDb).mockResolvedValue({ execute } as any);
     const request = { json: async () => ({ channel: "google", date: "2026-01-10", amount: 500 }) } as any;
 
     const res = await POST(request);
 
     expect(await res.json()).toEqual({ ok: true });
-    expect(run).toHaveBeenCalledWith("2026-01-10", 500, "google");
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ args: ["acc1", "2026-01-10", 500, "google"] })
+    );
   });
 });
 
 describe("GET /api/ads-spend", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
+  });
+
   it("returns manual entries excluding mercado_ads rows", async () => {
-    const all = vi.fn().mockReturnValue([{ id: 1, date: "2026-01-10", amount: 500, channel: "google" }]);
-    vi.mocked(getDb).mockReturnValue({ prepare: () => ({ all }) } as any);
+    const execute = vi.fn().mockResolvedValue({ rows: [{ id: 1, date: "2026-01-10", amount: 500, channel: "google" }] });
+    vi.mocked(getDb).mockResolvedValue({ execute } as any);
 
     const request = { nextUrl: { searchParams: new URLSearchParams() } } as any;
     const res = await GET(request);

@@ -111,6 +111,7 @@ export default function HomePage() {
   const [period, setPeriod] = useState<Period>("mes");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
+  const [mlConnected, setMlConnected] = useState<boolean | null>(null);
 
   const { from, to } = rangeForPeriod(period, customFrom, customTo);
 
@@ -121,6 +122,11 @@ export default function HomePage() {
   }
 
   useEffect(loadAll, [from, to]);
+  useEffect(() => {
+    fetch("/api/account/me")
+      .then((r) => r.json())
+      .then((data) => setMlConnected(Boolean(data.mlConnected)));
+  }, []);
 
   async function submitAdSpend(e: React.FormEvent) {
     e.preventDefault();
@@ -138,6 +144,11 @@ export default function HomePage() {
   return (
     <div>
       <h1>Resumen de cuenta</h1>
+      {mlConnected === false && (
+        <p className="missing-cost">
+          Todavía no conectaste Mercado Libre. <a href="/api/ml/login">Conectar ahora</a>
+        </p>
+      )}
       <SyncButton />
 
       <div className="ad-form" style={{ marginBottom: 24 }}>

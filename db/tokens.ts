@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { Client } from "@libsql/client";
 
 export interface AuthTokens {
   accessToken: string;
@@ -6,21 +6,26 @@ export interface AuthTokens {
   expiresAt: string;
 }
 
-export function saveTokens(db: DatabaseSync, tokens: AuthTokens): void {
-  db.prepare(
-    `INSERT INTO auth_tokens (id, access_token, refresh_token, expires_at)
-     VALUES (1, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       access_token = excluded.access_token,
-       refresh_token = excluded.refresh_token,
-       expires_at = excluded.expires_at`
-  ).run(tokens.accessToken, tokens.refreshToken, tokens.expiresAt);
+export async function saveTokens(db: Client, accountId: string, tokens: AuthTokens): Promise<void> {
+  await db.execute({
+    sql: `INSERT INTO auth_tokens (account_id, access_token, refresh_token, expires_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(account_id) DO UPDATE SET
+            access_token = excluded.access_token,
+            refresh_token = excluded.refresh_token,
+            expires_at = excluded.expires_at`,
+    args: [accountId, tokens.accessToken, tokens.refreshToken, tokens.expiresAt],
+  });
 }
 
-export function getTokens(db: DatabaseSync): AuthTokens | null {
-  const row = db
-    .prepare("SELECT access_token, refresh_token, expires_at FROM auth_tokens WHERE id = 1")
-    .get() as { access_token: string; refresh_token: string; expires_at: string } | undefined;
+export async function getTokens(db: Client, accountId: string): Promise<AuthTokens | null> {
+  const result = await db.execute({
+    sql: "SELECT access_token, refresh_token, expires_at FROM auth_tokens WHERE account_id = ?",
+    args: [accountId],
+  });
+  const row = result.rows[0] as unknown as
+    | { access_token: string; refresh_token: string; expires_at: string }
+    | undefined;
   if (!row) return null;
   return { accessToken: row.access_token, refreshToken: row.refresh_token, expiresAt: row.expires_at };
 }

@@ -13,12 +13,11 @@ const TEST_DB_PATH = "./data/test-sync.db";
 describe("runSync", () => {
   beforeEach(() => {
     process.env.DB_PATH = TEST_DB_PATH;
+    delete process.env.DATABASE_URL;
     vi.resetModules();
     vi.clearAllMocks();
   });
   afterEach(async () => {
-    // Close the open node:sqlite handle before unlinking: on Windows (unlike
-    // POSIX) you cannot delete a file that still has an open handle.
     try {
       const mod = await import("@/db/client");
       mod.closeDb();
@@ -44,15 +43,24 @@ describe("runSync", () => {
     vi.mocked(getAdsSpend).mockResolvedValue([{ productId: "MLA1", date: "2026-01-10", amount: 50 }]);
 
     const { getDb } = await import("@/db/client");
-    const db = getDb();
-    db.prepare(`INSERT INTO product_costs (product_id, cost, valid_from) VALUES (?, ?, ?)`).run("MLA1", 300, "2026-01-01");
+    const { createAccount } = await import("@/db/accounts");
+    const db = await getDb();
+    const account = await createAccount(db, "Cuenta test", "owner@example.com");
+    await db.execute({
+      sql: `INSERT INTO product_costs (account_id, product_id, cost, valid_from) VALUES (?, ?, ?, ?)`,
+      args: [account.id, "MLA1", 300, "2026-01-01"],
+    });
 
     const { runSync } = await import("./sync-service");
-    const result = await runSync(db, "SELLER1", "2026-01-01T00:00:00Z");
+    const result = await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
 
     expect(result).toEqual({ productsSynced: 1, ordersSynced: 1, adsRowsSynced: 1 });
 
-    const item = db.prepare(`SELECT * FROM order_items WHERE order_id = 'ORD1'`).get() as any;
+    const itemResult = await db.execute({
+      sql: `SELECT * FROM order_items WHERE account_id = ? AND order_id = 'ORD1'`,
+      args: [account.id],
+    });
+    const item = itemResult.rows[0] as any;
     expect(item.net_profit).toBe(430); // 1000 - 130 - 90 - 50 - 300
     expect(item.cost_applied).toBe(300);
   });
@@ -71,11 +79,17 @@ describe("runSync", () => {
     vi.mocked(getAdsSpend).mockResolvedValue([]);
 
     const { getDb } = await import("@/db/client");
-    const db = getDb();
+    const { createAccount } = await import("@/db/accounts");
+    const db = await getDb();
+    const account = await createAccount(db, "Cuenta test", "owner@example.com");
     const { runSync } = await import("./sync-service");
-    await runSync(db, "SELLER1", "2026-01-01T00:00:00Z");
+    await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
 
-    const item = db.prepare(`SELECT * FROM order_items WHERE order_id = 'ORD2'`).get() as any;
+    const itemResult = await db.execute({
+      sql: `SELECT * FROM order_items WHERE account_id = ? AND order_id = 'ORD2'`,
+      args: [account.id],
+    });
+    const item = itemResult.rows[0] as any;
     expect(item.net_profit).toBeNull();
     expect(item.cost_applied).toBeNull();
   });
@@ -94,13 +108,18 @@ describe("runSync", () => {
     vi.mocked(getAdsSpend).mockResolvedValue([]);
 
     const { getDb } = await import("@/db/client");
-    const db = getDb();
+    const { createAccount } = await import("@/db/accounts");
+    const db = await getDb();
+    const account = await createAccount(db, "Cuenta test", "owner@example.com");
     const { runSync } = await import("./sync-service");
-    await runSync(db, "SELLER1", "2026-01-01T00:00:00Z");
-    await runSync(db, "SELLER1", "2026-01-01T00:00:00Z");
+    await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
+    await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
 
-    const count = db.prepare(`SELECT COUNT(*) as c FROM order_items WHERE order_id = 'ORD3'`).get() as { c: number };
-    expect(count.c).toBe(1);
+    const countResult = await db.execute({
+      sql: `SELECT COUNT(*) as c FROM order_items WHERE account_id = ? AND order_id = 'ORD3'`,
+      args: [account.id],
+    });
+    expect(Number((countResult.rows[0] as any).c)).toBe(1);
   });
 
   it("keeps products and orders synced even when getAdsSpend fails", async () => {
@@ -119,15 +138,20 @@ describe("runSync", () => {
     vi.mocked(getAdsSpend).mockRejectedValue(new Error("Ads API no disponible"));
 
     const { getDb } = await import("@/db/client");
-    const db = getDb();
+    const { createAccount } = await import("@/db/accounts");
+    const db = await getDb();
+    const account = await createAccount(db, "Cuenta test", "owner@example.com");
     const { runSync } = await import("./sync-service");
 
-    const result = await runSync(db, "SELLER1", "2026-01-01T00:00:00Z");
+    const result = await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
 
     expect(result.productsSynced).toBe(1);
     expect(result.ordersSynced).toBe(1);
     expect(result.adsRowsSynced).toBe(0);
-    const order = db.prepare(`SELECT * FROM orders WHERE id = 'ORD4'`).get();
-    expect(order).toBeTruthy();
+    const orderResult = await db.execute({
+      sql: `SELECT * FROM orders WHERE account_id = ? AND id = 'ORD4'`,
+      args: [account.id],
+    });
+    expect(orderResult.rows[0]).toBeTruthy();
   });
 });

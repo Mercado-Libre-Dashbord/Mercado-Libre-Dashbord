@@ -4,11 +4,11 @@ import { refreshAccessToken } from "./ml-client";
 
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
-export async function getValidAccessToken(): Promise<string> {
-  const db = getDb();
-  const tokens = getTokens(db);
+export async function getValidAccessToken(accountId: string): Promise<string> {
+  const db = await getDb();
+  const tokens = await getTokens(db, accountId);
   if (!tokens) {
-    throw new Error("No hay tokens guardados. Autenticate en /api/auth/login primero.");
+    throw new Error("No hay tokens guardados. Conectá Mercado Libre desde el dashboard primero.");
   }
   const expiresAt = new Date(tokens.expiresAt).getTime();
   if (Date.now() < expiresAt - EXPIRY_BUFFER_MS) {
@@ -16,6 +16,10 @@ export async function getValidAccessToken(): Promise<string> {
   }
   const refreshed = await refreshAccessToken(tokens.refreshToken);
   const newExpiresAt = new Date(Date.now() + refreshed.expiresIn * 1000).toISOString();
-  saveTokens(db, { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, expiresAt: newExpiresAt });
+  await saveTokens(db, accountId, {
+    accessToken: refreshed.accessToken,
+    refreshToken: refreshed.refreshToken,
+    expiresAt: newExpiresAt,
+  });
   return refreshed.accessToken;
 }

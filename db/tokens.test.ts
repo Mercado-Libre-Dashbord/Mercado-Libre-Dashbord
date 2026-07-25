@@ -6,6 +6,7 @@ const TEST_DB_PATH = "./data/test-tokens.db";
 describe("saveTokens / getTokens", () => {
   beforeEach(() => {
     process.env.DB_PATH = TEST_DB_PATH;
+    delete process.env.DATABASE_URL;
     vi.resetModules();
   });
   afterEach(async () => {
@@ -26,15 +27,22 @@ describe("saveTokens / getTokens", () => {
   it("returns null when no tokens have been saved", async () => {
     const { getDb } = await import("./client");
     const { getTokens } = await import("./tokens");
-    expect(getTokens(getDb())).toBeNull();
+    const db = await getDb();
+    expect(await getTokens(db, "acc1")).toBeNull();
   });
 
   it("saves and retrieves tokens, overwriting on repeated save", async () => {
     const { getDb } = await import("./client");
+    const { createAccount } = await import("./accounts");
     const { saveTokens, getTokens } = await import("./tokens");
-    const db = getDb();
-    saveTokens(db, { accessToken: "a1", refreshToken: "r1", expiresAt: "2026-01-01T00:00:00Z" });
-    saveTokens(db, { accessToken: "a2", refreshToken: "r2", expiresAt: "2026-01-02T00:00:00Z" });
-    expect(getTokens(db)).toEqual({ accessToken: "a2", refreshToken: "r2", expiresAt: "2026-01-02T00:00:00Z" });
+    const db = await getDb();
+    const account = await createAccount(db, "Cuenta test", "owner@example.com");
+    await saveTokens(db, account.id, { accessToken: "a1", refreshToken: "r1", expiresAt: "2026-01-01T00:00:00Z" });
+    await saveTokens(db, account.id, { accessToken: "a2", refreshToken: "r2", expiresAt: "2026-01-02T00:00:00Z" });
+    expect(await getTokens(db, account.id)).toEqual({
+      accessToken: "a2",
+      refreshToken: "r2",
+      expiresAt: "2026-01-02T00:00:00Z",
+    });
   });
 });

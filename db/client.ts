@@ -1,30 +1,42 @@
-// Use require() to avoid Vite's ESM module resolution issues with node: modules
-import type { DatabaseSync } from "node:sqlite";
-const sqlite = require("node:sqlite") as typeof import("node:sqlite");
-const fs = require("node:fs") as typeof import("node:fs");
-const path = require("node:path") as typeof import("node:path");
+import { createClient, type Client } from "@libsql/client";
+import fs from "node:fs";
+import path from "node:path";
 
-let db: DatabaseSync | null = null;
+let client: Client | null = null;
+let schemaReady: Promise<void> | null = null;
 
-export function getDb(): DatabaseSync {
-  if (db) return db;
+function resolveUrl(): string {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
   const dbPath = process.env.DB_PATH || "./data/ml-dashboard.db";
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  // node:sqlite enables FK enforcement by default (unlike most SQLite drivers,
-  // where it's opt-in via PRAGMA). The schema's REFERENCES clauses are for
-  // documentation/intent; sync writes products and order_items independently
-  // and doesn't guarantee insert ordering across those tables, so enforcement
-  // is disabled to match the behavior the rest of the codebase assumes.
-  db = new sqlite.DatabaseSync(dbPath, { enableForeignKeyConstraints: false });
+  const dir = path.dirname(dbPath);
+  if (dir && dir !== ".") fs.mkdirSync(dir, { recursive: true });
+  return `file:${dbPath}`;
+}
+
+async function applySchema(db: Client): Promise<void> {
   const schema = fs.readFileSync(path.join(process.cwd(), "db", "schema.sql"), "utf-8");
-  db.exec(schema);
-  return db;
+  await db.executeMultiple(schema);
+}
+
+export async function getDb(): Promise<Client> {
+  if (!client) {
+    client = createClient({
+      url: resolveUrl(),
+      authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
+    });
+  }
+  if (!schemaReady) {
+    schemaReady = applySchema(client);
+  }
+  await schemaReady;
+  return client;
 }
 
 // For testing purposes - close and reset the database connection
 export function closeDb(): void {
-  if (db) {
-    db.close();
-    db = null;
+  if (client) {
+    client.close();
+    client = null;
+    schemaReady = null;
   }
 }

@@ -10,8 +10,8 @@ export interface MlProduct {
   permalink: string;
 }
 
-export async function listProducts(sellerId: string): Promise<MlProduct[]> {
-  const token = await getValidAccessToken();
+export async function listProducts(accountId: string, sellerId: string): Promise<MlProduct[]> {
+  const token = await getValidAccessToken(accountId);
   const search = await mlFetch(`/users/${sellerId}/items/search?status=active`, token);
   const ids: string[] = search.results;
   if (ids.length === 0) return [];
@@ -42,8 +42,8 @@ export interface MlOrder {
   items: MlOrderItem[];
 }
 
-export async function getOrderDetail(orderId: string): Promise<MlOrder> {
-  const token = await getValidAccessToken();
+export async function getOrderDetail(accountId: string, orderId: string): Promise<MlOrder> {
+  const token = await getValidAccessToken(accountId);
   const order = await mlFetch(`/orders/${orderId}`, token);
   const shippingCost = order.shipping?.cost ?? 0;
   return {
@@ -61,18 +61,19 @@ export async function getOrderDetail(orderId: string): Promise<MlOrder> {
   };
 }
 
-export async function listOrders(sellerId: string, sinceIso: string): Promise<string[]> {
-  const token = await getValidAccessToken();
+export async function listOrders(accountId: string, sellerId: string, sinceIso: string): Promise<string[]> {
+  const token = await getValidAccessToken(accountId);
   const search = await mlFetch(`/orders/search?seller=${sellerId}&order.date_created.from=${sinceIso}`, token);
   return search.results.map((o: any) => String(o.id));
 }
 
 export async function getAdsSpend(
+  accountId: string,
   sellerId: string,
   dateFrom: string,
   dateTo: string
 ): Promise<{ productId: string; date: string; amount: number }[]> {
-  const token = await getValidAccessToken();
+  const token = await getValidAccessToken(accountId);
   const campaigns = await mlFetch(
     `/advertising/product_ads/campaigns?date_from=${dateFrom}&date_to=${dateTo}`,
     token

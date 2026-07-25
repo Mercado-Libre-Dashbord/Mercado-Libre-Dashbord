@@ -19,7 +19,7 @@ describe("createMcpServer", () => {
 
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
 
-    const result = await client.callTool({ name: "list_products", arguments: { sellerId: "123" } });
+    const result = await client.callTool({ name: "list_products", arguments: { accountId: "acc1", sellerId: "123" } });
     const text = (result.content as any[])[0].text;
     expect(JSON.parse(text)).toEqual([{ id: "MLA1", title: "Producto 1" }]);
   });

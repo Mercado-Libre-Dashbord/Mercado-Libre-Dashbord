@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { saveTokens } from "@/db/tokens";
+import { setAccountMlSellerId } from "@/db/accounts";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
+  const accountId = request.nextUrl.searchParams.get("state");
   if (!code) {
     return NextResponse.json({ error: "Missing authorization code" }, { status: 400 });
+  }
+  if (!accountId) {
+    return NextResponse.json({ error: "Missing state (account id)" }, { status: 400 });
   }
 
   const res = await fetch("https://api.mercadolibre.com/oauth/token", {
@@ -28,7 +33,22 @@ export async function GET(request: NextRequest) {
 
   const data = await res.json();
   const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
-  saveTokens(getDb(), { accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt });
+  const db = await getDb();
+  await saveTokens(db, accountId, {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    expiresAt,
+  });
+
+  // El seller id lo confirmamos contra /users/me con el token recién emitido
+  // en vez de confiar en un campo de la respuesta del token exchange.
+  const meRes = await fetch("https://api.mercadolibre.com/users/me", {
+    headers: { Authorization: `Bearer ${data.access_token}` },
+  });
+  if (meRes.ok) {
+    const me = await meRes.json();
+    await setAccountMlSellerId(db, accountId, String(me.id));
+  }
 
   return NextResponse.redirect(new URL("/", request.url));
 }
