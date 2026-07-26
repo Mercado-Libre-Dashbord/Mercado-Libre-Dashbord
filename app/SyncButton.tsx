@@ -21,11 +21,15 @@ export function SyncButton() {
   }
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <button onClick={handleSync} disabled={status === "syncing"}>
-        {status === "syncing" ? "Sincronizando..." : "Sincronizar"}
+    <div style={{ marginBottom: "var(--space-4)", display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
+      <button className="btn btn-primary" onClick={handleSync} disabled={status === "syncing"}>
+        {status === "syncing" ? "Sincronizando…" : "Sincronizar"}
       </button>
-      {message && <span style={{ marginLeft: 12, color: status === "error" ? "#b00020" : "#333" }}>{message}</span>}
+      {message && (
+        <span role="status" aria-live="polite" className={status === "error" ? "missing-cost" : "success-text"}>
+          {message}
+        </span>
+      )}
     </div>
   );
 }

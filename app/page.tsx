@@ -103,11 +103,18 @@ function WaterfallRow({
   );
 }
 
+function KpiValue({ children }: { children: React.ReactNode }) {
+  if (children === "-") return <span className="skeleton" aria-hidden="true" />;
+  return <>{children}</>;
+}
+
 export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
-  const [orders, setOrders] = useState<OrderSummaryRow[]>([]);
+  const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
   const [adForm, setAdForm] = useState({ channel: "meta", date: new Date().toISOString().slice(0, 10), amount: "" });
+  const [adFormError, setAdFormError] = useState("");
+  const [adFormSuccess, setAdFormSuccess] = useState(false);
   const [period, setPeriod] = useState<Period>("mes");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
@@ -130,14 +137,20 @@ export default function HomePage() {
 
   async function submitAdSpend(e: React.FormEvent) {
     e.preventDefault();
+    setAdFormError("");
+    setAdFormSuccess(false);
     const amount = Number(adForm.amount);
-    if (Number.isNaN(amount) || amount < 0) return;
+    if (adForm.amount.trim() === "" || Number.isNaN(amount) || amount < 0) {
+      setAdFormError("Ingresá un monto válido (mayor o igual a 0).");
+      return;
+    }
     await fetch("/api/ads-spend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel: adForm.channel, date: adForm.date, amount }),
     });
     setAdForm((prev) => ({ ...prev, amount: "" }));
+    setAdFormSuccess(true);
     loadAll();
   }
 
@@ -178,29 +191,29 @@ export default function HomePage() {
 
       <h2 className="section-title">Tienda</h2>
       <div className="kpi-grid">
-        <div className="kpi-card"><div className="label">Orders</div><div className="value">{summary?.orders ?? "-"}</div></div>
-        <div className="kpi-card"><div className="label">Revenue</div><div className="value">{summary ? fmt(summary.grossSales) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">AOV</div><div className="value">{summary ? fmt(summary.aov) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">Net Profit</div><div className="value">{summary ? fmt(summary.netProfit) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">Profit %</div><div className="value">{summary ? pct(summary.profitPct) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">Net Rev.</div><div className="value">{summary ? fmt(summary.netRevenue) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Orders</div><div className="value"><KpiValue>{summary?.orders ?? "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Revenue</div><div className="value"><KpiValue>{summary ? fmt(summary.grossSales) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">AOV</div><div className="value"><KpiValue>{summary ? fmt(summary.aov) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Net Profit</div><div className="value"><KpiValue>{summary ? fmt(summary.netProfit) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Profit %</div><div className="value"><KpiValue>{summary ? pct(summary.profitPct) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Net Rev.</div><div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div></div>
       </div>
 
       <h2 className="section-title">Anuncios</h2>
       <div className="kpi-grid">
-        <div className="kpi-card"><div className="label">Ad Spend</div><div className="value">{summary ? fmt(summary.adSpend) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">MER</div><div className="value">{summary ? summary.mer.toFixed(2) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">ROAS</div><div className="value">{summary ? summary.roas.toFixed(2) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">CPA</div><div className="value">{summary ? fmt(summary.cpa) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">Net AOV</div><div className="value">{summary ? fmt(summary.netAov) : "-"}</div></div>
-        <div className="kpi-card"><div className="label">True CPA</div><div className="value">{summary ? fmt(summary.trueCpa) : "-"}</div></div>
+        <div className="kpi-card"><div className="label">Ad Spend</div><div className="value"><KpiValue>{summary ? fmt(summary.adSpend) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">MER</div><div className="value"><KpiValue>{summary ? summary.mer.toFixed(2) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">ROAS</div><div className="value"><KpiValue>{summary ? summary.roas.toFixed(2) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">CPA</div><div className="value"><KpiValue>{summary ? fmt(summary.cpa) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Net AOV</div><div className="value"><KpiValue>{summary ? fmt(summary.netAov) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">True CPA</div><div className="value"><KpiValue>{summary ? fmt(summary.trueCpa) : "-"}</KpiValue></div></div>
       </div>
       {summary && summary.itemsMissingCost > 0 && (
         <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Net Profit</p>
       )}
 
       <h2 className="section-title">Cargar publicidad externa</h2>
-      <form className="ad-form" onSubmit={submitAdSpend}>
+      <form className="ad-form" onSubmit={submitAdSpend} noValidate>
         <label>
           Canal
           <select value={adForm.channel} onChange={(e) => setAdForm((p) => ({ ...p, channel: e.target.value }))}>
@@ -213,16 +226,28 @@ export default function HomePage() {
           Fecha
           <input type="date" value={adForm.date} onChange={(e) => setAdForm((p) => ({ ...p, date: e.target.value }))} />
         </label>
-        <label>
-          Monto
+        <div className="field-group">
+          <label htmlFor="ad-amount">Monto</label>
           <input
+            id="ad-amount"
             type="number"
             min="0"
+            inputMode="decimal"
+            aria-invalid={adFormError ? true : undefined}
             value={adForm.amount}
-            onChange={(e) => setAdForm((p) => ({ ...p, amount: e.target.value }))}
+            onChange={(e) => {
+              setAdForm((p) => ({ ...p, amount: e.target.value }));
+              if (adFormError) setAdFormError("");
+            }}
           />
-        </label>
-        <button type="submit">Cargar</button>
+          {adFormError && <p className="field-error" role="alert">{adFormError}</p>}
+        </div>
+        <button type="submit" className="btn btn-primary">Cargar</button>
+        {adFormSuccess && (
+          <span role="status" aria-live="polite" className="success-text">
+            Publicidad cargada.
+          </span>
+        )}
       </form>
 
       {lastOrder && (
@@ -250,30 +275,36 @@ export default function HomePage() {
       )}
 
       <h2 className="section-title">Últimas órdenes</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Order Id</th>
-            <th>Estado Pago</th>
-            <th>Created at</th>
-            <th>Total Order</th>
-            <th>Total Neto</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o) => (
-            <tr key={o.orderId}>
-              <td>{o.orderId}</td>
-              <td>
-                <span className={`badge ${o.estadoPago === "paid" ? "badge-paid" : "badge-other"}`}>{o.estadoPago}</span>
-              </td>
-              <td>{new Date(o.dateCreated).toLocaleString("es-AR")}</td>
-              <td>{fmt(o.totalOrder)}</td>
-              <td>{fmt(o.totalNeto)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {orders && orders.length === 0 ? (
+        <div className="empty-state">Todavía no hay órdenes sincronizadas para este período.</div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Order Id</th>
+                <th>Estado Pago</th>
+                <th>Created at</th>
+                <th className="num">Total Order</th>
+                <th className="num">Total Neto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(orders ?? []).map((o) => (
+                <tr key={o.orderId}>
+                  <td>{o.orderId}</td>
+                  <td>
+                    <span className={`badge ${o.estadoPago === "paid" ? "badge-paid" : "badge-other"}`}>{o.estadoPago}</span>
+                  </td>
+                  <td>{new Date(o.dateCreated).toLocaleString("es-AR")}</td>
+                  <td className="num">{fmt(o.totalOrder)}</td>
+                  <td className="num">{fmt(o.totalNeto)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

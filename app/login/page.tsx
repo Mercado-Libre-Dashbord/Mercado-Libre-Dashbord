@@ -15,7 +15,12 @@ export default function LoginPage() {
       }}
     >
       <h1>Dashboard Rentabilidad ML</h1>
-      <button onClick={() => signIn("google", { callbackUrl: "/" })}>Ingresar con Google</button>
+      <p style={{ color: "var(--text-dim)", marginTop: -8 }}>
+        Entrá con tu cuenta de Google para ver la rentabilidad de tu cuenta de Mercado Libre.
+      </p>
+      <button className="btn btn-primary" onClick={() => signIn("google", { callbackUrl: "/" })}>
+        Ingresar con Google
+      </button>
     </div>
   );
 }

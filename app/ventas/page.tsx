@@ -24,7 +24,7 @@ interface ProductOption {
 }
 
 export default function VentasPage() {
-  const [items, setItems] = useState<OrderItem[]>([]);
+  const [items, setItems] = useState<OrderItem[] | null>(null);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [filters, setFilters] = useState({ productId: "", from: "", to: "", status: "" });
 
@@ -35,6 +35,7 @@ export default function VentasPage() {
   }, []);
 
   useEffect(() => {
+    setItems(null);
     const params = new URLSearchParams();
     if (filters.productId) params.set("productId", filters.productId);
     if (filters.from) params.set("from", filters.from);
@@ -81,40 +82,48 @@ export default function VentasPage() {
           </select>
         </label>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Estado</th>
-            <th>Producto</th>
-            <th>Precio</th>
-            <th>Cant.</th>
-            <th>Comisión</th>
-            <th>Envío</th>
-            <th>Publicidad</th>
-            <th>Costo</th>
-            <th>Ganancia neta</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((it) => (
-            <tr key={it.id}>
-              <td>{new Date(it.dateCreated).toLocaleDateString("es-AR")}</td>
-              <td>{it.estadoPago}</td>
-              <td>{it.productTitle}</td>
-              <td>{it.unitPrice}</td>
-              <td>{it.quantity}</td>
-              <td>{it.mlCommission}</td>
-              <td>{it.shippingCost}</td>
-              <td>{it.adsCostAllocated.toFixed(2)}</td>
-              <td className={it.costApplied === null ? "missing-cost" : undefined}>
-                {it.costApplied ?? "Sin costo"}
-              </td>
-              <td>{it.netProfit === null ? "-" : it.netProfit.toFixed(2)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {items === null ? (
+        <p className="empty-state">Cargando ventas…</p>
+      ) : items.length === 0 ? (
+        <div className="empty-state">No hay ventas para estos filtros.</div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Estado</th>
+                <th>Producto</th>
+                <th className="num">Precio</th>
+                <th className="num">Cant.</th>
+                <th className="num">Comisión</th>
+                <th className="num">Envío</th>
+                <th className="num">Publicidad</th>
+                <th className="num">Costo</th>
+                <th className="num">Ganancia neta</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id}>
+                  <td>{new Date(it.dateCreated).toLocaleDateString("es-AR")}</td>
+                  <td>{it.estadoPago}</td>
+                  <td>{it.productTitle}</td>
+                  <td className="num">{it.unitPrice}</td>
+                  <td className="num">{it.quantity}</td>
+                  <td className="num">{it.mlCommission}</td>
+                  <td className="num">{it.shippingCost}</td>
+                  <td className="num">{it.adsCostAllocated.toFixed(2)}</td>
+                  <td className={`num ${it.costApplied === null ? "missing-cost" : ""}`}>
+                    {it.costApplied ?? "Sin costo"}
+                  </td>
+                  <td className="num">{it.netProfit === null ? "-" : it.netProfit.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

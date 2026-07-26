@@ -38,23 +38,29 @@ export function NavBar() {
   }
 
   return (
-    <nav>
+    <nav aria-label="Navegación principal">
       <a href="/">Resumen</a>
       <a href="/productos">Productos</a>
       <a href="/ventas">Ventas</a>
       <a href="/tendencias">Tendencias</a>
       {isAdmin && <a href="/admin">Cuentas</a>}
       {isAdmin && accounts.length > 0 && (
-        <select value={currentAccountId} onChange={(e) => switchAccount(e.target.value)}>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
+        <label>
+          <span style={{ position: "absolute", clip: "rect(0 0 0 0)" }}>Cuenta activa</span>
+          <select value={currentAccountId} onChange={(e) => switchAccount(e.target.value)} style={{ minHeight: 40 }}>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
-      <span style={{ marginLeft: "auto", color: "#fff" }}>{session?.user?.email}</span>
-      <button onClick={() => signOut({ callbackUrl: "/login" })}>Salir</button>
+      <span className="nav-spacer" />
+      <span className="nav-user">{session?.user?.email}</span>
+      <button className="btn btn-secondary btn-sm" onClick={() => signOut({ callbackUrl: "/login" })}>
+        Salir
+      </button>
     </nav>
   );
 }

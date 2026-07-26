@@ -9,7 +9,7 @@ interface MonthlyPoint {
 }
 
 export default function TendenciasPage() {
-  const [data, setData] = useState<MonthlyPoint[]>([]);
+  const [data, setData] = useState<MonthlyPoint[] | null>(null);
 
   useEffect(() => {
     fetch("/api/summary?groupBy=month")
@@ -20,17 +20,35 @@ export default function TendenciasPage() {
   return (
     <div>
       <h1>Tendencias</h1>
-      <div style={{ width: "100%", height: 320, background: "#fff", borderRadius: 8, padding: 16 }}>
-        <ResponsiveContainer>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="month" />
-            <YAxis />
-            <Tooltip />
-            <Line type="monotone" dataKey="netProfit" stroke="#4a7" strokeWidth={2} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {data === null ? (
+        <p className="empty-state">Cargando tendencias…</p>
+      ) : data.length === 0 ? (
+        <div className="empty-state">Todavía no hay suficientes ventas sincronizadas para mostrar una tendencia.</div>
+      ) : (
+        <div
+          style={{
+            width: "100%",
+            height: 320,
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
+            padding: 16,
+          }}
+        >
+          <ResponsiveContainer>
+            <LineChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="month" stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 12 }} />
+              <YAxis stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+                labelStyle={{ color: "var(--text-dim)" }}
+              />
+              <Line type="monotone" dataKey="netProfit" name="Ganancia neta" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
