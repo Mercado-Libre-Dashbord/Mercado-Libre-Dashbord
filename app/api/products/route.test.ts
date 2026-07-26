@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/db/client", () => ({ getDb: vi.fn() }));
+vi.mock("@/db/client", () => ({ withScope: vi.fn((ctx: unknown, fn: (client: unknown) => unknown) => fn({ query: vi.fn() })) }));
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 
 import { PATCH } from "./route";
-import { getDb } from "@/db/client";
+import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
 const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", createdAt: "2026-01-01" };
@@ -29,15 +29,13 @@ describe("PATCH /api/products", () => {
   });
 
   it("inserts a new versioned cost row scoped to the current account", async () => {
-    const execute = vi.fn().mockResolvedValue({ rows: [] });
-    vi.mocked(getDb).mockResolvedValue({ execute } as any);
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
     const request = { json: async () => ({ productId: "MLA1", cost: 350 }) } as any;
 
     const res = await PATCH(request);
 
     expect(await res.json()).toEqual({ ok: true });
-    expect(execute).toHaveBeenCalledWith(
-      expect.objectContaining({ args: ["acc1", "MLA1", 350, expect.any(String)] })
-    );
+    expect(query).toHaveBeenCalledWith(expect.any(String), ["acc1", "MLA1", 350, expect.any(String)]);
   });
 });

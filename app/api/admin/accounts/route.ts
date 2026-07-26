@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/db/client";
+import { withScope } from "@/db/client";
 import { createAccount, listAccounts } from "@/db/accounts";
 import { getCurrentUser, resolveCurrentAccount } from "@/lib/current-account";
 
@@ -9,8 +9,7 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user?.isAdmin) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
 
-  const db = await getDb();
-  const accounts = await listAccounts(db);
+  const accounts = await withScope({ isAdmin: true, userEmail: user.email }, (client) => listAccounts(client));
   const current = await resolveCurrentAccount();
   return NextResponse.json({
     accounts: accounts.map((a) => ({ id: a.id, name: a.name, ownerEmail: a.ownerEmail, mlSellerId: a.mlSellerId })),
@@ -28,7 +27,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "name y ownerEmail son requeridos" }, { status: 400 });
   }
 
-  const db = await getDb();
-  const account = await createAccount(db, name, ownerEmail);
+  const account = await withScope({ isAdmin: true, userEmail: user.email }, (client) =>
+    createAccount(client, name, ownerEmail)
+  );
   return NextResponse.json(account, { status: 201 });
 }

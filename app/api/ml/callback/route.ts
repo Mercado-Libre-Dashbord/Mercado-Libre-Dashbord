@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/db/client";
+import { withScope } from "@/db/client";
 import { saveTokens } from "@/db/tokens";
 import { setAccountMlSellerId } from "@/db/accounts";
+import { getCurrentUser } from "@/lib/current-account";
 
 export const runtime = "nodejs";
 
@@ -33,22 +34,25 @@ export async function GET(request: NextRequest) {
 
   const data = await res.json();
   const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
-  const db = await getDb();
-  await saveTokens(db, accountId, {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    expiresAt,
-  });
 
-  // El seller id lo confirmamos contra /users/me con el token recién emitido
-  // en vez de confiar en un campo de la respuesta del token exchange.
-  const meRes = await fetch("https://api.mercadolibre.com/users/me", {
-    headers: { Authorization: `Bearer ${data.access_token}` },
+  const user = await getCurrentUser();
+  await withScope({ accountId, isAdmin: user?.isAdmin, userEmail: user?.email }, async (client) => {
+    await saveTokens(client, accountId, {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt,
+    });
+
+    // El seller id lo confirmamos contra /users/me con el token recién emitido
+    // en vez de confiar en un campo de la respuesta del token exchange.
+    const meRes = await fetch("https://api.mercadolibre.com/users/me", {
+      headers: { Authorization: `Bearer ${data.access_token}` },
+    });
+    if (meRes.ok) {
+      const me = await meRes.json();
+      await setAccountMlSellerId(client, accountId, String(me.id));
+    }
   });
-  if (meRes.ok) {
-    const me = await meRes.json();
-    await setAccountMlSellerId(db, accountId, String(me.id));
-  }
 
   return NextResponse.redirect(new URL("/", request.url));
 }

@@ -1,0 +1,152 @@
+-- Run this whole file once in the Supabase SQL Editor (or against any plain
+-- Postgres instance) as the project owner / superuser. It is safe to re-run:
+-- every statement is idempotent (CREATE ... IF NOT EXISTS / OR REPLACE).
+--
+-- Security model: the app never connects as `postgres` or Supabase's
+-- `service_role` (both bypass Row Level Security). It connects as the
+-- `app_user` role created below, which is a non-superuser, non-owner role —
+-- so every query it runs is subject to the RLS policies defined here, even
+-- if a future bug in the app code forgets to filter by account_id.
+
+-- ── Application role ─────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+    CREATE ROLE app_user WITH LOGIN PASSWORD 'change-me-see-below';
+  END IF;
+END
+$$;
+
+-- ── Session-variable helpers used by every RLS policy ───────────────────
+-- The app sets these per-request with `SET LOCAL` inside a transaction
+-- (see db/client.ts's withAccountScope) before running any query.
+CREATE OR REPLACE FUNCTION app_current_account_id() RETURNS text AS $$
+  SELECT NULLIF(current_setting('app.current_account_id', true), '');
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION app_is_admin() RETURNS boolean AS $$
+  SELECT COALESCE(current_setting('app.is_admin', true), 'false') = 'true';
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION app_current_user_email() RETURNS text AS $$
+  SELECT NULLIF(current_setting('app.current_user_email', true), '');
+$$ LANGUAGE sql STABLE;
+
+-- ── Tables ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_email TEXT NOT NULL UNIQUE,
+  ml_seller_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  sku TEXT,
+  current_price DOUBLE PRECISION,
+  stock INTEGER,
+  permalink TEXT,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (account_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS product_costs (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  product_id TEXT NOT NULL,
+  cost DOUBLE PRECISION NOT NULL,
+  valid_from TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  id TEXT NOT NULL,
+  date_created TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL,
+  buyer_total DOUBLE PRECISION,
+  PRIMARY KEY (account_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  order_id TEXT NOT NULL,
+  product_id TEXT NOT NULL,
+  unit_price DOUBLE PRECISION NOT NULL,
+  quantity INTEGER NOT NULL,
+  ml_commission DOUBLE PRECISION NOT NULL,
+  shipping_cost DOUBLE PRECISION NOT NULL,
+  ads_cost_allocated DOUBLE PRECISION NOT NULL DEFAULT 0,
+  cost_applied DOUBLE PRECISION,
+  net_profit DOUBLE PRECISION
+);
+
+CREATE TABLE IF NOT EXISTS ads_spend (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  product_id TEXT,
+  date DATE NOT NULL,
+  amount DOUBLE PRECISION NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'mercado_ads'
+);
+-- channel: 'mercado_ads' (por producto, sincronizado automático) |
+-- 'meta' | 'google' | 'tiktok' (cargados a mano, a nivel cuenta, product_id NULL)
+
+CREATE TABLE IF NOT EXISTS auth_tokens (
+  account_id TEXT PRIMARY KEY REFERENCES accounts(id),
+  access_token TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_account_order ON order_items(account_id, order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_account_product ON order_items(account_id, product_id);
+CREATE INDEX IF NOT EXISTS idx_product_costs_account_product ON product_costs(account_id, product_id);
+CREATE INDEX IF NOT EXISTS idx_ads_spend_account_date ON ads_spend(account_id, date);
+CREATE INDEX IF NOT EXISTS idx_orders_account_date ON orders(account_id, date_created);
+
+-- ── Row Level Security ───────────────────────────────────────────────────
+-- FORCE (not just ENABLE) matters: without FORCE, the table *owner* still
+-- bypasses RLS. app_user isn't the owner here (whoever runs this script is),
+-- so ENABLE alone would already be enough for app_user — FORCE is added as
+-- belt-and-suspenders in case ownership ever changes.
+
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE accounts FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS accounts_select ON accounts;
+CREATE POLICY accounts_select ON accounts FOR SELECT
+  USING (app_is_admin() OR owner_email = app_current_user_email());
+DROP POLICY IF EXISTS accounts_insert ON accounts;
+CREATE POLICY accounts_insert ON accounts FOR INSERT
+  WITH CHECK (app_is_admin());
+DROP POLICY IF EXISTS accounts_update ON accounts;
+CREATE POLICY accounts_update ON accounts FOR UPDATE
+  USING (app_is_admin() OR owner_email = app_current_user_email())
+  WITH CHECK (app_is_admin() OR owner_email = app_current_user_email());
+
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens']
+  LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_isolation', t);
+    EXECUTE format(
+      'CREATE POLICY %I ON %I USING (account_id = app_current_account_id()) WITH CHECK (account_id = app_current_account_id())',
+      t || '_isolation', t
+    );
+  END LOOP;
+END
+$$;
+
+-- ── Grants ───────────────────────────────────────────────────────────────
+GRANT EXECUTE ON FUNCTION app_current_account_id(), app_is_admin(), app_current_user_email() TO app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_user;

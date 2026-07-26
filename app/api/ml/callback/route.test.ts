@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("@/db/client", () => ({ getDb: vi.fn() }));
+vi.mock("@/db/client", () => ({ withScope: vi.fn() }));
 vi.mock("@/db/tokens", () => ({ saveTokens: vi.fn() }));
 vi.mock("@/db/accounts", () => ({ setAccountMlSellerId: vi.fn() }));
+vi.mock("@/lib/current-account", () => ({ getCurrentUser: vi.fn().mockResolvedValue(null) }));
 
 import { GET } from "./route";
 

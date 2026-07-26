@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import fs from "node:fs";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { nanoid } from "nanoid";
 
 vi.mock("@/mcp/tools", () => ({
   listProducts: vi.fn(),
@@ -8,88 +8,92 @@ vi.mock("@/mcp/tools", () => ({
   getAdsSpend: vi.fn(),
 }));
 
-const TEST_DB_PATH = "./data/test-sync.db";
+const TEST_DATABASE_URL =
+  process.env.TEST_DATABASE_URL || "postgres://app_user:app_user_local_test_pw@localhost:5432/ml_dashboard_test";
 
 describe("runSync", () => {
-  beforeEach(() => {
-    process.env.DB_PATH = TEST_DB_PATH;
-    delete process.env.DATABASE_URL;
-    vi.resetModules();
-    vi.clearAllMocks();
+  beforeAll(() => {
+    process.env.DATABASE_URL = TEST_DATABASE_URL;
   });
-  afterEach(async () => {
-    try {
-      const mod = await import("@/db/client");
-      mod.closeDb();
-    } catch {
-      // Module might not be loaded
-    }
-    if (fs.existsSync(TEST_DB_PATH)) fs.unlinkSync(TEST_DB_PATH);
+
+  afterAll(async () => {
+    const { closeDb } = await import("@/db/client");
+    await closeDb();
   });
+
+  async function makeAccount() {
+    const { withScope } = await import("@/db/client");
+    const { createAccount } = await import("@/db/accounts");
+    return withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta test", `sync.${nanoid(8)}@example.com`));
+  }
 
   it("persists products, orders and a computed net_profit per order item", async () => {
     const { listProducts, listOrders, getOrderDetail, getAdsSpend } = await import("@/mcp/tools");
-    vi.mocked(listProducts).mockResolvedValue([
+    vi.mocked(listProducts).mockResolvedValueOnce([
       { id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url" },
     ]);
-    vi.mocked(listOrders).mockResolvedValue(["ORD1"]);
-    vi.mocked(getOrderDetail).mockResolvedValue({
+    vi.mocked(listOrders).mockResolvedValueOnce(["ORD1"]);
+    vi.mocked(getOrderDetail).mockResolvedValueOnce({
       id: "ORD1",
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 1000,
       items: [{ productId: "MLA1", unitPrice: 1000, quantity: 1, mlCommission: 130, shippingCost: 90 }],
     });
-    vi.mocked(getAdsSpend).mockResolvedValue([{ productId: "MLA1", date: "2026-01-10", amount: 50 }]);
+    vi.mocked(getAdsSpend).mockResolvedValueOnce([{ productId: "MLA1", date: "2026-01-10", amount: 50 }]);
 
-    const { getDb } = await import("@/db/client");
-    const { createAccount } = await import("@/db/accounts");
-    const db = await getDb();
-    const account = await createAccount(db, "Cuenta test", "owner@example.com");
-    await db.execute({
-      sql: `INSERT INTO product_costs (account_id, product_id, cost, valid_from) VALUES (?, ?, ?, ?)`,
-      args: [account.id, "MLA1", 300, "2026-01-01"],
-    });
-
+    const { withScope } = await import("@/db/client");
     const { runSync } = await import("./sync-service");
-    const result = await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
+    const account = await makeAccount();
+
+    const result = await withScope({ accountId: account.id }, async (client) => {
+      await client.query(`INSERT INTO product_costs (account_id, product_id, cost, valid_from) VALUES ($1, $2, $3, $4)`, [
+        account.id,
+        "MLA1",
+        300,
+        "2026-01-01",
+      ]);
+      return runSync(client, account.id, "SELLER1", "2026-01-01T00:00:00Z");
+    });
 
     expect(result).toEqual({ productsSynced: 1, ordersSynced: 1, adsRowsSynced: 1 });
 
-    const itemResult = await db.execute({
-      sql: `SELECT * FROM order_items WHERE account_id = ? AND order_id = 'ORD1'`,
-      args: [account.id],
+    const item = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ net_profit: number; cost_applied: number }>(
+        `SELECT * FROM order_items WHERE account_id = $1 AND order_id = 'ORD1'`,
+        [account.id]
+      );
+      return r.rows[0];
     });
-    const item = itemResult.rows[0] as any;
-    expect(item.net_profit).toBe(430); // 1000 - 130 - 90 - 50 - 300
-    expect(item.cost_applied).toBe(300);
+    expect(Number(item.net_profit)).toBe(430); // 1000 - 130 - 90 - 50 - 300
+    expect(Number(item.cost_applied)).toBe(300);
   });
 
   it("leaves net_profit null when the product has no cost loaded", async () => {
     const { listProducts, listOrders, getOrderDetail, getAdsSpend } = await import("@/mcp/tools");
-    vi.mocked(listProducts).mockResolvedValue([]);
-    vi.mocked(listOrders).mockResolvedValue(["ORD2"]);
-    vi.mocked(getOrderDetail).mockResolvedValue({
+    vi.mocked(listProducts).mockResolvedValueOnce([]);
+    vi.mocked(listOrders).mockResolvedValueOnce(["ORD2"]);
+    vi.mocked(getOrderDetail).mockResolvedValueOnce({
       id: "ORD2",
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 500,
       items: [{ productId: "MLA2", unitPrice: 500, quantity: 1, mlCommission: 65, shippingCost: 90 }],
     });
-    vi.mocked(getAdsSpend).mockResolvedValue([]);
+    vi.mocked(getAdsSpend).mockResolvedValueOnce([]);
 
-    const { getDb } = await import("@/db/client");
-    const { createAccount } = await import("@/db/accounts");
-    const db = await getDb();
-    const account = await createAccount(db, "Cuenta test", "owner@example.com");
+    const { withScope } = await import("@/db/client");
     const { runSync } = await import("./sync-service");
-    await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
+    const account = await makeAccount();
+    await withScope({ accountId: account.id }, (client) => runSync(client, account.id, "SELLER1", "2026-01-01T00:00:00Z"));
 
-    const itemResult = await db.execute({
-      sql: `SELECT * FROM order_items WHERE account_id = ? AND order_id = 'ORD2'`,
-      args: [account.id],
+    const item = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ net_profit: number | null; cost_applied: number | null }>(
+        `SELECT * FROM order_items WHERE account_id = $1 AND order_id = 'ORD2'`,
+        [account.id]
+      );
+      return r.rows[0];
     });
-    const item = itemResult.rows[0] as any;
     expect(item.net_profit).toBeNull();
     expect(item.cost_applied).toBeNull();
   });
@@ -107,51 +111,53 @@ describe("runSync", () => {
     });
     vi.mocked(getAdsSpend).mockResolvedValue([]);
 
-    const { getDb } = await import("@/db/client");
-    const { createAccount } = await import("@/db/accounts");
-    const db = await getDb();
-    const account = await createAccount(db, "Cuenta test", "owner@example.com");
+    const { withScope } = await import("@/db/client");
     const { runSync } = await import("./sync-service");
-    await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
-    await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
+    const account = await makeAccount();
+    await withScope({ accountId: account.id }, (client) => runSync(client, account.id, "SELLER1", "2026-01-01T00:00:00Z"));
+    await withScope({ accountId: account.id }, (client) => runSync(client, account.id, "SELLER1", "2026-01-01T00:00:00Z"));
 
-    const countResult = await db.execute({
-      sql: `SELECT COUNT(*) as c FROM order_items WHERE account_id = ? AND order_id = 'ORD3'`,
-      args: [account.id],
+    const count = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ c: string }>(
+        `SELECT COUNT(*) as c FROM order_items WHERE account_id = $1 AND order_id = 'ORD3'`,
+        [account.id]
+      );
+      return Number(r.rows[0].c);
     });
-    expect(Number((countResult.rows[0] as any).c)).toBe(1);
+    expect(count).toBe(1);
   });
 
   it("keeps products and orders synced even when getAdsSpend fails", async () => {
     const { listProducts, listOrders, getOrderDetail, getAdsSpend } = await import("@/mcp/tools");
-    vi.mocked(listProducts).mockResolvedValue([
+    vi.mocked(listProducts).mockResolvedValueOnce([
       { id: "MLA4", title: "Producto 4", sku: null, price: 100, stock: 1, permalink: "url" },
     ]);
-    vi.mocked(listOrders).mockResolvedValue(["ORD4"]);
-    vi.mocked(getOrderDetail).mockResolvedValue({
+    vi.mocked(listOrders).mockResolvedValueOnce(["ORD4"]);
+    vi.mocked(getOrderDetail).mockResolvedValueOnce({
       id: "ORD4",
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 100,
       items: [{ productId: "MLA4", unitPrice: 100, quantity: 1, mlCommission: 13, shippingCost: 20 }],
     });
-    vi.mocked(getAdsSpend).mockRejectedValue(new Error("Ads API no disponible"));
+    vi.mocked(getAdsSpend).mockRejectedValueOnce(new Error("Ads API no disponible"));
 
-    const { getDb } = await import("@/db/client");
-    const { createAccount } = await import("@/db/accounts");
-    const db = await getDb();
-    const account = await createAccount(db, "Cuenta test", "owner@example.com");
+    const { withScope } = await import("@/db/client");
     const { runSync } = await import("./sync-service");
+    const account = await makeAccount();
 
-    const result = await runSync(db, account.id, "SELLER1", "2026-01-01T00:00:00Z");
+    const result = await withScope({ accountId: account.id }, (client) =>
+      runSync(client, account.id, "SELLER1", "2026-01-01T00:00:00Z")
+    );
 
     expect(result.productsSynced).toBe(1);
     expect(result.ordersSynced).toBe(1);
     expect(result.adsRowsSynced).toBe(0);
-    const orderResult = await db.execute({
-      sql: `SELECT * FROM orders WHERE account_id = ? AND id = 'ORD4'`,
-      args: [account.id],
+
+    const order = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query(`SELECT * FROM orders WHERE account_id = $1 AND id = 'ORD4'`, [account.id]);
+      return r.rows[0];
     });
-    expect(orderResult.rows[0]).toBeTruthy();
+    expect(order).toBeTruthy();
   });
 });

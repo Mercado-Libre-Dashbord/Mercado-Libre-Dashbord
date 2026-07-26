@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/db/client", () => ({ getDb: vi.fn() }));
+vi.mock("@/db/client", () => ({ withScope: vi.fn() }));
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 
 import { GET } from "./route";
-import { getDb } from "@/db/client";
+import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
 const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", createdAt: "2026-01-01" };
@@ -23,7 +23,7 @@ describe("GET /api/summary", () => {
   });
 
   it("computes derived KPIs from the raw totals and manual ad spend", async () => {
-    const execute = vi.fn().mockImplementation(async ({ sql }: { sql: string }) => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
       if (sql.includes("ads_spend")) {
         return { rows: [{ total: 200 }] };
       }
@@ -43,7 +43,7 @@ describe("GET /api/summary", () => {
         ],
       };
     });
-    vi.mocked(getDb).mockResolvedValue({ execute } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
 
     const request = { nextUrl: { searchParams: new URLSearchParams() } } as any;
     const body = await (await GET(request)).json();
@@ -58,7 +58,7 @@ describe("GET /api/summary", () => {
   });
 
   it("returns zeroed rates instead of dividing by zero when there is no data", async () => {
-    const execute = vi.fn().mockImplementation(async ({ sql }: { sql: string }) => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
       if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
       return {
         rows: [
@@ -76,7 +76,7 @@ describe("GET /api/summary", () => {
         ],
       };
     });
-    vi.mocked(getDb).mockResolvedValue({ execute } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
 
     const request = { nextUrl: { searchParams: new URLSearchParams() } } as any;
     const body = await (await GET(request)).json();

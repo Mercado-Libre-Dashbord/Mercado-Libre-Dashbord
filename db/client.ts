@@ -1,42 +1,59 @@
-import { createClient, type Client } from "@libsql/client";
-import fs from "node:fs";
-import path from "node:path";
+import { Pool, type PoolClient } from "pg";
 
-let client: Client | null = null;
-let schemaReady: Promise<void> | null = null;
+let pool: Pool | null = null;
 
-function resolveUrl(): string {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  const dbPath = process.env.DB_PATH || "./data/ml-dashboard.db";
-  const dir = path.dirname(dbPath);
-  if (dir && dir !== ".") fs.mkdirSync(dir, { recursive: true });
-  return `file:${dbPath}`;
-}
-
-async function applySchema(db: Client): Promise<void> {
-  const schema = fs.readFileSync(path.join(process.cwd(), "db", "schema.sql"), "utf-8");
-  await db.executeMultiple(schema);
-}
-
-export async function getDb(): Promise<Client> {
-  if (!client) {
-    client = createClient({
-      url: resolveUrl(),
-      authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
-    });
+function getPool(): Pool {
+  if (!pool) {
+    pool = new Pool({ connectionString: process.env.DATABASE_URL });
   }
-  if (!schemaReady) {
-    schemaReady = applySchema(client);
-  }
-  await schemaReady;
-  return client;
+  return pool;
 }
 
-// For testing purposes - close and reset the database connection
-export function closeDb(): void {
-  if (client) {
-    client.close();
-    client = null;
-    schemaReady = null;
+/** Minimal shape both `Pool` and `PoolClient` satisfy — lets db/*.ts helpers
+ * accept either without depending on pg's exact types. */
+export interface QueryExecutor {
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>;
+}
+
+export interface ScopeContext {
+  /** Which account's rows RLS policies should allow. Omit for admin-only
+   * lookups against the `accounts` table itself (e.g. listing all accounts). */
+  accountId?: string | null;
+  isAdmin?: boolean;
+  userEmail?: string | null;
+}
+
+/**
+ * Runs `fn` inside a transaction with the app.* session variables set via
+ * `SET LOCAL` (through `set_config(..., true)`), so every RLS policy in
+ * db/postgres/schema.sql sees the right account/admin/email for this
+ * request only. Always BEGIN/COMMIT (or ROLLBACK) — `SET LOCAL` outside an
+ * explicit transaction is a no-op on the next statement, and a pooled
+ * connection could otherwise leak scope into the next request that reuses it.
+ */
+export async function withScope<T>(ctx: ScopeContext, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_account_id', $1, true)", [ctx.accountId ?? ""]);
+    await client.query("SELECT set_config('app.is_admin', $1, true)", [ctx.isAdmin ? "true" : "false"]);
+    await client.query("SELECT set_config('app.current_user_email', $1, true)", [ctx.userEmail ?? ""]);
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// For testing purposes - close and reset the pool.
+export async function closeDb(): Promise<void> {
+  if (pool) {
+    const p = pool;
+    pool = null;
+    await p.end();
   }
 }

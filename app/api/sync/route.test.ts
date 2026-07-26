@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/db/client", () => ({ getDb: vi.fn() }));
+vi.mock("@/db/client", () => ({ withScope: vi.fn() }));
 vi.mock("@/sync/sync-service", () => ({ runSync: vi.fn() }));
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 
 import { POST } from "./route";
-import { getDb } from "@/db/client";
+import { withScope } from "@/db/client";
 import { runSync } from "@/sync/sync-service";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
@@ -42,9 +42,8 @@ describe("POST /api/sync", () => {
       mlSellerId: "SELLER1",
       createdAt: "2026-01-01T00:00:00Z",
     });
-    vi.mocked(getDb).mockResolvedValue({
-      execute: async () => ({ rows: [{ latest: "2026-01-01T00:00:00Z" }] }),
-    } as any);
+    const query = vi.fn().mockResolvedValue({ rows: [{ latest: "2026-01-01T00:00:00Z" }] });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
     vi.mocked(runSync).mockResolvedValue({ productsSynced: 1, ordersSynced: 2, adsRowsSynced: 0 });
 
     const res = await POST();
@@ -60,9 +59,8 @@ describe("POST /api/sync", () => {
       mlSellerId: "SELLER1",
       createdAt: "2026-01-01T00:00:00Z",
     });
-    vi.mocked(getDb).mockResolvedValue({
-      execute: async () => ({ rows: [{ latest: null }] }),
-    } as any);
+    const query = vi.fn().mockResolvedValue({ rows: [{ latest: null }] });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
     vi.mocked(runSync).mockRejectedValue(new Error("boom"));
 
     const res = await POST();

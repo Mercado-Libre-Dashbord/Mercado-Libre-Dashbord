@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/db/client";
+import { withScope } from "@/db/client";
 import { runSync } from "@/sync/sync-service";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
@@ -15,15 +15,16 @@ export async function POST() {
     );
   }
 
-  const db = await getDb();
-  const sinceResult = await db.execute({
-    sql: `SELECT MAX(date_created) as latest FROM orders WHERE account_id = ?`,
-    args: [account.id],
-  });
-  const latest = (sinceResult.rows[0] as any)?.latest as string | null;
-  const sinceIso = latest ?? "2020-01-01T00:00:00Z";
   try {
-    const result = await runSync(db, account.id, account.mlSellerId, sinceIso);
+    const result = await withScope({ accountId: account.id }, async (client) => {
+      const sinceResult = await client.query<{ latest: string | Date | null }>(
+        `SELECT MAX(date_created) as latest FROM orders WHERE account_id = $1`,
+        [account.id]
+      );
+      const latest = sinceResult.rows[0]?.latest ?? null;
+      const sinceIso = latest ? new Date(latest).toISOString() : "2020-01-01T00:00:00Z";
+      return runSync(client, account.id, account.mlSellerId!, sinceIso);
+    });
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

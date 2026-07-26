@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/db/client";
+import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
@@ -18,14 +18,17 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const from = searchParams.get("from") ?? "1970-01-01";
   const to = searchParams.get("to") ?? "9999-12-31";
-  const db = await getDb();
-  const result = await db.execute({
-    sql: `SELECT id, date, amount, channel FROM ads_spend
-          WHERE account_id = ? AND channel != 'mercado_ads' AND date BETWEEN ? AND ?
-          ORDER BY date DESC`,
-    args: [account.id, from, to],
+
+  const rows = await withScope({ accountId: account.id }, async (client) => {
+    const result = await client.query(
+      `SELECT id, date, amount, channel FROM ads_spend
+       WHERE account_id = $1 AND channel != 'mercado_ads' AND date BETWEEN $2::date AND $3::date
+       ORDER BY date DESC`,
+      [account.id, from, to]
+    );
+    return result.rows;
   });
-  return NextResponse.json(result.rows);
+  return NextResponse.json(rows);
 }
 
 export async function POST(request: NextRequest) {
@@ -45,10 +48,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "amount debe ser un número >= 0" }, { status: 400 });
   }
 
-  const db = await getDb();
-  await db.execute({
-    sql: `INSERT INTO ads_spend (account_id, product_id, date, amount, channel) VALUES (?, NULL, ?, ?, ?)`,
-    args: [account.id, date, amount, channel],
-  });
+  await withScope({ accountId: account.id }, (client) =>
+    client.query(`INSERT INTO ads_spend (account_id, product_id, date, amount, channel) VALUES ($1, NULL, $2, $3, $4)`, [
+      account.id,
+      date,
+      amount,
+      channel,
+    ])
+  );
   return NextResponse.json({ ok: true });
 }

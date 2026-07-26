@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/db/client", () => ({ getDb: async () => ({}) }));
+vi.mock("@/db/client", () => ({ withScope: (ctx: unknown, fn: (client: unknown) => unknown) => fn({}) }));
 vi.mock("@/db/tokens", () => ({ getTokens: vi.fn(), saveTokens: vi.fn() }));
 vi.mock("./ml-client", () => ({ refreshAccessToken: vi.fn() }));
 
