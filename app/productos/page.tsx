@@ -80,10 +80,10 @@ export default function ProductosPage() {
                 <tr key={p.id}>
                   <td>{p.title}</td>
                   <td>{p.sku ?? "-"}</td>
-                  <td className="num">{p.currentPrice}</td>
+                  <td className="num">{p.currentPrice?.toFixed(2)}</td>
                   <td className="num">{p.stock}</td>
                   <td className={`num ${p.currentCost === null ? "missing-cost" : ""}`}>
-                    {p.currentCost === null ? "Sin costo cargado" : p.currentCost}
+                    {p.currentCost === null ? "Sin costo cargado" : p.currentCost.toFixed(2)}
                   </td>
                   <td className="num">{p.marginPct === null ? "-" : `${(p.marginPct * 100).toFixed(1)}%`}</td>
                   <td className="num">{p.unitsSold}</td>

@@ -109,13 +109,13 @@ export default function VentasPage() {
                   <td>{new Date(it.dateCreated).toLocaleDateString("es-AR")}</td>
                   <td>{it.estadoPago}</td>
                   <td>{it.productTitle}</td>
-                  <td className="num">{it.unitPrice}</td>
+                  <td className="num">{it.unitPrice.toFixed(2)}</td>
                   <td className="num">{it.quantity}</td>
-                  <td className="num">{it.mlCommission}</td>
-                  <td className="num">{it.shippingCost}</td>
+                  <td className="num">{it.mlCommission.toFixed(2)}</td>
+                  <td className="num">{it.shippingCost.toFixed(2)}</td>
                   <td className="num">{it.adsCostAllocated.toFixed(2)}</td>
                   <td className={`num ${it.costApplied === null ? "missing-cost" : ""}`}>
-                    {it.costApplied ?? "Sin costo"}
+                    {it.costApplied === null ? "Sin costo" : it.costApplied.toFixed(2)}
                   </td>
                   <td className="num">{it.netProfit === null ? "-" : it.netProfit.toFixed(2)}</td>
                 </tr>
