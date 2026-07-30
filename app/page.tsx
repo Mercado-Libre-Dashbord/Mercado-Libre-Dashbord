@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { SyncButton } from "./SyncButton";
+import { NoAccountState } from "./NoAccountState";
 
 interface Summary {
   orders: number;
@@ -119,21 +120,41 @@ export default function HomePage() {
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
   const [mlConnected, setMlConnected] = useState<boolean | null>(null);
+  const [noAccount, setNoAccount] = useState(false);
 
   const { from, to } = rangeForPeriod(period, customFrom, customTo);
 
   function loadAll() {
-    fetch(`/api/summary?from=${from}&to=${to}`).then((r) => r.json()).then(setSummary);
-    fetch("/api/orders").then((r) => r.json()).then((rows: OrderLine[]) => setLastOrder(rows[0] ?? null));
-    fetch("/api/orders?groupBy=order").then((r) => r.json()).then(setOrders);
+    fetch(`/api/summary?from=${from}&to=${to}`).then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then(setSummary);
+    });
+    fetch("/api/orders").then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then((rows: OrderLine[]) => setLastOrder(rows[0] ?? null));
+    });
+    fetch("/api/orders?groupBy=order").then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then(setOrders);
+    });
   }
 
   useEffect(loadAll, [from, to]);
   useEffect(() => {
-    fetch("/api/account/me")
-      .then((r) => r.json())
-      .then((data) => setMlConnected(Boolean(data.mlConnected)));
+    fetch("/api/account/me").then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then((data) => setMlConnected(Boolean(data.mlConnected)));
+    });
   }, []);
+
+  if (noAccount) {
+    return (
+      <div>
+        <h1>Resumen de cuenta</h1>
+        <NoAccountState />
+      </div>
+    );
+  }
 
   async function submitAdSpend(e: React.FormEvent) {
     e.preventDefault();

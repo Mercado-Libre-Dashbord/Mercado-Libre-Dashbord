@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { NoAccountState } from "../NoAccountState";
 
 interface Product {
   id: string;
@@ -19,14 +20,25 @@ export default function ProductosPage() {
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [noAccount, setNoAccount] = useState(false);
 
   function load() {
-    fetch("/api/products")
-      .then((r) => r.json())
-      .then(setProducts);
+    fetch("/api/products").then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then(setProducts);
+    });
   }
 
   useEffect(load, []);
+
+  if (noAccount) {
+    return (
+      <div>
+        <h1>Productos</h1>
+        <NoAccountState />
+      </div>
+    );
+  }
 
   async function saveCost(productId: string) {
     const raw = editing[productId] ?? "";

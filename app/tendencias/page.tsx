@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from "recharts";
+import { NoAccountState } from "../NoAccountState";
 
 interface MonthlyPoint {
   month: string;
@@ -10,12 +11,23 @@ interface MonthlyPoint {
 
 export default function TendenciasPage() {
   const [data, setData] = useState<MonthlyPoint[] | null>(null);
+  const [noAccount, setNoAccount] = useState(false);
 
   useEffect(() => {
-    fetch("/api/summary?groupBy=month")
-      .then((r) => r.json())
-      .then(setData);
+    fetch("/api/summary?groupBy=month").then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then(setData);
+    });
   }, []);
+
+  if (noAccount) {
+    return (
+      <div>
+        <h1>Tendencias</h1>
+        <NoAccountState />
+      </div>
+    );
+  }
 
   return (
     <div>

@@ -192,6 +192,60 @@ Order, Total Neto (suma de `net_profit` de sus líneas). La columna "Camino de
 compra" de la referencia (atribución de marketing) queda fuera de alcance: no
 tenemos fuente de datos de atribución y no se va a inventar.
 
+## Adenda: alertas de stock Full y paridad con Escalafy (roadmap post-v1)
+
+El usuario pidió, sobre la base de la referencia visual de Escalafy ya usada en la
+adenda anterior, cubrir como mínimo las mismas features que ofrece esa app. Esto
+queda anotado como roadmap — no se implementa en esta sesión, es para después de
+que el deploy esté funcionando.
+
+### Lo que Escalafy ofrece (relevado 2026-07-28)
+
+- Centraliza ventas de Tiendanube, Shopify y Mercado Libre en un solo dashboard.
+- Gasto de Meta, Google y TikTok Ads centralizado junto con el orgánico.
+- Gestor de costos automático: producto, envío, comisión (por categoría/publicación,
+  incluyendo Full específicamente), cuotas de Mercado Pago, impuestos/retenciones,
+  agencia, descuentos.
+- Ganancia real por día, margen por SKU.
+- Alertas de reposición: avisa antes de quedarse sin stock, según velocidad de venta.
+- Alta en menos de 15 minutos.
+
+### Qué ya cubrimos (sin cambios)
+
+- Ganancia por producto y por cuenta, con costo versionado por fecha.
+- Publicidad: Mercado Ads automático (prorrateado por producto) + Meta/Google/TikTok
+  a mano, a nivel cuenta (ver adenda anterior sobre por qué no es por API).
+- Multi-cuenta con aislamiento real (RLS), login por cliente.
+- Multi-canal (Tiendanube/Shopify) queda **fuera de alcance a propósito** — este
+  producto es específicamente para vendedores de Mercado Libre, no un ERP
+  multi-canal genérico. No se considera un gap a cerrar.
+
+### Features nuevas a construir para alcanzar paridad
+
+1. **Alertas de stock bajo en Full** (pedido explícito del usuario, 2026-07-28).
+   - El dato de stock que ya trae `listProducts` (`available_quantity`) sirve tal
+     cual para productos Full — Mercado Libre ya refleja el stock del depósito Full
+     en ese mismo campo. Falta sumar `shipping.logistic_type` a la respuesta para
+     distinguir qué productos son Full (vs. despacho propio) y no alertar sobre
+     productos que no son Full.
+   - Falta un umbral configurable por producto ("avisame si baja de X unidades"),
+     guardado por cuenta — nueva columna/tabla, con su propia política RLS igual
+     que el resto.
+   - Canal de aviso — decisión pendiente para cuando se construya:
+     - v1 barato: banner en Resumen, visible la próxima vez que el dueño entra a
+       la app. No requiere infraestructura nueva.
+     - v2: email real (llega sin que el dueño abra la app), requiere sumar un
+       proveedor de envío de mails (ej. Resend) — pieza nueva del stack.
+2. **Alertas de reposición por velocidad de venta** (no solo umbral fijo): estimar
+   cuántos días de stock quedan según el ritmo de ventas reciente, no solo
+   "quedan N unidades". Depende de (1).
+3. **Desglose de costo más fino** (comisión por categoría/publicación, cuotas de
+   Mercado Pago, impuestos/retenciones) — hoy el costo es un único número por
+   producto, por decisión explícita ya tomada (ver "Decisiones abiertas descartadas
+   explícitamente" más abajo). Si se persigue paridad total con Escalafy en este
+   punto, implica revisar esa decisión — no se toca sin confirmarlo de nuevo con
+   el usuario primero, porque ya se descartó una vez a propósito por simplicidad.
+
 ## Decisiones abiertas descartadas explícitamente
 
 - No se versiona el costo con reglas complejas de prorrateo entre costos (ej.

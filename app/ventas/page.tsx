@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { NoAccountState } from "../NoAccountState";
 
 interface OrderItem {
   id: number;
@@ -27,11 +28,13 @@ export default function VentasPage() {
   const [items, setItems] = useState<OrderItem[] | null>(null);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [filters, setFilters] = useState({ productId: "", from: "", to: "", status: "" });
+  const [noAccount, setNoAccount] = useState(false);
 
   useEffect(() => {
-    fetch("/api/products")
-      .then((r) => r.json())
-      .then((rows: ProductOption[]) => setProducts(rows));
+    fetch("/api/products").then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then((rows: ProductOption[]) => setProducts(rows));
+    });
   }, []);
 
   useEffect(() => {
@@ -41,10 +44,20 @@ export default function VentasPage() {
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
     if (filters.status) params.set("status", filters.status);
-    fetch(`/api/orders?${params.toString()}`)
-      .then((r) => r.json())
-      .then(setItems);
+    fetch(`/api/orders?${params.toString()}`).then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then(setItems);
+    });
   }, [filters]);
+
+  if (noAccount) {
+    return (
+      <div>
+        <h1>Ventas</h1>
+        <NoAccountState />
+      </div>
+    );
+  }
 
   return (
     <div>
