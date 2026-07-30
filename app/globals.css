@@ -1,22 +1,25 @@
-/* Palette from ui-ux-pro-max's "Financial Dashboard" product match: deep
-   navy (not flat grey-black) + a trust-blue accent kept separate from the
-   semantic profit/loss colors, so a blue button never gets confused with a
-   green "profit" number or a red "loss" one. */
+/* Palette from ui-ux-pro-max's "Micro SaaS" product match (light violet/
+   indigo) — the look the user pointed at directly with a reference image:
+   white cards on a soft lavender page background, one indigo accent kept
+   separate from the semantic profit/loss colors so a button never reads
+   as a profit or loss number. */
 :root {
-  --bg: #020617;
-  --surface: #0e1223;
-  --surface-2: #1a1e2f;
-  --border: #263449;
-  --text: #f8fafc;
-  --text-dim: #94a3b8;
-  --accent: #3b82f6;
-  /* Darker than --accent: white text on --accent alone measures ~3.7:1 (fails
-     WCAG AA 4.5:1 for normal text). Use this for solid button fills. */
-  --accent-strong: #2563eb;
-  --accent-strong-hover: #1d4ed8;
-  --positive: #22c55e;
-  --negative: #ef4444;
-  --focus-ring: #60a5fa;
+  --bg: #f5f3ff;
+  --surface: #ffffff;
+  --surface-2: #ebeffb;
+  --border: #e0e7ff;
+  --text: #1e1b4b;
+  /* Darker than the tool's literal muted-foreground (#64748b): that value
+     measures ~4.3:1 on this background, just under WCAG AA 4.5:1. */
+  --text-dim: #475569;
+  --accent: #6366f1;
+  /* Darker than --accent: white text on --accent alone measures ~4.5:1
+     right at the edge. Use this for solid button fills and any accent text. */
+  --accent-strong: #4f46e5;
+  --accent-strong-hover: #4338ca;
+  --positive: #15803d;
+  --negative: #b91c1c;
+  --focus-ring: #4f46e5;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -29,18 +32,16 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 2px rgba(30, 27, 75, 0.06);
+  --shadow-md: 0 8px 24px rgba(30, 27, 75, 0.1);
 
   --duration-fast: 150ms;
   --duration-base: 200ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
-  --font-sans: var(--font-fira-sans), system-ui, -apple-system, sans-serif;
-  /* Reserved for numbers: prices, dates, ids, table figures — anywhere
-     digits need to line up column-to-column instead of just reading well
-     in a sentence. */
-  --font-mono: var(--font-fira-code), ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+
+  --sidebar-width: 240px;
 }
 
 * { box-sizing: border-box; }
@@ -56,7 +57,8 @@ body {
   color: var(--text);
 }
 
-main { max-width: 1100px; margin: 0 auto; padding: var(--space-5) var(--space-4) var(--space-6); }
+.app-shell { display: flex; min-height: 100dvh; }
+main { flex: 1 1 auto; min-width: 0; max-width: 1320px; padding: var(--space-5) var(--space-6) var(--space-6); }
 
 a { color: inherit; }
 
@@ -71,37 +73,68 @@ select:focus-visible,
   border-radius: var(--radius-sm);
 }
 
-nav {
+/* ---- sidebar ---- */
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+.sidebar-brand { display: flex; align-items: center; gap: 10px; }
+.sidebar-mark {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-strong);
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-  row-gap: var(--space-2);
+  justify-content: center;
 }
-nav a {
-  color: var(--text);
+.sidebar-brand-text { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+
+.sidebar-account { padding: var(--space-3) 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.sidebar-account label { display: flex; flex-direction: column; gap: 4px; }
+.sidebar-account-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+.sidebar-account select { width: 100%; }
+
+.sidebar-links { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
   text-decoration: none;
   font-weight: 500;
-  padding: var(--space-2) 0;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
+  font-size: 14px;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-nav a:hover { color: var(--accent); }
-nav .nav-spacer { flex: 1 1 auto; }
-nav .nav-user {
+.sidebar-link:hover { background: var(--surface-2); color: var(--text); }
+.sidebar-link.active { background: rgba(79, 70, 229, 0.1); color: var(--accent-strong); font-weight: 600; }
+
+.sidebar-spacer { flex: 1 1 auto; }
+.sidebar-user { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.sidebar-user-email {
+  font-size: 12px;
   color: var(--text-dim);
-  font-size: 13px;
+  max-width: 190px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 220px;
 }
 
-h1 { font-weight: 700; }
+h1 { font-weight: 800; letter-spacing: -0.01em; }
 h2.section-title {
   font-size: 14px;
   text-transform: uppercase;
@@ -120,9 +153,8 @@ h2.section-title {
 table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 560px; }
 th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 tbody tr:last-child td { border-bottom: none; }
-th { color: var(--text-dim); font-weight: 500; font-size: 13px; white-space: nowrap; }
-td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-th.num { text-align: right; }
+th { color: var(--text-dim); font-weight: 600; font-size: 13px; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tbody tr { transition: background-color var(--duration-fast) var(--ease-out); }
 tbody tr:hover { background: var(--surface-2); }
 
@@ -139,14 +171,14 @@ tbody tr:hover { background: var(--surface-2); }
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--space-4);
-  transition: border-color var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
 }
-.kpi-card:hover { border-color: var(--accent-strong); }
+.kpi-card:hover { border-color: var(--accent); box-shadow: var(--shadow-md); }
 .kpi-card .label { color: var(--text-dim); font-size: 13px; }
 .kpi-card .value {
-  font-family: var(--font-mono);
   font-size: 22px;
-  font-weight: 600;
+  font-weight: 700;
   margin-top: var(--space-1);
   font-variant-numeric: tabular-nums;
 }
@@ -171,23 +203,23 @@ tbody tr:hover { background: var(--surface-2); }
 }
 
 .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-.badge-paid { background: rgba(34, 197, 94, 0.15); color: var(--positive); }
-.badge-other { background: rgba(148, 163, 184, 0.15); color: var(--text-dim); }
+.badge-paid { background: rgba(21, 128, 61, 0.12); color: var(--positive); }
+.badge-other { background: rgba(71, 85, 105, 0.12); color: var(--text-dim); }
 
-.waterfall-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: var(--space-5); }
+.waterfall-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: var(--space-5); box-shadow: var(--shadow-sm); }
 .waterfall-row { display: grid; grid-template-columns: 110px 1fr 90px; align-items: center; gap: var(--space-3); margin: var(--space-2) 0; font-size: 13px; }
-.waterfall-row span:last-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.waterfall-row span:last-child { font-variant-numeric: tabular-nums; }
 .waterfall-track { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
 .waterfall-fill { height: 100%; border-radius: 4px; transition: width var(--duration-base) var(--ease-out); }
 .waterfall-fill.negative { background: var(--negative); }
 .waterfall-fill.positive { background: var(--positive); }
 
-.ad-form { display: flex; gap: var(--space-2); align-items: flex-end; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); margin-bottom: var(--space-5); flex-wrap: wrap; }
+.ad-form { display: flex; gap: var(--space-2); align-items: flex-end; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); margin-bottom: var(--space-5); flex-wrap: wrap; box-shadow: var(--shadow-sm); }
 .ad-form label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-dim); gap: var(--space-1); }
 .ad-form .field-group { display: flex; flex-direction: column; gap: var(--space-1); }
 .ad-form input, .ad-form select,
 input[type="text"], input[type="number"], input[type="date"], input[type="email"], select {
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text);
   padding: 9px 10px;
@@ -228,13 +260,14 @@ input[type="text"], input[type="number"], input[type="date"], input[type="email"
    hides itself while unauthenticated). Kept visually quiet on purpose —
    this is a threshold, not a place to sell features. */
 .login-shell {
-  min-height: calc(100dvh - var(--space-5) - var(--space-6));
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-4);
   text-align: center;
+  padding: var(--space-5);
 }
 .login-card {
   width: 100%;
@@ -268,17 +301,17 @@ input[type="text"], input[type="number"], input[type="date"], input[type="email"
 }
 .google-btn {
   width: 100%;
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
 }
-.google-btn:hover:not(:disabled) { border-color: var(--accent-strong); background: #24242c; }
+.google-btn:hover:not(:disabled) { border-color: var(--accent-strong); background: var(--surface-2); }
 .google-btn-spinner {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
+  border: 2px solid rgba(30, 27, 75, 0.15);
+  border-top-color: var(--accent-strong);
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -308,10 +341,27 @@ input[type="text"], input[type="number"], input[type="date"], input[type="email"
   margin: 0;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 860px) {
+  .app-shell { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: var(--space-3) var(--space-4);
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+  .sidebar-account { border: none; padding: 0; }
+  .sidebar-links { flex-direction: row; flex-wrap: wrap; }
+  .sidebar-spacer { display: none; }
+  .sidebar-user { flex-direction: row; align-items: center; border: none; padding: 0; margin-left: auto; }
+  .sidebar-user-email { max-width: 110px; }
   main { padding: var(--space-4) var(--space-3) var(--space-5); }
   .waterfall-row { grid-template-columns: 90px 1fr 70px; font-size: 12px; }
-  nav .nav-user { max-width: 120px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
