@@ -2,19 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { saveTokens } from "@/db/tokens";
 import { setAccountMlSellerId } from "@/db/accounts";
-import { getCurrentUser } from "@/lib/current-account";
+import { getCurrentUser, resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
-  const accountId = request.nextUrl.searchParams.get("state");
+  const stateAccountId = request.nextUrl.searchParams.get("state");
   if (!code) {
     return NextResponse.json({ error: "Missing authorization code" }, { status: 400 });
   }
-  if (!accountId) {
+  if (!stateAccountId) {
     return NextResponse.json({ error: "Missing state (account id)" }, { status: 400 });
   }
+
+  // El `state` viaja por una URL que Mercado Libre controla y devuelve tal
+  // cual — nunca es una prueba de identidad por sí solo. Antes de usarlo,
+  // confirmamos que corresponde a la cuenta real de quien está logueado
+  // ahora mismo (o a la cuenta que el admin tiene seleccionada), para que
+  // nadie pueda pisar el token de otra cuenta armando este `state` a mano.
+  const account = await resolveCurrentAccount();
+  if (!account || account.id !== stateAccountId) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  const accountId = account.id;
 
   const res = await fetch("https://api.mercadolibre.com/oauth/token", {
     method: "POST",
