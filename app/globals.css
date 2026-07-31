@@ -185,6 +185,59 @@ tbody tr:hover { background: var(--surface-2); }
 .missing-cost { color: var(--negative); font-weight: 600; }
 .success-text { color: var(--positive); font-weight: 600; }
 
+/* Resultado del día */
+.day-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.day-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.day-mark {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.day-title { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+.day-tabs { display: inline-flex; gap: 2px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 3px; margin-bottom: var(--space-5); }
+.day-tab {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  min-height: 32px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.day-tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.day-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-5); }
+.day-kpi .label { color: var(--text-dim); font-size: 13px; }
+.day-kpi-value { font-size: 26px; font-weight: 700; margin-top: var(--space-1); font-variant-numeric: tabular-nums; }
+.day-kpi-value.positive { color: var(--positive); }
+.delta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--space-2);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.delta-pill.up { background: rgba(21, 128, 61, 0.12); color: var(--positive); }
+.delta-pill.down { background: rgba(185, 28, 28, 0.12); color: var(--negative); }
+
 /* Skeleton loading placeholder: subtle shimmer, disabled entirely under
    prefers-reduced-motion below. */
 .skeleton {

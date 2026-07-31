@@ -11,6 +11,7 @@ interface AccountOption {
 
 const NAV_ITEMS = [
   { href: "/", label: "Resumen", icon: "grid" },
+  { href: "/resultado-del-dia", label: "Resultado del día", icon: "bolt" },
   { href: "/productos", label: "Productos", icon: "box" },
   { href: "/ventas", label: "Ventas", icon: "cart" },
   { href: "/tendencias", label: "Tendencias", icon: "trend" },
@@ -35,6 +36,7 @@ function NavIcon({ name }: { name: string }) {
       </>
     ),
     trend: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
+    bolt: <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" strokeLinejoin="round" />,
     users: (
       <>
         <circle cx="9" cy="8" r="3.2" />

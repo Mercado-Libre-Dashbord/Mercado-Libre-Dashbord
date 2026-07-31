@@ -246,6 +246,64 @@ que el deploy esté funcionando.
    punto, implica revisar esa decisión — no se toca sin confirmarlo de nuevo con
    el usuario primero, porque ya se descartó una vez a propósito por simplicidad.
 
+## Adenda: "Resultado del día" + costo real de multi-canal (2026-07-30)
+
+El usuario pidió (a) reconsiderar multi-canal (Tiendanube/Shopify) — antes marcado
+"fuera de alcance a propósito" — preguntando puntualmente cuánta complejidad suma,
+(b) investigar si las APIs necesarias (Meta, Tiendanube, Shopify, Mercado Pago)
+cobran por consulta, y (c) una página nueva "Resultado del día" con la estética
+actual, inspirada en capturas de Escalafy.
+
+### (c) Hecho en esta sesión
+
+`app/resultado-del-dia/page.tsx` — tabs Hoy/Ayer/Este mes, ganancia neta con delta
+real vs. ayer (calculado de dos llamados a `/api/summary`, nunca inventado — no hay
+delta si no hay dato de ayer), facturación, margen, y la misma tarjeta de "última
+venta" que Resumen. No requirió cambios de backend, reusa `/api/summary` y
+`/api/orders` tal cual existían.
+
+### (a) Complejidad real de sumar Tiendanube/Shopify
+
+Mismo patrón que Mercado Libre, repetido por plataforma: OAuth propio, cliente API
+propio (`mcp/*-client.ts`), mapeo de campos propio, sync propio, y una columna/tabla
+de "canal" en el modelo de datos para no mezclar pedidos de distintas plataformas
+bajo el mismo `account_id`. No es una reescritura — es "una vez más, por
+plataforma" — pero tampoco es gratis: cada plataforma nueva es, en esfuerzo, similar
+a lo que ya se hizo para ML (fue varias tareas del plan original).
+
+### (b) Costo de las APIs (investigado con búsqueda web, 2026-07-30)
+
+Ninguna cobra por consulta:
+
+- **Meta Marketing API**: gratis, con rate-limit por app (sistema de puntos: lectura
+  1pt, escritura 3pt). Acceso limitado por defecto; para más volumen hace falta
+  pasar el "App Review" de Meta (≥500 llamados exitosos, <15% error) — es *tiempo*,
+  no dinero. [AdManage.ai](https://admanage.ai/blog/meta-ads-api)
+- **Tiendanube API**: gratis, requiere sumarse al programa de Socios Tecnológicos
+  (acuerdo + revisión técnica de Tiendanube). El revenue-share que piden solo aplica
+  a features de *pagos y envíos* — no aplica a un dashboard de solo lectura.
+  [Tiendanube Partners](https://www.tiendanube.com/blog/tiendanube-partners/)
+- **Shopify Admin API**: gratis para una app privada conectada a la tienda de cada
+  cliente (no hace falta publicarla en la Shopify App Store, que es lo único que
+  tendría revisión/costo asociado). Los presupuestos de "$5.000–$80.000" que
+  aparecen buscando son estimaciones de agencias de desarrollo de terceros, no un
+  cargo de Shopify.
+- **Mercado Pago API**: gratis. Las "comisiones"/"cuotas" que se ven en dashboards
+  tipo Escalafy son el costo real que le cobran al vendedor por cobrar (un dato a
+  mostrar), no un cargo por consultar la API.
+
+Conclusión: el costo de escalar a estas plataformas es 100% tiempo de desarrollo +
+procesos de aprobación de cada una, no facturas de infraestructura.
+
+### Aviso pendiente de confirmar
+
+Varias de las features de las capturas de Escalafy (desglose de costo en Producto /
+Com. MP / Cuotas / Envío / Variables / Impuestos, comisión de ML desglosada por
+categoría/FULL/publicación) **necesitan volver atrás sobre una decisión ya tomada
+a pedido del usuario**: "el costo es un único número por producto, no se separa en
+componentes" (ver más abajo). No se tocó esa decisión en esta sesión — queda
+pendiente de confirmación explícita antes de construir esa parte.
+
 ## Decisiones abiertas descartadas explícitamente
 
 - No se versiona el costo con reglas complejas de prorrateo entre costos (ej.
