@@ -1,25 +1,25 @@
-/* Palette from ui-ux-pro-max's "Micro SaaS" product match (light violet/
-   indigo) — the look the user pointed at directly with a reference image:
-   white cards on a soft lavender page background, one indigo accent kept
-   separate from the semantic profit/loss colors so a button never reads
-   as a profit or loss number. */
+/* Palette from the MetricsField brand manual: monochrome black/white/grey
+   as the primary system ("diseñar para entender, no para impresionar"),
+   with a single muted blue (Azul Niebla) reserved for metrics/data accents
+   and muted green/red kept separate for profit/loss so a black button never
+   reads as a data value. */
 :root {
-  --bg: #f5f3ff;
+  --bg: #f7f7f7;
   --surface: #ffffff;
-  --surface-2: #ebeffb;
-  --border: #e0e7ff;
-  --text: #1e1b4b;
-  /* Darker than the tool's literal muted-foreground (#64748b): that value
-     measures ~4.3:1 on this background, just under WCAG AA 4.5:1. */
-  --text-dim: #475569;
-  --accent: #6366f1;
-  /* Darker than --accent: white text on --accent alone measures ~4.5:1
-     right at the edge. Use this for solid button fills and any accent text. */
-  --accent-strong: #4f46e5;
-  --accent-strong-hover: #4338ca;
-  --positive: #15803d;
-  --negative: #b91c1c;
-  --focus-ring: #4f46e5;
+  --surface-2: #eaeaea;
+  --border: #eaeaea;
+  --text: #1a1a1a;
+  /* Darker than a typical muted-foreground grey to clear WCAG AA 4.5:1 on
+     both white and --bg. */
+  --text-dim: #595959;
+  --accent: #000000;
+  --accent-strong: #000000;
+  --accent-strong-hover: #1a1a1a;
+  --positive: #1f7a4d;
+  --negative: #a83232;
+  --focus-ring: #000000;
+  /* Azul Niebla — manual's secondary color for métricas/datos primarios. */
+  --mist: #c8d8e8;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -32,14 +32,14 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --shadow-sm: 0 1px 2px rgba(30, 27, 75, 0.06);
-  --shadow-md: 0 8px 24px rgba(30, 27, 75, 0.1);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
 
   --duration-fast: 150ms;
   --duration-base: 200ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
-  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-montserrat), system-ui, -apple-system, sans-serif;
 
   --sidebar-width: 240px;
 }
@@ -121,7 +121,7 @@ select:focus-visible,
   transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
 .sidebar-link:hover { background: var(--surface-2); color: var(--text); }
-.sidebar-link.active { background: rgba(79, 70, 229, 0.1); color: var(--accent-strong); font-weight: 600; }
+.sidebar-link.active { background: var(--accent-strong); color: #fff; font-weight: 600; }
 
 .sidebar-spacer { flex: 1 1 auto; }
 .sidebar-user { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
@@ -134,7 +134,7 @@ select:focus-visible,
   white-space: nowrap;
 }
 
-h1 { font-weight: 800; letter-spacing: -0.01em; }
+h1 { font-weight: 700; letter-spacing: -0.01em; }
 h2.section-title {
   font-size: 14px;
   text-transform: uppercase;
@@ -235,8 +235,8 @@ tbody tr:hover { background: var(--surface-2); }
   padding: 2px 8px;
   border-radius: 999px;
 }
-.delta-pill.up { background: rgba(21, 128, 61, 0.12); color: var(--positive); }
-.delta-pill.down { background: rgba(185, 28, 28, 0.12); color: var(--negative); }
+.delta-pill.up { background: rgba(31, 122, 77, 0.12); color: var(--positive); }
+.delta-pill.down { background: rgba(168, 50, 50, 0.12); color: var(--negative); }
 
 /* Skeleton loading placeholder: subtle shimmer, disabled entirely under
    prefers-reduced-motion below. */
@@ -256,8 +256,8 @@ tbody tr:hover { background: var(--surface-2); }
 }
 
 .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-.badge-paid { background: rgba(21, 128, 61, 0.12); color: var(--positive); }
-.badge-other { background: rgba(71, 85, 105, 0.12); color: var(--text-dim); }
+.badge-paid { background: rgba(31, 122, 77, 0.12); color: var(--positive); }
+.badge-other { background: rgba(89, 89, 89, 0.12); color: var(--text-dim); }
 
 .waterfall-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: var(--space-5); box-shadow: var(--shadow-sm); }
 .waterfall-row { display: grid; grid-template-columns: 110px 1fr 90px; align-items: center; gap: var(--space-3); margin: var(--space-2) 0; font-size: 13px; }
@@ -363,7 +363,7 @@ input[type="text"], input[type="number"], input[type="date"], input[type="email"
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid rgba(30, 27, 75, 0.15);
+  border: 2px solid rgba(0, 0, 0, 0.15);
   border-top-color: var(--accent-strong);
   animation: spin 0.7s linear infinite;
 }

@@ -1,12 +1,12 @@
-import { Inter } from "next/font/google";
+import { Montserrat } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./AuthProvider";
 import { NavBar } from "./NavBar";
 
-const inter = Inter({
+const montserrat = Montserrat({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-inter",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-montserrat",
   display: "swap",
 });
 
@@ -14,7 +14,7 @@ export const metadata = { title: "Dashboard Rentabilidad ML" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={inter.variable}>
+    <html lang="es" className={montserrat.variable}>
       <body>
         <AuthProvider>
           <div className="app-shell">
