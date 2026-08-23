@@ -19,15 +19,26 @@ export async function listProducts(accountId: string, sellerId: string): Promise
   const search = await mlFetch(`/users/${sellerId}/items/search?status=active,paused,closed`, token);
   const ids: string[] = search.results;
   if (ids.length === 0) return [];
-  const details = await mlFetch(`/items?ids=${ids.join(",")}`, token);
-  return details.map((entry: any) => ({
-    id: entry.body.id,
-    title: entry.body.title,
-    sku: entry.body.seller_custom_field ?? null,
-    price: entry.body.price,
-    stock: entry.body.available_quantity,
-    permalink: entry.body.permalink,
-  }));
+
+  // /items?ids= solo acepta 20 ids por llamada — con más de una publicación
+  // pausada/cerrada en el historial esto se pasa fácil.
+  const ML_ITEMS_BATCH_SIZE = 20;
+  const products: MlProduct[] = [];
+  for (let i = 0; i < ids.length; i += ML_ITEMS_BATCH_SIZE) {
+    const batch = ids.slice(i, i + ML_ITEMS_BATCH_SIZE);
+    const details = await mlFetch(`/items?ids=${batch.join(",")}`, token);
+    for (const entry of details) {
+      products.push({
+        id: entry.body.id,
+        title: entry.body.title,
+        sku: entry.body.seller_custom_field ?? null,
+        price: entry.body.price,
+        stock: entry.body.available_quantity,
+        permalink: entry.body.permalink,
+      });
+    }
+  }
+  return products;
 }
 
 export interface MlOrderItem {

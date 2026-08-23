@@ -25,6 +25,23 @@ describe("listProducts", () => {
     expect(products).toHaveLength(2);
     expect(products[0]).toEqual({ id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url1" });
   });
+
+  it("batches the /items lookup in groups of 20 ids", async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `MLA${i}`);
+    const firstBatch = ids.slice(0, 20).map((id) => ({ body: { id, title: id, price: 1, available_quantity: 1, permalink: "" } }));
+    const secondBatch = ids.slice(20).map((id) => ({ body: { id, title: id, price: 1, available_quantity: 1, permalink: "" } }));
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: ids })
+      .mockResolvedValueOnce(firstBatch)
+      .mockResolvedValueOnce(secondBatch);
+
+    const products = await listProducts("acc1", "123");
+
+    expect(products).toHaveLength(25);
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain(ids.slice(0, 20).join(","));
+    expect(vi.mocked(mlFetch).mock.calls[2][0]).toContain(ids.slice(20).join(","));
+  });
 });
 
 describe("getOrderDetail", () => {
