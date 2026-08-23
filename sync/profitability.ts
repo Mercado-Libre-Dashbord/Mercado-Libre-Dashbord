@@ -5,12 +5,20 @@ export interface ProductCostEntry {
 
 export function getCostAtDate(costs: ProductCostEntry[], date: string): number | null {
   let best: ProductCostEntry | null = null;
+  let earliest: ProductCostEntry | null = null;
   for (const c of costs) {
     if (c.validFrom <= date && (best === null || c.validFrom >= best.validFrom)) {
       best = c;
     }
+    if (earliest === null || c.validFrom < earliest.validFrom) {
+      earliest = c;
+    }
   }
-  return best ? best.cost : null;
+  // Un costo cargado hoy para un producto con ventas viejas no tiene ningún
+  // registro con validFrom <= date — pero la mejor estimación disponible para
+  // esas ventas sigue siendo el primer costo que se cargó, no "sin dato".
+  if (best) return best.cost;
+  return earliest ? earliest.cost : null;
 }
 
 export function allocateAdsCost(

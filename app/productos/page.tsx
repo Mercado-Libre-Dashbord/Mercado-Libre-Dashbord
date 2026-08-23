@@ -101,7 +101,7 @@ export default function ProductosPage() {
                   <td className="num">{p.unitsSold}</td>
                   <td className="num">{p.totalProfit.toFixed(2)}</td>
                   <td>
-                    <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "start" }}>
+                    <div style={{ display: "flex", gap: "var(--space-1)", alignItems: "start" }}>
                       <div className="field-group">
                         <label className="field-hint" htmlFor={`cost-${p.id}`} style={{ position: "absolute", clip: "rect(0 0 0 0)" }}>
                           Nuevo costo para {p.title}
@@ -117,12 +117,12 @@ export default function ProductosPage() {
                             setEditing((prev) => ({ ...prev, [p.id]: e.target.value }));
                             if (errors[p.id]) setErrors((prev) => ({ ...prev, [p.id]: "" }));
                           }}
-                          style={{ width: 90 }}
+                          style={{ width: 68, padding: "9px 6px" }}
                         />
                         {errors[p.id] && <p className="field-error">{errors[p.id]}</p>}
                       </div>
                       <button className="btn btn-secondary btn-sm" onClick={() => saveCost(p.id)} disabled={savingId === p.id}>
-                        {savingId === p.id ? "Guardando…" : "Guardar"}
+                        {savingId === p.id ? "…" : "Guardar"}
                       </button>
                     </div>
                   </td>

@@ -15,9 +15,20 @@ describe("getCostAtDate", () => {
     expect(getCostAtDate(costs, "2026-03-15")).toBe(120);
   });
 
-  it("returns null when the sale date is before any cost was loaded", () => {
+  it("falls back to the earliest known cost when it was loaded after the sale date", () => {
+    // Cargar el primer costo de un producto no debería dejar sin dato a las
+    // ventas históricas anteriores a esa carga — usamos la mejor estimación
+    // disponible en vez de null.
     const costs = [{ cost: 100, validFrom: "2026-03-01" }];
-    expect(getCostAtDate(costs, "2026-01-01")).toBeNull();
+    expect(getCostAtDate(costs, "2026-01-01")).toBe(100);
+  });
+
+  it("still prefers a cost valid on or before the date over the earliest one", () => {
+    const costs = [
+      { cost: 100, validFrom: "2026-03-01" },
+      { cost: 80, validFrom: "2025-01-01" },
+    ];
+    expect(getCostAtDate(costs, "2025-06-01")).toBe(80);
   });
 
   it("picks the latest entry when two share the same validFrom date", () => {
