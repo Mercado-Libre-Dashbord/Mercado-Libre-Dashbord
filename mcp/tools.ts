@@ -12,7 +12,11 @@ export interface MlProduct {
 
 export async function listProducts(accountId: string, sellerId: string): Promise<MlProduct[]> {
   const token = await getValidAccessToken(accountId);
-  const search = await mlFetch(`/users/${sellerId}/items/search?status=active`, token);
+  // No solo "active": una cuenta con historial real de ventas tiene
+  // publicaciones pausadas o cerradas cuyas órdenes viejas siguen
+  // apareciendo en /orders — si no las traemos acá, esos product_id nunca
+  // entran a la tabla products y su costo no se puede cargar nunca.
+  const search = await mlFetch(`/users/${sellerId}/items/search?status=active,paused,closed`, token);
   const ids: string[] = search.results;
   if (ids.length === 0) return [];
   const details = await mlFetch(`/items?ids=${ids.join(",")}`, token);
