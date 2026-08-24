@@ -16,17 +16,33 @@ export async function listProducts(accountId: string, sellerId: string): Promise
   // publicaciones pausadas o cerradas cuyas órdenes viejas siguen
   // apareciendo en /orders — si no las traemos acá, esos product_id nunca
   // entran a la tabla products y su costo no se puede cargar nunca.
-  const search = await mlFetch(`/users/${sellerId}/items/search?status=active,paused,closed`, token);
-  const ids: string[] = search.results;
+  const SEARCH_PAGE_SIZE = 50;
+  const ids: string[] = [];
+  let offset = 0;
+  while (true) {
+    const search = await mlFetch(
+      `/users/${sellerId}/items/search?status=active,paused,closed&limit=${SEARCH_PAGE_SIZE}&offset=${offset}`,
+      token
+    );
+    const page: string[] = search.results;
+    ids.push(...page);
+    offset += page.length;
+    const total = search.paging?.total ?? offset;
+    if (page.length === 0 || offset >= total) break;
+  }
   if (ids.length === 0) return [];
 
   // /items?ids= solo acepta 20 ids por llamada — con más de una publicación
   // pausada/cerrada en el historial esto se pasa fácil.
   const ML_ITEMS_BATCH_SIZE = 20;
-  const products: MlProduct[] = [];
+  const batches: string[][] = [];
   for (let i = 0; i < ids.length; i += ML_ITEMS_BATCH_SIZE) {
-    const batch = ids.slice(i, i + ML_ITEMS_BATCH_SIZE);
-    const details = await mlFetch(`/items?ids=${batch.join(",")}`, token);
+    batches.push(ids.slice(i, i + ML_ITEMS_BATCH_SIZE));
+  }
+  const batchResults = await Promise.all(batches.map((batch) => mlFetch(`/items?ids=${batch.join(",")}`, token)));
+
+  const products: MlProduct[] = [];
+  for (const details of batchResults) {
     for (const entry of details) {
       products.push({
         id: entry.body.id,

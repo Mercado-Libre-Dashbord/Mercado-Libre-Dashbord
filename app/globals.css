@@ -150,7 +150,7 @@ h2.section-title {
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
 }
-table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 560px; table-layout: auto; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 560px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 tbody tr:last-child td { border-bottom: none; }
 /* Headers wrap onto a second line instead of forcing every column wide enough

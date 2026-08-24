@@ -122,7 +122,7 @@ export default function ProductosPage() {
                         {errors[p.id] && <p className="field-error">{errors[p.id]}</p>}
                       </div>
                       <button className="btn btn-secondary btn-sm" onClick={() => saveCost(p.id)} disabled={savingId === p.id}>
-                        {savingId === p.id ? "…" : "Guardar"}
+                        {savingId === p.id ? "Guardando…" : "Guardar"}
                       </button>
                     </div>
                   </td>

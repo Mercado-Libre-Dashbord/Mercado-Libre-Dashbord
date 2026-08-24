@@ -112,14 +112,13 @@ interface OrderItemRow {
   unitprice: number;
   mlcommission: number;
   shippingcost: number;
-  costapplied: number | null;
 }
 
 async function reallocateAdsCosts(db: QueryExecutor, accountId: string): Promise<void> {
   const itemsResult = await db.query<OrderItemRow>(
     `SELECT oi.id, oi.product_id as productId, oi.quantity, o.date_created as dateCreated,
             oi.unit_price as unitPrice, oi.ml_commission as mlCommission,
-            oi.shipping_cost as shippingCost, oi.cost_applied as costApplied
+            oi.shipping_cost as shippingCost
      FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
      WHERE oi.account_id = $1`,
     [accountId]
@@ -142,22 +141,40 @@ async function reallocateAdsCosts(db: QueryExecutor, accountId: string): Promise
     adsByProductDate.set(`${row.productid}|${dateStr}`, Number(row.amount));
   }
 
+  // Recalculamos cost_applied acá también (no solo al insertar la orden): un
+  // sync normal solo trae órdenes nuevas (ver sinceIso en /api/sync), así que
+  // si cargás el costo de un producto después, las ventas viejas de ese
+  // producto nunca se reinsertan — sin esto, se quedarían con cost_applied
+  // congelado en null para siempre en vez de tomar el costo recién cargado.
+  const costsResult = await db.query<{ productid: string; cost: number; validfrom: string | Date }>(
+    `SELECT product_id as productId, cost, valid_from as validFrom FROM product_costs WHERE account_id = $1`,
+    [accountId]
+  );
+  const costsByProduct = new Map<string, { cost: number; validFrom: string }[]>();
+  for (const row of costsResult.rows) {
+    const list = costsByProduct.get(row.productid) ?? [];
+    list.push({ cost: Number(row.cost), validFrom: new Date(row.validfrom).toISOString() });
+    costsByProduct.set(row.productid, list);
+  }
+
   for (const it of items) {
     const key = `${it.productid}|${new Date(it.datecreated).toISOString().slice(0, 10)}`;
     const dailySpend = adsByProductDate.get(key) ?? 0;
     const unitsSoldThatDay = unitsSoldByProductDate.get(key) ?? 0;
     const adsCostAllocated = allocateAdsCost(dailySpend, unitsSoldThatDay, Number(it.quantity));
+    const costApplied = getCostAtDate(costsByProduct.get(it.productid) ?? [], new Date(it.datecreated).toISOString());
     const netProfit = calculateNetProfit({
       unitPrice: Number(it.unitprice),
       quantity: Number(it.quantity),
       mlCommission: Number(it.mlcommission),
       shippingCost: Number(it.shippingcost),
       adsCostAllocated,
-      costApplied: it.costapplied === null ? null : Number(it.costapplied),
+      costApplied,
     });
-    await db.query(`UPDATE order_items SET ads_cost_allocated = $1, net_profit = $2 WHERE id = $3`, [
+    await db.query(`UPDATE order_items SET ads_cost_allocated = $1, net_profit = $2, cost_applied = $3 WHERE id = $4`, [
       adsCostAllocated,
       netProfit,
+      costApplied,
       it.id,
     ]);
   }

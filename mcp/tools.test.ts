@@ -42,6 +42,27 @@ describe("listProducts", () => {
     expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain(ids.slice(0, 20).join(","));
     expect(vi.mocked(mlFetch).mock.calls[2][0]).toContain(ids.slice(20).join(","));
   });
+
+  it("pages through items/search when there are more results than one page", async () => {
+    const firstPageIds = Array.from({ length: 50 }, (_, i) => `MLA${i}`);
+    const secondPageIds = ["MLA50", "MLA51"];
+    const allIds = [...firstPageIds, ...secondPageIds];
+    const detailsFor = (ids: string[]) =>
+      ids.map((id) => ({ body: { id, title: id, price: 1, available_quantity: 1, permalink: "" } }));
+
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: firstPageIds, paging: { total: 52 } })
+      .mockResolvedValueOnce({ results: secondPageIds, paging: { total: 52 } })
+      .mockResolvedValueOnce(detailsFor(allIds.slice(0, 20)))
+      .mockResolvedValueOnce(detailsFor(allIds.slice(20, 40)))
+      .mockResolvedValueOnce(detailsFor(allIds.slice(40)));
+
+    const products = await listProducts("acc1", "123");
+
+    expect(products).toHaveLength(52);
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("offset=0");
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("offset=50");
+  });
 });
 
 describe("getOrderDetail", () => {
