@@ -47,7 +47,16 @@ export async function GET(request: NextRequest) {
               p.title as "productTitle", oi.unit_price as "unitPrice", oi.quantity,
               oi.ml_commission as "mlCommission", oi.shipping_cost as "shippingCost",
               oi.ads_cost_allocated as "adsCostAllocated", oi.cost_applied as "costApplied",
-              oi.net_profit as "netProfit", o.status as "estadoPago"
+              oi.net_profit as "netProfit", o.status as "estadoPago",
+              -- El costo aplicado puede venir de un registro cargado *después* de esta
+              -- venta (fallback al costo más viejo conocido, ver getCostAtDate) — acá
+              -- distinguimos ese caso para no mostrarlo igual que un costo real de la
+              -- época, sin necesidad de guardar esa distinción en una columna aparte.
+              (oi.cost_applied IS NOT NULL AND NOT EXISTS (
+                 SELECT 1 FROM product_costs pc
+                 WHERE pc.account_id = oi.account_id AND pc.product_id = oi.product_id
+                   AND pc.valid_from <= o.date_created
+              )) as "costEstimated"
        FROM order_items oi
        JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
        JOIN products p ON p.account_id = oi.account_id AND p.id = oi.product_id

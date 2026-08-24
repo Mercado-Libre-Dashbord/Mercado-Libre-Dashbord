@@ -15,6 +15,7 @@ interface OrderItem {
   shippingCost: number;
   adsCostAllocated: number;
   costApplied: number | null;
+  costEstimated: boolean;
   netProfit: number | null;
   estadoPago: string;
 }
@@ -127,8 +128,15 @@ export default function VentasPage() {
                   <td className="num">{it.mlCommission.toFixed(2)}</td>
                   <td className="num">{it.shippingCost.toFixed(2)}</td>
                   <td className="num">{it.adsCostAllocated.toFixed(2)}</td>
-                  <td className={`num ${it.costApplied === null ? "missing-cost" : ""}`}>
-                    {it.costApplied === null ? "Sin costo" : it.costApplied.toFixed(2)}
+                  <td
+                    className={`num ${it.costApplied === null ? "missing-cost" : ""}`}
+                    title={
+                      it.costEstimated
+                        ? "Estimado: no había un costo cargado para esta fecha, se usó el primer costo que se cargó para este producto."
+                        : undefined
+                    }
+                  >
+                    {it.costApplied === null ? "Sin costo" : `${it.costEstimated ? "≈ " : ""}${it.costApplied.toFixed(2)}`}
                   </td>
                   <td className="num">{it.netProfit === null ? "-" : it.netProfit.toFixed(2)}</td>
                 </tr>
