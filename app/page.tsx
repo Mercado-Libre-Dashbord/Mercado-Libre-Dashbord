@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } from "recharts";
 import { SyncButton } from "./SyncButton";
 import { NoAccountState } from "./NoAccountState";
 
@@ -14,6 +15,16 @@ interface Summary {
   itemsMissingCost: number;
 }
 
+interface DailyBreakdown {
+  day: string;
+  revenue: number;
+  commission: number;
+  shipping: number;
+  tax: number;
+  cost: number;
+  netProfit: number;
+}
+
 interface OrderLine {
   id: number;
   orderId: string;
@@ -24,6 +35,7 @@ interface OrderLine {
   shippingCost: number;
   adsCostAllocated: number;
   costApplied: number | null;
+  taxApplied: number | null;
   netProfit: number | null;
 }
 
@@ -107,6 +119,7 @@ export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
   const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
+  const [daily, setDaily] = useState<DailyBreakdown[] | null>(null);
   const [period, setPeriod] = useState<Period>("mes");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
@@ -119,6 +132,10 @@ export default function HomePage() {
     fetch(`/api/summary?from=${from}&to=${to}`).then((r) => {
       if (r.status === 401) { setNoAccount(true); return; }
       r.json().then(setSummary);
+    });
+    fetch(`/api/summary?groupBy=day&from=${from}&to=${to}`).then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then(setDaily);
     });
     fetch("/api/orders").then((r) => {
       if (r.status === 401) { setNoAccount(true); return; }
@@ -184,16 +201,78 @@ export default function HomePage() {
 
       <h2 className="section-title">Tienda</h2>
       <div className="kpi-grid">
-        <div className="kpi-card"><div className="label">Orders</div><div className="value"><KpiValue>{summary?.orders ?? "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Revenue</div><div className="value"><KpiValue>{summary ? fmt(summary.grossSales) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">AOV</div><div className="value"><KpiValue>{summary ? fmt(summary.aov) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Net Profit</div><div className="value"><KpiValue>{summary ? fmt(summary.netProfit) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Profit %</div><div className="value"><KpiValue>{summary ? pct(summary.profitPct) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Net Rev.</div><div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Órdenes</div><div className="value"><KpiValue>{summary?.orders ?? "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Facturación</div><div className="value"><KpiValue>{summary ? fmt(summary.grossSales) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Ticket promedio</div><div className="value"><KpiValue>{summary ? fmt(summary.aov) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Ganancia neta</div><div className="value"><KpiValue>{summary ? fmt(summary.netProfit) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Margen neto</div><div className="value"><KpiValue>{summary ? pct(summary.profitPct) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Facturación neta</div><div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div></div>
       </div>
 
+      <details className="explain-box">
+        <summary>¿Cómo se calculan estos números?</summary>
+        <ul>
+          <li><strong>Órdenes</strong>: cantidad de órdenes con al menos una venta en el período elegido.</li>
+          <li><strong>Facturación</strong>: suma de precio × cantidad de todo lo vendido, antes de descontar nada.</li>
+          <li><strong>Ticket promedio</strong>: Facturación ÷ Órdenes.</li>
+          <li><strong>Ganancia neta</strong>: Facturación − comisión de Mercado Libre − envío − publicidad − costo de producto − impuestos. Si a un producto le falta costo cargado, sus ventas quedan afuera de este número (no se inventa un valor).</li>
+          <li><strong>Margen neto</strong>: Ganancia neta ÷ Facturación.</li>
+          <li><strong>Facturación neta</strong>: Facturación − comisión de Mercado Libre − envío (sin restar costo de producto ni impuestos).</li>
+        </ul>
+      </details>
+
       {summary && summary.itemsMissingCost > 0 && (
-        <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Net Profit</p>
+        <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Ganancia neta</p>
+      )}
+
+      <h2 className="section-title">De qué está hecha tu facturación</h2>
+      {daily === null ? (
+        <p className="empty-state">Cargando gráfico…</p>
+      ) : daily.length === 0 ? (
+        <div className="empty-state">Todavía no hay ventas en este período para graficar.</div>
+      ) : (
+        <>
+          <div
+            style={{
+              width: "100%",
+              height: 320,
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-md)",
+              padding: 16,
+              marginBottom: "var(--space-3)",
+            }}
+          >
+            <ResponsiveContainer>
+              <BarChart data={daily}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="day" stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 12 }} />
+                <YAxis stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+                  labelStyle={{ color: "var(--text-dim)" }}
+                  formatter={(value: number) => fmt(value)}
+                />
+                <Legend verticalAlign="bottom" wrapperStyle={{ fontSize: 13, color: "var(--text-dim)" }} />
+                <Bar dataKey="commission" name="Comisión ML" stackId="a" fill="var(--chart-commission)" />
+                <Bar dataKey="shipping" name="Envío" stackId="a" fill="var(--chart-shipping)" />
+                <Bar dataKey="tax" name="Impuestos" stackId="a" fill="var(--chart-tax)" />
+                <Bar dataKey="cost" name="Costo de producto" stackId="a" fill="var(--chart-cost)" />
+                <Bar dataKey="netProfit" name="Ganancia neta" stackId="a" fill="var(--positive)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <details className="explain-box">
+            <summary>¿Qué muestra este gráfico?</summary>
+            <p>
+              Cada barra es un día, y muestra en qué se fue tu facturación de ese día: cuánto se lo llevó la
+              comisión de Mercado Libre, cuánto el envío, cuánto los impuestos que cargaste por producto, cuánto
+              el costo del producto, y cuánto quedó como ganancia neta real. Los cuatro primeros componentes
+              salen directo de lo que Mercado Libre cobra en cada venta y de lo que cargaste en Productos — nada
+              es estimado.
+            </p>
+          </details>
+        </>
       )}
 
       {lastOrder && (
@@ -215,6 +294,12 @@ export default function HomePage() {
               max={lastOrder.unitPrice * lastOrder.quantity}
               tone="negative"
             />
+            <WaterfallRow
+              label="Impuestos"
+              value={(lastOrder.taxApplied ?? 0) * lastOrder.quantity}
+              max={lastOrder.unitPrice * lastOrder.quantity}
+              tone="negative"
+            />
             <WaterfallRow label="Ganancia neta" value={lastOrder.netProfit ?? 0} max={lastOrder.unitPrice * lastOrder.quantity} tone="positive" />
           </div>
         </>
@@ -228,11 +313,11 @@ export default function HomePage() {
           <table>
             <thead>
               <tr>
-                <th>Order Id</th>
-                <th>Estado Pago</th>
-                <th>Created at</th>
-                <th className="num">Total Order</th>
-                <th className="num">Total Neto</th>
+                <th>N° de orden</th>
+                <th>Estado</th>
+                <th>Fecha</th>
+                <th className="num">Total</th>
+                <th className="num">Neto</th>
               </tr>
             </thead>
             <tbody>

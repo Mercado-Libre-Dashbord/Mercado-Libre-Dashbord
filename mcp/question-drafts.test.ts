@@ -24,6 +24,30 @@ describe("draftAnswer", () => {
     );
   });
 
+  it("answers pickup questions", () => {
+    expect(draftAnswer("¿Puedo retirar por local?", { price: 100, stock: 5 })).toContain("retiro");
+  });
+
+  it("answers warranty questions", () => {
+    expect(draftAnswer("¿Tiene garantía?", { price: 100, stock: 5 })).toContain("garantía");
+  });
+
+  it("answers battery/charging questions", () => {
+    expect(draftAnswer("¿Cuánto dura la batería cargada?", { price: 100, stock: 5 })).toContain("batería");
+  });
+
+  it("answers size/color/variant questions", () => {
+    expect(draftAnswer("¿Viene en otro color?", { price: 100, stock: 5 })).toContain("talles/colores");
+  });
+
+  it("answers invoice questions", () => {
+    expect(draftAnswer("¿Hacen factura A?", { price: 100, stock: 5 })).toContain("factura");
+  });
+
+  it("answers wholesale questions", () => {
+    expect(draftAnswer("¿Tenés precio por mayor?", { price: 100, stock: 5 })).toContain("mayor");
+  });
+
   it("returns an empty string for questions it doesn't recognize", () => {
     expect(draftAnswer("¿Es compatible con iPhone 15?", { price: 100, stock: 5 })).toBe("");
   });

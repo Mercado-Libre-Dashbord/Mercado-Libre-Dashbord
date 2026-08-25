@@ -28,7 +28,7 @@ describe("PATCH /api/products", () => {
     expect(res.status).toBe(400);
   });
 
-  it("inserts a new versioned cost row scoped to the current account", async () => {
+  it("inserts a new versioned cost row scoped to the current account, defaulting tax to 0", async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
     const request = { json: async () => ({ productId: "MLA1", cost: 350 }) } as any;
@@ -36,6 +36,22 @@ describe("PATCH /api/products", () => {
     const res = await PATCH(request);
 
     expect(await res.json()).toEqual({ ok: true });
-    expect(query).toHaveBeenCalledWith(expect.any(String), ["acc1", "MLA1", 350, expect.any(String)]);
+    expect(query).toHaveBeenCalledWith(expect.any(String), ["acc1", "MLA1", 350, 0, expect.any(String)]);
+  });
+
+  it("returns 400 for a negative tax", async () => {
+    const request = { json: async () => ({ productId: "MLA1", cost: 350, tax: -1 }) } as any;
+    const res = await PATCH(request);
+    expect(res.status).toBe(400);
+  });
+
+  it("inserts the given tax when provided", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+    const request = { json: async () => ({ productId: "MLA1", cost: 350, tax: 40 }) } as any;
+
+    await PATCH(request);
+
+    expect(query).toHaveBeenCalledWith(expect.any(String), ["acc1", "MLA1", 350, 40, expect.any(String)]);
   });
 });

@@ -18,6 +18,12 @@
   --positive: #1f7a4d;
   --negative: #a83232;
   --focus-ring: #000000;
+  /* Paleta categórica validada (dataviz skill) para el desglose de
+     facturación — orden fijo, no se ciclan ni se reasignan por serie. */
+  --chart-commission: #2a78d6;
+  --chart-shipping: #eb6834;
+  --chart-tax: #1baf7a;
+  --chart-cost: #eda100;
   /* Azul Niebla — manual's secondary color for métricas/datos primarios. */
   --mist: #c8d8e8;
 
@@ -167,6 +173,33 @@ tbody tr:hover { background: var(--surface-2); }
   color: var(--text-dim);
   font-size: 14px;
 }
+
+.explain-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.explain-box summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  list-style: none;
+}
+.explain-box summary::-webkit-details-marker { display: none; }
+.explain-box summary::before {
+  content: "+";
+  display: inline-block;
+  width: 1em;
+  color: var(--text-dim);
+}
+.explain-box[open] summary::before { content: "−"; }
+.explain-box ul { margin: var(--space-2) 0 0; padding-left: var(--space-4); }
+.explain-box li { margin-bottom: var(--space-1); }
+.explain-box p { margin: var(--space-2) 0 0; line-height: 1.5; }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-3); }
 .kpi-card {

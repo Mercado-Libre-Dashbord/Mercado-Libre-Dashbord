@@ -85,4 +85,20 @@ describe("GET /api/summary", () => {
     expect(body.mer).toBe(0);
     expect(body.cpa).toBe(0);
   });
+
+  it("returns the daily breakdown when groupBy=day", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [
+        { day: "2026-01-05", revenue: 1000, commission: 130, shipping: 90, cost: 300, tax: 20, netProfit: 460 },
+      ],
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams("groupBy=day") } } as any;
+    const body = await (await GET(request)).json();
+
+    expect(body).toEqual([
+      { day: "2026-01-05", revenue: 1000, commission: 130, shipping: 90, cost: 300, tax: 20, netProfit: 460 },
+    ]);
+  });
 });

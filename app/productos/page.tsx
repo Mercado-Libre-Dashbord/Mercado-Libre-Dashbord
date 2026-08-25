@@ -10,6 +10,7 @@ interface Product {
   currentPrice: number;
   stock: number;
   currentCost: number | null;
+  currentTax: number | null;
   unitsSold: number;
   totalProfit: number;
   marginPct: number | null;
@@ -17,7 +18,7 @@ interface Product {
 
 export default function ProductosPage() {
   const [products, setProducts] = useState<Product[] | null>(null);
-  const [editing, setEditing] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<Record<string, { cost: string; tax: string }>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
@@ -89,10 +90,11 @@ export default function ProductosPage() {
   }
 
   async function saveCost(productId: string) {
-    const raw = editing[productId] ?? "";
-    const cost = Number(raw);
-    if (raw.trim() === "" || Number.isNaN(cost) || cost < 0) {
-      setErrors((prev) => ({ ...prev, [productId]: "Ingresá un costo válido (mayor o igual a 0)." }));
+    const draft = editing[productId] ?? { cost: "", tax: "" };
+    const cost = Number(draft.cost);
+    const tax = draft.tax.trim() === "" ? 0 : Number(draft.tax);
+    if (draft.cost.trim() === "" || Number.isNaN(cost) || cost < 0 || Number.isNaN(tax) || tax < 0) {
+      setErrors((prev) => ({ ...prev, [productId]: "Costo requerido (≥ 0); impuestos opcional (≥ 0)." }));
       return;
     }
     setErrors((prev) => ({ ...prev, [productId]: "" }));
@@ -101,9 +103,9 @@ export default function ProductosPage() {
       await fetch("/api/products", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, cost }),
+        body: JSON.stringify({ productId, cost, tax }),
       });
-      setEditing((prev) => ({ ...prev, [productId]: "" }));
+      setEditing((prev) => ({ ...prev, [productId]: { cost: "", tax: "" } }));
       load();
     } finally {
       setSavingId(null);
@@ -129,6 +131,7 @@ export default function ProductosPage() {
                 <th className="num">Precio</th>
                 <th className="num">Stock</th>
                 <th className="num">Costo vigente</th>
+                <th className="num">Impuestos vigente</th>
                 <th className="num">Margen %</th>
                 <th className="num">Unidades vendidas</th>
                 <th className="num">Rentabilidad total</th>
@@ -176,14 +179,16 @@ export default function ProductosPage() {
                   <td className={`num ${p.currentCost === null ? "missing-cost" : ""}`}>
                     {p.currentCost === null ? "Sin costo cargado" : p.currentCost.toFixed(2)}
                   </td>
+                  <td className="num">{p.currentTax === null ? "-" : p.currentTax.toFixed(2)}</td>
                   <td className="num">{p.marginPct === null ? "-" : `${(p.marginPct * 100).toFixed(1)}%`}</td>
                   <td className="num">{p.unitsSold}</td>
                   <td className="num">{p.totalProfit.toFixed(2)}</td>
                   <td>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
                     <div style={{ display: "flex", gap: "var(--space-1)", alignItems: "start" }}>
                       <div className="field-group">
-                        <label className="field-hint" htmlFor={`cost-${p.id}`} style={{ position: "absolute", clip: "rect(0 0 0 0)" }}>
-                          Nuevo costo para {p.title}
+                        <label className="field-hint" htmlFor={`cost-${p.id}`}>
+                          Costo
                         </label>
                         <input
                           id={`cost-${p.id}`}
@@ -191,18 +196,36 @@ export default function ProductosPage() {
                           min="0"
                           inputMode="decimal"
                           aria-invalid={errors[p.id] ? true : undefined}
-                          value={editing[p.id] ?? ""}
+                          value={editing[p.id]?.cost ?? ""}
                           onChange={(e) => {
-                            setEditing((prev) => ({ ...prev, [p.id]: e.target.value }));
+                            setEditing((prev) => ({ ...prev, [p.id]: { cost: e.target.value, tax: prev[p.id]?.tax ?? "" } }));
                             if (errors[p.id]) setErrors((prev) => ({ ...prev, [p.id]: "" }));
                           }}
-                          style={{ width: 68, padding: "9px 6px" }}
+                          style={{ width: 60, padding: "9px 6px" }}
                         />
-                        {errors[p.id] && <p className="field-error">{errors[p.id]}</p>}
+                      </div>
+                      <div className="field-group">
+                        <label className="field-hint" htmlFor={`tax-${p.id}`}>
+                          Impuestos
+                        </label>
+                        <input
+                          id={`tax-${p.id}`}
+                          type="number"
+                          min="0"
+                          inputMode="decimal"
+                          value={editing[p.id]?.tax ?? ""}
+                          onChange={(e) => {
+                            setEditing((prev) => ({ ...prev, [p.id]: { cost: prev[p.id]?.cost ?? "", tax: e.target.value } }));
+                            if (errors[p.id]) setErrors((prev) => ({ ...prev, [p.id]: "" }));
+                          }}
+                          style={{ width: 60, padding: "9px 6px" }}
+                        />
                       </div>
                       <button className="btn btn-secondary btn-sm" onClick={() => saveCost(p.id)} disabled={savingId === p.id}>
-                        {savingId === p.id ? "Guardando…" : "Guardar"}
+                        {savingId === p.id ? "…" : "Guardar"}
                       </button>
+                    </div>
+                    {errors[p.id] && <p className="field-error">{errors[p.id]}</p>}
                     </div>
                   </td>
                   <td>

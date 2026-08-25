@@ -27,6 +27,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(rows);
   }
 
+  if (groupBy === "day") {
+    const rows = await withScope({ accountId: account.id }, async (client) => {
+      const result = await client.query(
+        `SELECT to_char(o.date_created, 'YYYY-MM-DD') as day,
+                COALESCE(SUM(oi.unit_price * oi.quantity), 0) as revenue,
+                COALESCE(SUM(oi.ml_commission), 0) as commission,
+                COALESCE(SUM(oi.shipping_cost), 0) as shipping,
+                COALESCE(SUM(oi.cost_applied * oi.quantity), 0) as cost,
+                COALESCE(SUM(oi.tax_applied * oi.quantity), 0) as tax,
+                COALESCE(SUM(oi.net_profit), 0) as "netProfit"
+         FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
+         WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
+         GROUP BY day ORDER BY day`,
+        [account.id, from, to]
+      );
+      return result.rows;
+    });
+    return NextResponse.json(rows);
+  }
+
   const summary = await withScope({ accountId: account.id }, async (client) => {
     const totalsResult = await client.query(
       `SELECT

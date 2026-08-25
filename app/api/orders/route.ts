@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
               p.title as "productTitle", oi.unit_price as "unitPrice", oi.quantity,
               oi.ml_commission as "mlCommission", oi.shipping_cost as "shippingCost",
               oi.ads_cost_allocated as "adsCostAllocated", oi.cost_applied as "costApplied",
+              oi.tax_applied as "taxApplied",
               oi.net_profit as "netProfit", o.status as "estadoPago",
               -- El costo aplicado puede venir de un registro cargado *después* de esta
               -- venta (fallback al costo más viejo conocido, ver getCostAtDate) — acá

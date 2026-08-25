@@ -1,9 +1,15 @@
 export interface ProductCostEntry {
   cost: number;
+  tax: number;
   validFrom: string;
 }
 
-export function getCostAtDate(costs: ProductCostEntry[], date: string): number | null {
+export interface CostEntryResult {
+  cost: number;
+  tax: number;
+}
+
+export function getCostEntryAtDate(costs: ProductCostEntry[], date: string): CostEntryResult | null {
   let best: ProductCostEntry | null = null;
   let earliest: ProductCostEntry | null = null;
   for (const c of costs) {
@@ -17,8 +23,8 @@ export function getCostAtDate(costs: ProductCostEntry[], date: string): number |
   // Un costo cargado hoy para un producto con ventas viejas no tiene ningún
   // registro con validFrom <= date — pero la mejor estimación disponible para
   // esas ventas sigue siendo el primer costo que se cargó, no "sin dato".
-  if (best) return best.cost;
-  return earliest ? earliest.cost : null;
+  const chosen = best ?? earliest;
+  return chosen ? { cost: chosen.cost, tax: chosen.tax } : null;
 }
 
 export function allocateAdsCost(
@@ -37,6 +43,7 @@ export interface NetProfitInput {
   shippingCost: number;
   adsCostAllocated: number;
   costApplied: number | null;
+  taxApplied: number | null;
 }
 
 export function calculateNetProfit(input: NetProfitInput): number | null {
@@ -46,6 +53,7 @@ export function calculateNetProfit(input: NetProfitInput): number | null {
     input.mlCommission -
     input.shippingCost -
     input.adsCostAllocated -
-    input.costApplied * input.quantity
+    input.costApplied * input.quantity -
+    (input.taxApplied ?? 0) * input.quantity
   );
 }
