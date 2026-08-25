@@ -13,15 +13,21 @@ export interface SyncResult {
 /** Sincroniza el catálogo. Barato: una llamada paginada + un upsert por producto. */
 export async function syncProducts(db: QueryExecutor, accountId: string, sellerId: string): Promise<number> {
   const now = new Date().toISOString();
+  const hasCategory = await hasColumn(db, "products", "category_id");
   const products = await listProducts(accountId, sellerId);
   for (const p of products) {
     await db.query(
-      `INSERT INTO products (account_id, id, title, sku, current_price, stock, permalink, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO products (account_id, id, title, sku, current_price, stock, permalink, updated_at${hasCategory ? ", category_id, category_name" : ""})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8${hasCategory ? ", $9, $10" : ""})
        ON CONFLICT (account_id, id) DO UPDATE SET
          title = excluded.title, sku = excluded.sku, current_price = excluded.current_price,
-         stock = excluded.stock, permalink = excluded.permalink, updated_at = excluded.updated_at`,
-      [accountId, p.id, p.title, p.sku, p.price, p.stock, p.permalink, now]
+         stock = excluded.stock, permalink = excluded.permalink, updated_at = excluded.updated_at${
+           hasCategory ? ", category_id = excluded.category_id, category_name = excluded.category_name" : ""
+         }`,
+      [
+        accountId, p.id, p.title, p.sku, p.price, p.stock, p.permalink, now,
+        ...(hasCategory ? [p.categoryId, p.categoryName] : []),
+      ]
     );
   }
   return products.length;

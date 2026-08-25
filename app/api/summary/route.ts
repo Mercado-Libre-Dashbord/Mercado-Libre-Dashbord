@@ -36,7 +36,42 @@ async function totalsFor(client: { query: (sql: string, args: unknown[]) => Prom
   const orders = Number(row.orders);
   const grossSales = Number(row.grossSales);
   const netProfit = Number(row.netProfit);
-  return { orders, grossSales, netProfit, profitPct: grossSales > 0 ? netProfit / grossSales : 0 };
+  const refunds = await refundsFor(client, accountId, from, to);
+  return {
+    orders,
+    grossSales,
+    netProfit,
+    profitPct: grossSales > 0 ? netProfit / grossSales : 0,
+    refundOrders: refunds.orders,
+    refundAmount: refunds.amount,
+  };
+}
+
+/**
+ * Órdenes canceladas del período: cuántas y por cuánta plata.
+ *
+ * Quedan fuera de facturación y ganancia (ver lib/order-status.ts), pero
+ * necesitan verse igual: una cancelación es trabajo hecho que no se cobró,
+ * y una tasa que sube es una señal temprana de un problema de producto,
+ * stock o envío.
+ */
+async function refundsFor(
+  client: { query: (sql: string, args: unknown[]) => Promise<{ rows: Record<string, string | number>[] }> },
+  accountId: string,
+  from: string,
+  to: string
+) {
+  const result = await client.query(
+    `SELECT COUNT(DISTINCT o.id) as orders,
+            COALESCE(SUM(oi.unit_price * oi.quantity), 0) as amount
+     FROM orders o
+     JOIN order_items oi ON oi.account_id = o.account_id AND oi.order_id = o.id
+     WHERE o.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
+       AND NOT (${revenueStatusFilter()})`,
+    [accountId, from, to]
+  );
+  const row = result.rows[0];
+  return { orders: Number(row.orders ?? 0), amount: Number(row.amount ?? 0) };
 }
 
 export async function GET(request: NextRequest) {
@@ -94,6 +129,31 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(rows);
   }
 
+  if (groupBy === "category") {
+    const rows = await withScope({ accountId: account.id }, async (client) => {
+      // Sin la migración de categorías no hay nada que agrupar; se devuelve
+      // vacío y el gráfico muestra su empty state.
+      if (!(await hasColumn(client, "products", "category_name"))) return [];
+      const result = await client.query(
+        `SELECT COALESCE(NULLIF(p.category_name, ''), 'Sin categoría') as category,
+                COALESCE(SUM(oi.unit_price * oi.quantity), 0) as revenue,
+                COALESCE(SUM(oi.net_profit), 0) as "netProfit",
+                COALESCE(SUM(oi.quantity), 0) as units
+         FROM order_items oi
+         JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
+         JOIN products p ON p.account_id = oi.account_id AND p.id = oi.product_id
+         WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
+           AND ${revenueStatusFilter()}
+         GROUP BY category
+         HAVING COALESCE(SUM(oi.unit_price * oi.quantity), 0) > 0
+         ORDER BY revenue DESC`,
+        [account.id, from, to]
+      );
+      return result.rows;
+    });
+    return NextResponse.json(rows);
+  }
+
   const summary = await withScope({ accountId: account.id }, async (client) => {
     const totalsResult = await client.query(
       `SELECT
@@ -128,6 +188,8 @@ export async function GET(request: NextRequest) {
     const netProfit = Number(totals.netProfit);
     const ordersWithCost = Number(totals.ordersWithCost);
 
+    const refunds = await refundsFor(client, account.id, from, to);
+
     const prevRange = previousRange(from, to);
     const previous = prevRange ? await totalsFor(client, account.id, prevRange.from, prevRange.to) : null;
 
@@ -154,6 +216,9 @@ export async function GET(request: NextRequest) {
       netAov: orders > 0 ? netProfit / orders : 0,
       trueCpa: ordersWithCost > 0 ? adSpend / ordersWithCost : 0,
       itemsMissingCost: Number(totals.itemsMissingCost),
+      refundOrders: refunds.orders,
+      refundAmount: refunds.amount,
+      refundRate: orders + refunds.orders > 0 ? refunds.orders / (orders + refunds.orders) : 0,
       previous,
       pendingMigrations,
     };

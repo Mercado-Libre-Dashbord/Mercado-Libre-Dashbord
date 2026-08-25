@@ -8,6 +8,8 @@ export interface MlProduct {
   price: number;
   stock: number;
   permalink: string;
+  categoryId: string | null;
+  categoryName: string | null;
 }
 
 export async function listProducts(accountId: string, sellerId: string): Promise<MlProduct[]> {
@@ -51,10 +53,44 @@ export async function listProducts(accountId: string, sellerId: string): Promise
         price: entry.body.price,
         stock: entry.body.available_quantity,
         permalink: entry.body.permalink,
+        categoryId: entry.body.category_id ?? null,
+        categoryName: null,
       });
     }
   }
+
+  await attachCategoryNames(products, token);
   return products;
+}
+
+/**
+ * Resuelve el nombre de cada categoría. `/items` solo devuelve el id
+ * (ej. "MLA1234"), que no le dice nada a nadie en un gráfico.
+ *
+ * Se piden solo los ids únicos: un catálogo de 200 publicaciones suele tener
+ * un puñado de categorías, así que esto son pocas llamadas y no una por
+ * producto. Si alguna falla, ese producto queda sin nombre de categoría en
+ * vez de romper la sincronización entera del catálogo.
+ */
+async function attachCategoryNames(products: MlProduct[], token: string): Promise<void> {
+  const uniqueIds = [...new Set(products.map((p) => p.categoryId).filter((id): id is string => Boolean(id)))];
+  if (uniqueIds.length === 0) return;
+
+  const names = new Map<string, string>();
+  await Promise.all(
+    uniqueIds.map(async (id) => {
+      try {
+        const category = await mlFetch(`/categories/${id}`, token);
+        if (category?.name) names.set(id, String(category.name));
+      } catch (err) {
+        console.warn(`No se pudo resolver el nombre de la categoría ${id}:`, (err as Error).message);
+      }
+    })
+  );
+
+  for (const p of products) {
+    if (p.categoryId) p.categoryName = names.get(p.categoryId) ?? null;
+  }
 }
 
 export interface MlOrderItem {

@@ -25,6 +25,19 @@
   --chart-tax: #1baf7a;
   --chart-cost: #eda100;
   --chart-iva: #8b5fd6;
+  /* Rampa neutra para el donut de categorías: parte-de-un-todo en un solo
+     tono, de oscuro a claro (el manual de marca pide monocromo primero).
+     La identidad de cada porción la da la leyenda con nombre y monto, no el
+     color solo. */
+  --ramp-1: #1a1a1a;
+  --ramp-2: #454545;
+  --ramp-3: #707070;
+  --ramp-4: #9b9b9b;
+  --ramp-5: #c2c2c2;
+  --ramp-6: #dedede;
+  /* Serie protagonista vs. contexto en el gráfico de rendimiento. */
+  --series-strong: #1a1a1a;
+  --series-muted: #b8b8b8;
   /* Azul Niebla — manual's secondary color for métricas/datos primarios. */
   --mist: #c8d8e8;
 
@@ -310,6 +323,43 @@ tbody tr:hover { background: var(--surface-2); }
   align-items: center;
   justify-content: center;
 }
+/* Tarjeta protagonista: la primera del tablero va en negro para que el ojo
+   sepa dónde empezar a leer. */
+.kpi-card.kpi-hero {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+.kpi-card.kpi-hero .label { color: rgba(255, 255, 255, 0.72); }
+.kpi-card.kpi-hero .kpi-icon { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.kpi-card.kpi-hero .kpi-delta-caption { color: rgba(255, 255, 255, 0.6); }
+.kpi-card.kpi-hero .delta-pill.up { background: rgba(255, 255, 255, 0.16); color: #8ee0b0; }
+.kpi-card.kpi-hero .delta-pill.down { background: rgba(255, 255, 255, 0.16); color: #f0a2a2; }
+.kpi-card.kpi-hero:hover { border-color: var(--accent-strong); }
+.kpi-card.kpi-hero .value { font-size: 26px; }
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+.chart-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); flex-wrap: wrap; }
+.chart-card-title { font-size: 15px; font-weight: 700; margin: 0; }
+
+/* Layout de dos columnas: gráfico principal + donut al costado, como en la
+   referencia. Colapsa a una sola columna en pantallas angostas. */
+.chart-split { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); gap: var(--space-3); align-items: start; }
+@media (max-width: 900px) { .chart-split { grid-template-columns: 1fr; } }
+
+.donut-legend { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.donut-legend li { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; }
+.donut-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.donut-legend-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.donut-legend-value { font-variant-numeric: tabular-nums; color: var(--text-dim); }
+
 .kpi-delta { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-2); }
 .kpi-delta .delta-pill { margin-top: 0; }
 .kpi-delta-caption { font-size: 11px; color: var(--text-dim); }

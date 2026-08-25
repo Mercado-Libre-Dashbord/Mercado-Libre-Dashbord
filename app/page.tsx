@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } from "recharts";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
+  LineChart, Line, PieChart, Pie, Cell,
+} from "recharts";
 import { SyncButton } from "./SyncButton";
 import { NoAccountState } from "./NoAccountState";
 import { PeriodBar } from "./PeriodBar";
@@ -24,6 +27,9 @@ interface Summary {
   profitPct: number;
   netRevenue: number;
   itemsMissingCost: number;
+  refundOrders: number;
+  refundAmount: number;
+  refundRate: number;
   totalIva: number;
   totalCommission: number;
   totalShipping: number;
@@ -41,6 +47,13 @@ interface DailyBreakdown {
   iva: number;
   cost: number;
   netProfit: number;
+}
+
+interface CategoryRow {
+  category: string;
+  revenue: number;
+  netProfit: number;
+  units: number;
 }
 
 interface BillingBucket {
@@ -163,6 +176,12 @@ const KPI_ICON_PATHS: Record<string, React.ReactNode> = {
       <path d="M2.5 10h19M16 14.5h3" />
     </>
   ),
+  refund: (
+    <>
+      <path d="M3 12a9 9 0 1 0 2.6-6.4" />
+      <path d="M3 3v5h5" />
+    </>
+  ),
 };
 
 function KpiIcon({ name }: { name: string }) {
@@ -192,6 +211,116 @@ function DeltaPill({ current, previous }: { current: number; previous: number | 
   );
 }
 
+const DONUT_RAMP = ["var(--ramp-1)", "var(--ramp-2)", "var(--ramp-3)", "var(--ramp-4)", "var(--ramp-5)", "var(--ramp-6)"];
+const DONUT_MAX_SLICES = 5;
+
+/**
+ * Categorías más vendidas. Un donut es legible solo para parte-de-un-todo
+ * "de un vistazo" y con pocas porciones, así que se muestran las 5 primeras
+ * y el resto se pliega en "Otras" en vez de sumar colores. Los montos van en
+ * la leyenda: comparar arcos parecidos a ojo no funciona, leer los números sí.
+ */
+function CategoryDonut({ rows }: { rows: CategoryRow[] }) {
+  const sorted = [...rows].sort((a, b) => b.revenue - a.revenue);
+  const head = sorted.slice(0, DONUT_MAX_SLICES);
+  const tail = sorted.slice(DONUT_MAX_SLICES);
+  const data = tail.length > 0
+    ? [...head, { category: "Otras", revenue: tail.reduce((sum, r) => sum + r.revenue, 0), netProfit: 0, units: 0 }]
+    : head;
+  const total = data.reduce((sum, r) => sum + r.revenue, 0);
+
+  return (
+    <div className="chart-card">
+      <div className="chart-card-head">
+        <h3 className="chart-card-title">Categorías más vendidas</h3>
+      </div>
+      <div style={{ width: "100%", height: 190, position: "relative" }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="revenue"
+              nameKey="category"
+              innerRadius="62%"
+              outerRadius="92%"
+              paddingAngle={2}
+              stroke="var(--surface)"
+              strokeWidth={2}
+              isAnimationActive={false}
+            >
+              {data.map((row, i) => (
+                <Cell key={row.category} fill={DONUT_RAMP[i % DONUT_RAMP.length]} />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+              formatter={(value: number, name: string) => [fmt(value), name]}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", pointerEvents: "none",
+          }}
+        >
+          <span style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</span>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>facturado</span>
+        </div>
+      </div>
+      <ul className="donut-legend">
+        {data.map((row, i) => (
+          <li key={row.category}>
+            <span className="donut-swatch" style={{ background: DONUT_RAMP[i % DONUT_RAMP.length] }} />
+            <span className="donut-legend-name" title={row.category}>{row.category}</span>
+            <span className="donut-legend-value">{fmt(row.revenue)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Ganancia contra costos día a día. La ganancia va en negro (la serie que
+ * importa) y los costos en gris de contexto — resaltar una y apagar la otra
+ * se lee mucho más rápido que dos colores compitiendo.
+ */
+function PerformanceChart({ daily }: { daily: DailyBreakdown[] }) {
+  const data = daily.map((d) => ({
+    day: d.day,
+    ganancia: d.netProfit,
+    costos: d.commission + d.shipping + d.tax + d.iva + d.cost,
+  }));
+
+  return (
+    <div className="chart-card">
+      <div className="chart-card-head">
+        <h3 className="chart-card-title">Rendimiento de ventas</h3>
+        <span className="field-hint" style={{ margin: 0 }}>Ganancia neta vs. costos totales</span>
+      </div>
+      <div style={{ width: "100%", height: 260 }}>
+        <ResponsiveContainer>
+          <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="day" stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 11 }} tickMargin={8} />
+            <YAxis stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 11 }} width={54} />
+            <Tooltip
+              contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+              labelStyle={{ color: "var(--text-dim)" }}
+              formatter={(value: number) => fmt(value)}
+            />
+            <Legend verticalAlign="top" align="left" wrapperStyle={{ fontSize: 12, color: "var(--text-dim)", paddingBottom: 8 }} />
+            <Line type="monotone" dataKey="costos" name="Costos" stroke="var(--series-muted)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="ganancia" name="Ganancia neta" stroke="var(--series-strong)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
@@ -199,6 +328,7 @@ export default function HomePage() {
   const [daily, setDaily] = useState<DailyBreakdown[] | null>(null);
   const [products, setProducts] = useState<ProductRow[] | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
+  const [categories, setCategories] = useState<CategoryRow[] | null>(null);
   const [period, setPeriod] = useState<Period>("hoy");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
@@ -232,6 +362,7 @@ export default function HomePage() {
     safeFetch<OrderSummaryRow[]>(`/api/orders?groupBy=order&from=${from}&to=${to}`, setOrders, []);
     safeFetch<ProductRow[]>(`/api/products?from=${from}&to=${to}`, setProducts, []);
     safeFetch<Billing | null>(`/api/billing?from=${from}&to=${to}`, setBilling, null);
+    safeFetch<CategoryRow[]>(`/api/summary?groupBy=category&from=${from}&to=${to}`, setCategories, []);
   }
 
   useEffect(loadAll, [from, to]);
@@ -280,15 +411,26 @@ export default function HomePage() {
 
       <h2 className="section-title">Tienda</h2>
       <div className="kpi-grid">
+        <div className="kpi-card kpi-hero">
+          <div className="kpi-card-head"><KpiIcon name="gross" /><span className="label">Facturación</span></div>
+          <div className="value"><KpiValue>{summary ? fmt(summary.grossSales) : "-"}</KpiValue></div>
+          {summary && <DeltaPill current={summary.grossSales} previous={summary.previous?.grossSales} />}
+        </div>
         <div className="kpi-card">
           <div className="kpi-card-head"><KpiIcon name="orders" /><span className="label">Órdenes</span></div>
           <div className="value"><KpiValue>{summary?.orders ?? "-"}</KpiValue></div>
           {summary && <DeltaPill current={summary.orders} previous={summary.previous?.orders} />}
         </div>
         <div className="kpi-card">
-          <div className="kpi-card-head"><KpiIcon name="gross" /><span className="label">Facturación</span></div>
-          <div className="value"><KpiValue>{summary ? fmt(summary.grossSales) : "-"}</KpiValue></div>
-          {summary && <DeltaPill current={summary.grossSales} previous={summary.previous?.grossSales} />}
+          <div className="kpi-card-head"><KpiIcon name="refund" /><span className="label">Devoluciones</span></div>
+          <div className="value"><KpiValue>{summary ? fmt(summary.refundAmount) : "-"}</KpiValue></div>
+          {summary && (
+            <div className="kpi-delta">
+              <span className="kpi-delta-caption">
+                {summary.refundOrders} orden(es) · {(summary.refundRate * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}% de tus ventas
+              </span>
+            </div>
+          )}
         </div>
         <div className="kpi-card">
           <div className="kpi-card-head"><KpiIcon name="aov" /><span className="label">Ticket promedio</span></div>
@@ -317,6 +459,7 @@ export default function HomePage() {
           <li><strong>Ticket promedio</strong>: Facturación ÷ Órdenes.</li>
           <li><strong>Ganancia neta</strong>: Facturación − comisión de Mercado Libre − envío − publicidad − costo de producto − impuestos. Si a un producto le falta costo cargado, sus ventas quedan afuera de este número (no se inventa un valor).</li>
           <li><strong>Margen neto</strong>: Ganancia neta ÷ Facturación.</li>
+          <li><strong>Devoluciones</strong>: plata de órdenes canceladas. No suma a la facturación ni a la ganancia — la venta se cayó — pero se muestra para que veas cuánto se te está yendo por ahí.</li>
           <li><strong>IVA</strong>: se calcula solo, al 21% (Responsable Inscripto). Débito de la venta menos el crédito de la comisión, el envío, la publicidad y el costo. No lo cargues a mano en Productos o lo estarías contando dos veces.</li>
           <li><strong>Órdenes canceladas</strong>: no suman a ningún número de arriba. Aparecen en la lista de abajo para que las veas, pero su plata nunca entró.</li>
           <li><strong>Facturación neta</strong>: Facturación − comisión de Mercado Libre − envío (sin restar costo de producto ni impuestos).</li>
@@ -325,6 +468,30 @@ export default function HomePage() {
 
       {summary && summary.itemsMissingCost > 0 && (
         <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Ganancia neta</p>
+      )}
+
+      <h2 className="section-title">Rendimiento</h2>
+      {daily === null || categories === null ? (
+        <p className="empty-state">Cargando gráficos…</p>
+      ) : daily.length === 0 ? (
+        <div className="empty-state">
+          <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Sin ventas en este período.</p>
+          <p style={{ margin: "var(--space-2) 0 0" }}>Probá con un período más largo — &quot;Este mes&quot; o &quot;Este año&quot;.</p>
+        </div>
+      ) : (
+        <div className="chart-split">
+          <PerformanceChart daily={daily} />
+          {categories.length > 0 ? (
+            <CategoryDonut rows={categories} />
+          ) : (
+            <div className="chart-card">
+              <div className="chart-card-head"><h3 className="chart-card-title">Categorías más vendidas</h3></div>
+              <div className="empty-state" style={{ padding: "var(--space-5) var(--space-3)" }}>
+                Todavía no hay categorías. Sincronizá para traerlas desde Mercado Libre.
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       <h2 className="section-title">De qué está hecha tu facturación</h2>

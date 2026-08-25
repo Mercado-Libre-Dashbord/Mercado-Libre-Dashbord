@@ -36,7 +36,43 @@ describe("listProducts", () => {
       ]);
     const products = await listProducts("acc1", "123");
     expect(products).toHaveLength(2);
-    expect(products[0]).toEqual({ id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url1" });
+    expect(products[0]).toEqual({
+      id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url1",
+      categoryId: null, categoryName: null,
+    });
+  });
+
+  it("resolves each category name once, not once per product", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: ["MLA1", "MLA2", "MLA3"] })
+      .mockResolvedValueOnce([
+        { body: { id: "MLA1", title: "A", price: 1, available_quantity: 1, permalink: "", category_id: "MLA111" } },
+        { body: { id: "MLA2", title: "B", price: 1, available_quantity: 1, permalink: "", category_id: "MLA111" } },
+        { body: { id: "MLA3", title: "C", price: 1, available_quantity: 1, permalink: "", category_id: "MLA222" } },
+      ])
+      .mockResolvedValueOnce({ name: "Camping" })
+      .mockResolvedValueOnce({ name: "Cocina" });
+
+    const products = await listProducts("acc1", "123");
+
+    const categoryCalls = vi.mocked(mlFetch).mock.calls.filter((c) => String(c[0]).startsWith("/categories/"));
+    expect(categoryCalls).toHaveLength(2);
+    expect(products.map((p) => p.categoryName).sort()).toEqual(["Camping", "Camping", "Cocina"]);
+  });
+
+  it("keeps the product when its category name cannot be resolved", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: ["MLA1"] })
+      .mockResolvedValueOnce([
+        { body: { id: "MLA1", title: "A", price: 1, available_quantity: 1, permalink: "", category_id: "MLA111" } },
+      ])
+      .mockRejectedValueOnce(new MlApiError(404, "not found"));
+
+    const products = await listProducts("acc1", "123");
+
+    expect(products).toHaveLength(1);
+    expect(products[0].categoryId).toBe("MLA111");
+    expect(products[0].categoryName).toBeNull();
   });
 
   it("batches the /items lookup in groups of 20 ids", async () => {

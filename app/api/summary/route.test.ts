@@ -94,6 +94,7 @@ describe("GET /api/summary", () => {
     const query = vi.fn().mockImplementation(async (sql: string) => {
       if (sql.includes("information_schema.columns")) return { rows: [] };
       if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      if (sql.includes("NOT (o.status NOT IN")) return { rows: [{ orders: 0, amount: 0 }] };
       if (sql.includes("totalCommission")) {
         // Totales del período actual (2026-08-01..2026-08-10, 10 días).
         return {
@@ -122,7 +123,7 @@ describe("GET /api/summary", () => {
     const body = await (await GET(request)).json();
 
     expect(totalsCalls).toBe(1);
-    expect(body.previous).toEqual({ orders: 2, grossSales: 2000, netProfit: 1000, profitPct: 0.5 });
+    expect(body.previous).toMatchObject({ orders: 2, grossSales: 2000, netProfit: 1000, profitPct: 0.5 });
   });
 
   it("excludes cancelled orders from every financial aggregate", async () => {
@@ -130,6 +131,8 @@ describe("GET /api/summary", () => {
     const query = vi.fn().mockImplementation(async (sql: string) => {
       if (sql.includes("information_schema.columns")) return { rows: [] };
       if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      // La query de reembolsos invierte el filtro a propósito; no es un agregado.
+      if (sql.includes("NOT (o.status NOT IN")) return { rows: [{ orders: 0, amount: 0 }] };
       seen.push(sql);
       return {
         rows: [
@@ -208,10 +211,63 @@ describe("GET /api/summary", () => {
     resetColumnCache();
     vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
     const adminBody = await (await GET(request)).json();
-    expect(adminBody.pendingMigrations).toHaveLength(4);
+    expect(adminBody.pendingMigrations).toHaveLength(6);
     const sql = adminBody.pendingMigrations.join(" ");
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS tax");
     expect(sql).toContain("iva_applied");
     expect(sql).toContain("billing_charges");
+    expect(sql).toContain("category_id");
+  });
+
+  it("counts cancelled orders as refunds, separately from revenue", async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      // La query de reembolsos es la que invierte el filtro de estados.
+      if (sql.includes("NOT (o.status NOT IN")) return { rows: [{ orders: 3, amount: 62700 }] };
+      return {
+        rows: [
+          {
+            orders: 12, grossSales: 240000, totalCommission: 0, totalShipping: 0, totalMercadoAds: 0,
+            totalCost: 0, netProfit: 0, itemsMissingCost: 0, ordersWithCost: 0,
+          },
+        ],
+      };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams() } } as any;
+    const body = await (await GET(request)).json();
+
+    expect(body.refundOrders).toBe(3);
+    expect(body.refundAmount).toBe(62700);
+    expect(body.refundRate).toBeCloseTo(3 / 15);
+    // Y no contaminan la facturación.
+    expect(body.grossSales).toBe(240000);
+  });
+
+  it("groups revenue by product category", async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) {
+        return { rows: [{ table_name: "products", column_name: "category_name" }] };
+      }
+      expect(sql).toContain("category_name");
+      expect(sql).toContain("o.status NOT IN ('cancelled', 'invalid')");
+      return { rows: [{ category: "Camping", revenue: 120000, netProfit: 40000, units: 6 }] };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams("groupBy=category") } } as any;
+    const body = await (await GET(request)).json();
+
+    expect(body).toEqual([{ category: "Camping", revenue: 120000, netProfit: 40000, units: 6 }]);
+  });
+
+  it("returns no categories instead of failing when that migration is missing", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams("groupBy=category") } } as any;
+    expect(await (await GET(request)).json()).toEqual([]);
   });
 });
