@@ -6,6 +6,8 @@ export interface Account {
   name: string;
   ownerEmail: string;
   mlSellerId: string | null;
+  /** Otros impuestos (IIBB, internos) como fracción de la facturación: 0.03 = 3%. */
+  otherTaxRate: number;
   createdAt: string;
 }
 
@@ -14,6 +16,7 @@ interface AccountRow {
   name: string;
   owner_email: string;
   ml_seller_id: string | null;
+  other_tax_rate?: number | string | null;
   created_at: string | Date;
 }
 
@@ -23,6 +26,9 @@ function mapRow(row: AccountRow): Account {
     name: row.name,
     ownerEmail: row.owner_email,
     mlSellerId: row.ml_seller_id,
+    // La columna llega por migración; sin ella la cuenta simplemente no
+    // tiene otros impuestos configurados todavía.
+    otherTaxRate: Number(row.other_tax_rate ?? 0),
     createdAt: new Date(row.created_at).toISOString(),
   };
 }
@@ -35,7 +41,7 @@ export async function createAccount(db: QueryExecutor, name: string, ownerEmail:
     `INSERT INTO accounts (id, name, owner_email, ml_seller_id, created_at) VALUES ($1, $2, $3, NULL, $4)`,
     [id, name, normalizedEmail, createdAt]
   );
-  return { id, name, ownerEmail: normalizedEmail, mlSellerId: null, createdAt };
+  return { id, name, ownerEmail: normalizedEmail, mlSellerId: null, otherTaxRate: 0, createdAt };
 }
 
 export async function listAccounts(db: QueryExecutor): Promise<Account[]> {
@@ -59,4 +65,9 @@ export async function getAccountByOwnerEmail(db: QueryExecutor, email: string): 
 
 export async function setAccountMlSellerId(db: QueryExecutor, accountId: string, mlSellerId: string): Promise<void> {
   await db.query("UPDATE accounts SET ml_seller_id = $1 WHERE id = $2", [mlSellerId, accountId]);
+}
+
+/** Guarda la alícuota de otros impuestos (IIBB, internos) de la cuenta. */
+export async function setAccountOtherTaxRate(db: QueryExecutor, accountId: string, rate: number): Promise<void> {
+  await db.query(`UPDATE accounts SET other_tax_rate = $1 WHERE id = $2`, [rate, accountId]);
 }

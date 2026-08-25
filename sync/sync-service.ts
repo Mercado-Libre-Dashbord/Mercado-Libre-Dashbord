@@ -44,7 +44,8 @@ export async function syncOrders(
   db: QueryExecutor,
   accountId: string,
   orderIds: string[],
-  hasIva: boolean
+  hasIva: boolean,
+  otherTaxRate = 0
 ): Promise<number> {
   let synced = 0;
   for (const orderId of orderIds) {
@@ -74,7 +75,9 @@ export async function syncOrders(
         shippingCost: item.shippingCost,
         adsCostAllocated: 0,
         costApplied: entry?.cost ?? null,
-        taxApplied: entry?.tax ?? null,
+        // Otros impuestos salen de la alícuota de la cuenta aplicada al precio,
+        // no de un valor cargado producto por producto.
+        taxApplied: item.unitPrice * otherTaxRate,
       };
       await db.query(
         `INSERT INTO order_items
@@ -83,7 +86,7 @@ export async function syncOrders(
         [
           accountId, order.id, item.productId, item.unitPrice, item.quantity,
           item.mlCommission, item.shippingCost, 0,
-          entry?.cost ?? null, entry?.tax ?? null,
+          entry?.cost ?? null, profitInput.taxApplied,
           calculateNetProfit(profitInput),
           ...(hasIva ? [calculateIva(profitInput)] : []),
         ]
@@ -124,23 +127,24 @@ export async function syncAds(
   }
 }
 
-export async function recalculate(db: QueryExecutor, accountId: string, hasIva: boolean): Promise<void> {
-  await reallocateAdsCosts(db, accountId, hasIva);
+export async function recalculate(db: QueryExecutor, accountId: string, hasIva: boolean, otherTaxRate = 0): Promise<void> {
+  await reallocateAdsCosts(db, accountId, hasIva, otherTaxRate);
 }
 
 export async function runSync(
   db: QueryExecutor,
   accountId: string,
   sellerId: string,
-  sinceIso: string
+  sinceIso: string,
+  otherTaxRate = 0
 ): Promise<SyncResult> {
   const hasIva = await hasColumn(db, "order_items", "iva_applied");
 
   const productsSynced = await syncProducts(db, accountId, sellerId);
   const orderIds = await listOrders(accountId, sellerId, sinceIso);
-  const ordersSynced = await syncOrders(db, accountId, orderIds, hasIva);
+  const ordersSynced = await syncOrders(db, accountId, orderIds, hasIva, otherTaxRate);
   const adsRowsSynced = await syncAds(db, accountId, sellerId, sinceIso);
-  await recalculate(db, accountId, hasIva);
+  await recalculate(db, accountId, hasIva, otherTaxRate);
   const billingChargesSynced = await syncBillingCharges(db, accountId);
 
   return { productsSynced, ordersSynced, adsRowsSynced, billingChargesSynced };
@@ -197,7 +201,7 @@ interface OrderItemRow {
   shippingcost: number;
 }
 
-async function reallocateAdsCosts(db: QueryExecutor, accountId: string, hasIva: boolean): Promise<void> {
+async function reallocateAdsCosts(db: QueryExecutor, accountId: string, hasIva: boolean, otherTaxRate = 0): Promise<void> {
   const itemsResult = await db.query<OrderItemRow>(
     `SELECT oi.id, oi.product_id as productId, oi.quantity, o.date_created as dateCreated,
             oi.unit_price as unitPrice, oi.ml_commission as mlCommission,
@@ -253,12 +257,12 @@ async function reallocateAdsCosts(db: QueryExecutor, accountId: string, hasIva: 
       shippingCost: Number(it.shippingcost),
       adsCostAllocated,
       costApplied: entry?.cost ?? null,
-      taxApplied: entry?.tax ?? null,
+      taxApplied: Number(it.unitprice) * otherTaxRate,
     };
     const netProfit = calculateNetProfit(profitInput);
     await db.query(
       `UPDATE order_items SET ads_cost_allocated = $1, net_profit = $2, cost_applied = $3, tax_applied = $4${hasIva ? ", iva_applied = $6" : ""} WHERE id = $5`,
-      [adsCostAllocated, netProfit, entry?.cost ?? null, entry?.tax ?? null, it.id, ...(hasIva ? [calculateIva(profitInput)] : [])]
+      [adsCostAllocated, netProfit, entry?.cost ?? null, profitInput.taxApplied, it.id, ...(hasIva ? [calculateIva(profitInput)] : [])]
     );
   }
 }

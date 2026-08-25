@@ -8,15 +8,12 @@ import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { resetColumnCache } from "@/db/schema-capabilities";
 
-const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", createdAt: "2026-01-01" };
+const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, createdAt: "2026-01-01" };
 
-/** Simula una base donde `product_costs.tax` existe (o no). */
-function queryMock({ hasTax }: { hasTax: boolean }) {
+function queryMock() {
   return vi.fn().mockImplementation(async (sql: string) => {
     if (sql.includes("information_schema.columns")) {
-      const rows = [{ table_name: "product_costs", column_name: "cost" }];
-      if (hasTax) rows.push({ table_name: "product_costs", column_name: "tax" });
-      return { rows };
+      return { rows: [{ table_name: "products", column_name: "thumbnail" }] };
     }
     return { rows: [] };
   });
@@ -42,8 +39,8 @@ describe("PATCH /api/products", () => {
     expect(res.status).toBe(400);
   });
 
-  it("inserts a new versioned cost row scoped to the current account, defaulting tax to 0", async () => {
-    const query = queryMock({ hasTax: true });
+  it("inserts a new versioned cost row scoped to the current account", async () => {
+    const query = queryMock();
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
     const request = { json: async () => ({ productId: "MLA1", cost: 350 }) } as any;
 
@@ -54,41 +51,17 @@ describe("PATCH /api/products", () => {
       "acc1",
       "MLA1",
       350,
-      0,
       expect.any(String),
     ]);
   });
 
-  it("returns 400 for a negative tax", async () => {
-    const request = { json: async () => ({ productId: "MLA1", cost: 350, tax: -1 }) } as any;
-    const res = await PATCH(request);
-    expect(res.status).toBe(400);
-  });
-
-  it("inserts the given tax when provided", async () => {
-    const query = queryMock({ hasTax: true });
+  it("ignores a per-product tax: taxes are an account-level rate now", async () => {
+    const query = queryMock();
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
     const request = { json: async () => ({ productId: "MLA1", cost: 350, tax: 40 }) } as any;
 
     await PATCH(request);
 
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO product_costs"), [
-      "acc1",
-      "MLA1",
-      350,
-      40,
-      expect.any(String),
-    ]);
-  });
-
-  it("still saves the cost when the tax column has not been migrated yet", async () => {
-    const query = queryMock({ hasTax: false });
-    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
-    const request = { json: async () => ({ productId: "MLA1", cost: 350, tax: 40 }) } as any;
-
-    const res = await PATCH(request);
-
-    expect(await res.json()).toEqual({ ok: true });
     const insert = query.mock.calls.find((c) => String(c[0]).includes("INSERT INTO product_costs"));
     expect(insert?.[0]).not.toContain("tax");
     expect(insert?.[1]).toEqual(["acc1", "MLA1", 350, expect.any(String)]);

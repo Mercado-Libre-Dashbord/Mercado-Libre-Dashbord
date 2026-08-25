@@ -40,6 +40,7 @@ describe("POST /api/sync", () => {
       name: "Cuenta",
       ownerEmail: "a@example.com",
       mlSellerId: null,
+      otherTaxRate: 0,
       createdAt: "2026-01-01T00:00:00Z",
     });
 
@@ -54,6 +55,7 @@ describe("POST /api/sync", () => {
       name: "Cuenta",
       ownerEmail: "a@example.com",
       mlSellerId: "SELLER1",
+      otherTaxRate: 0,
       createdAt: "2026-01-01T00:00:00Z",
     });
     const query = vi.fn().mockResolvedValue({ rows: [{ latest: "2026-01-01T00:00:00Z" }] });
@@ -73,6 +75,7 @@ describe("POST /api/sync", () => {
       name: "Cuenta",
       ownerEmail: "a@example.com",
       mlSellerId: "SELLER1",
+      otherTaxRate: 0,
       createdAt: "2026-01-01T00:00:00Z",
     });
     const query = vi.fn().mockResolvedValue({ rows: [{ latest: null }] });

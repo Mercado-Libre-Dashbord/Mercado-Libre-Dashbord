@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         );
         const latest = sinceResult.rows[0]?.latest ?? null;
         const sinceIso = latest ? new Date(latest).toISOString() : FULL_SYNC_START;
-        return runSync(client, account.id, sellerId, sinceIso);
+        return runSync(client, account.id, sellerId, sinceIso, account.otherTaxRate);
       });
       return NextResponse.json({ ...result, done: true });
     }
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       const productsSynced = offset === 0 ? await syncProducts(client, account.id, sellerId) : 0;
 
       const page = await listOrdersPage(account.id, sellerId, FULL_SYNC_START, offset, ORDERS_PER_BATCH);
-      const ordersSynced = await syncOrders(client, account.id, page.ids, hasIva);
+      const ordersSynced = await syncOrders(client, account.id, page.ids, hasIva, account.otherTaxRate);
       const nextOffset = offset + page.ids.length;
       const done = page.ids.length === 0 || nextOffset >= page.total;
 
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       let billingChargesSynced = 0;
       if (done) {
         adsRowsSynced = await syncAds(client, account.id, sellerId, FULL_SYNC_START);
-        await recalculate(client, account.id, hasIva);
+        await recalculate(client, account.id, hasIva, account.otherTaxRate);
         billingChargesSynced = await syncBillingCharges(client, account.id);
       }
 

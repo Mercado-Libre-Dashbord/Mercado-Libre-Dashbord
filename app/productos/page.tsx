@@ -10,7 +10,7 @@ interface Product {
   currentPrice: number;
   stock: number;
   currentCost: number | null;
-  currentTax: number | null;
+  thumbnail: string | null;
   unitsSold: number;
   totalProfit: number;
   marginPct: number | null;
@@ -18,7 +18,7 @@ interface Product {
 
 export default function ProductosPage() {
   const [products, setProducts] = useState<Product[] | null>(null);
-  const [editing, setEditing] = useState<Record<string, { cost: string; tax: string }>>({});
+  const [editing, setEditing] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
@@ -100,11 +100,10 @@ export default function ProductosPage() {
   }
 
   async function saveCost(productId: string) {
-    const draft = editing[productId] ?? { cost: "", tax: "" };
-    const cost = Number(draft.cost);
-    const tax = draft.tax.trim() === "" ? 0 : Number(draft.tax);
-    if (draft.cost.trim() === "" || Number.isNaN(cost) || cost < 0 || Number.isNaN(tax) || tax < 0) {
-      setErrors((prev) => ({ ...prev, [productId]: "Costo requerido (≥ 0); otros impuestos opcional (≥ 0)." }));
+    const draft = editing[productId] ?? "";
+    const cost = Number(draft);
+    if (draft.trim() === "" || Number.isNaN(cost) || cost < 0) {
+      setErrors((prev) => ({ ...prev, [productId]: "Ingresá un costo (≥ 0)." }));
       return;
     }
     setErrors((prev) => ({ ...prev, [productId]: "" }));
@@ -113,9 +112,9 @@ export default function ProductosPage() {
       await fetch("/api/products", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, cost, tax }),
+        body: JSON.stringify({ productId, cost }),
       });
-      setEditing((prev) => ({ ...prev, [productId]: { cost: "", tax: "" } }));
+      setEditing((prev) => ({ ...prev, [productId]: "" }));
       load();
     } finally {
       setSavingId(null);
@@ -126,8 +125,8 @@ export default function ProductosPage() {
     <div>
       <h1>Productos</h1>
       <p className="field-hint" style={{ marginBottom: "var(--space-3)" }}>
-        Cargá el costo de compra por unidad. En &quot;Otros imp.&quot; van impuestos por unidad que no sean IVA
-        (IIBB, internos) — el IVA se calcula solo al 21%, no lo pongas acá o se contaría dos veces.
+        Cargá el costo de compra por unidad. Los impuestos no van acá: el IVA se calcula solo al 21% y el resto
+        (IIBB, internos) se configura una sola vez en <a href="/configuracion">Configuración</a>.
       </p>
       {loadError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{loadError}</p>}
       {products === null ? (
@@ -149,7 +148,6 @@ export default function ProductosPage() {
                 <th className="num">Precio</th>
                 <th className="num">Stock</th>
                 <th className="num">Costo</th>
-                <th className="num" title="Otros impuestos por unidad (IIBB, internos). El IVA se calcula solo.">Otros imp.</th>
                 <th className="num">Margen</th>
                 <th className="num">Vendidas</th>
                 <th className="num">Rentabilidad</th>
@@ -161,8 +159,17 @@ export default function ProductosPage() {
               {products.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    <span className="cell-title" title={p.title}>{p.title}</span>
-                    {p.sku && <span className="cell-sub">SKU {p.sku}</span>}
+                    <span className="cell-product">
+                      {p.thumbnail ? (
+                        <img className="cell-thumb" src={p.thumbnail} alt="" loading="lazy" />
+                      ) : (
+                        <span className="cell-thumb" aria-hidden="true" />
+                      )}
+                      <span style={{ minWidth: 0 }}>
+                        <span className="cell-title" title={p.title}>{p.title}</span>
+                        {p.sku && <span className="cell-sub">SKU {p.sku}</span>}
+                      </span>
+                    </span>
                   </td>
                   <td className="num">
                     {mlEditing[p.id] ? (
@@ -199,53 +206,32 @@ export default function ProductosPage() {
                   <td className={`num ${p.currentCost === null ? "missing-cost" : ""}`}>
                     {p.currentCost === null ? "Sin costo cargado" : p.currentCost.toFixed(2)}
                   </td>
-                  <td className="num">{p.currentTax === null ? "-" : p.currentTax.toFixed(2)}</td>
                   <td className="num">{p.marginPct === null ? "-" : `${(p.marginPct * 100).toFixed(1)}%`}</td>
                   <td className="num">{p.unitsSold}</td>
                   <td className="num">{p.totalProfit.toFixed(2)}</td>
                   <td>
                     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-                    <div style={{ display: "flex", gap: "var(--space-1)", alignItems: "start" }}>
-                      <div className="field-group">
-                        <label className="field-hint" htmlFor={`cost-${p.id}`}>
-                          Costo
-                        </label>
+                      <div style={{ display: "flex", gap: "var(--space-1)", alignItems: "center" }}>
                         <input
                           id={`cost-${p.id}`}
                           type="number"
                           min="0"
                           inputMode="decimal"
+                          placeholder="Costo"
+                          aria-label={`Nuevo costo para ${p.title}`}
                           aria-invalid={errors[p.id] ? true : undefined}
-                          value={editing[p.id]?.cost ?? ""}
+                          value={editing[p.id] ?? ""}
                           onChange={(e) => {
-                            setEditing((prev) => ({ ...prev, [p.id]: { cost: e.target.value, tax: prev[p.id]?.tax ?? "" } }));
+                            setEditing((prev) => ({ ...prev, [p.id]: e.target.value }));
                             if (errors[p.id]) setErrors((prev) => ({ ...prev, [p.id]: "" }));
                           }}
-                          style={{ width: 58, padding: "6px" }}
+                          style={{ width: 76, padding: "6px" }}
                         />
+                        <button className="btn btn-secondary btn-sm" onClick={() => saveCost(p.id)} disabled={savingId === p.id}>
+                          {savingId === p.id ? "…" : "Guardar"}
+                        </button>
                       </div>
-                      <div className="field-group">
-                        <label className="field-hint" htmlFor={`tax-${p.id}`} title="Otros impuestos por unidad (IIBB, internos). No cargues IVA: se calcula solo al 21%.">
-                          Otros imp.
-                        </label>
-                        <input
-                          id={`tax-${p.id}`}
-                          type="number"
-                          min="0"
-                          inputMode="decimal"
-                          value={editing[p.id]?.tax ?? ""}
-                          onChange={(e) => {
-                            setEditing((prev) => ({ ...prev, [p.id]: { cost: prev[p.id]?.cost ?? "", tax: e.target.value } }));
-                            if (errors[p.id]) setErrors((prev) => ({ ...prev, [p.id]: "" }));
-                          }}
-                          style={{ width: 58, padding: "6px" }}
-                        />
-                      </div>
-                      <button className="btn btn-secondary btn-sm" onClick={() => saveCost(p.id)} disabled={savingId === p.id}>
-                        {savingId === p.id ? "…" : "Guardar"}
-                      </button>
-                    </div>
-                    {errors[p.id] && <p className="field-error">{errors[p.id]}</p>}
+                      {errors[p.id] && <p className="field-error">{errors[p.id]}</p>}
                     </div>
                   </td>
                   <td>

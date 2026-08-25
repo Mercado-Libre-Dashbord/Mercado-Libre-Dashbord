@@ -45,8 +45,14 @@ CREATE TABLE IF NOT EXISTS accounts (
   name TEXT NOT NULL,
   owner_email TEXT NOT NULL UNIQUE,
   ml_seller_id TEXT,
+  -- Otros impuestos (IIBB, internos) como % de la facturación. Es una sola
+  -- configuración por cuenta y no un campo por producto: son alícuotas que
+  -- dependen de la jurisdicción del vendedor, no del artículo, y cargarlas
+  -- producto por producto era trabajo repetido garantizado.
+  other_tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS other_tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS products (
   account_id TEXT NOT NULL REFERENCES accounts(id),

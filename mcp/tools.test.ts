@@ -16,6 +16,7 @@ import {
   getAdsSpend,
   listCampaigns,
   setCampaignStatus,
+  splitIntoWindows,
 } from "./tools";
 import { mlFetch, MlApiError } from "./ml-client";
 
@@ -311,6 +312,36 @@ describe("getOrderDetail", () => {
   });
 });
 
+describe("splitIntoWindows", () => {
+  it("keeps a short range as a single window", () => {
+    expect(splitIntoWindows("2026-08-01", "2026-08-10")).toEqual([{ from: "2026-08-01", to: "2026-08-10" }]);
+  });
+
+  it("never produces a window longer than the API's 90-day limit", () => {
+    const windows = splitIntoWindows("2020-01-01", "2026-08-25");
+    for (const w of windows) {
+      const days = (Date.parse(`${w.to}T00:00:00Z`) - Date.parse(`${w.from}T00:00:00Z`)) / 86400000;
+      expect(days).toBeLessThanOrEqual(89);
+    }
+  });
+
+  it("covers the range end to end with no gaps or overlaps", () => {
+    const windows = splitIntoWindows("2026-01-01", "2026-08-25");
+    expect(windows[0].from).toBe("2026-01-01");
+    expect(windows[windows.length - 1].to).toBe("2026-08-25");
+    for (let i = 1; i < windows.length; i += 1) {
+      const prevEnd = Date.parse(`${windows[i - 1].to}T00:00:00Z`);
+      const thisStart = Date.parse(`${windows[i].from}T00:00:00Z`);
+      expect(thisStart - prevEnd).toBe(86400000);
+    }
+  });
+
+  it("returns nothing for an inverted or invalid range", () => {
+    expect(splitIntoWindows("2026-08-25", "2026-01-01")).toEqual([]);
+    expect(splitIntoWindows("no-es-fecha", "2026-01-01")).toEqual([]);
+  });
+});
+
 describe("getAdsSpend", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -343,6 +374,23 @@ describe("getAdsSpend", () => {
     );
     expect(vi.mocked(mlFetch).mock.calls[1][2]).toEqual(expect.objectContaining({ headers: { "Api-Version": "2" } }));
   });
+
+  it("splits a long history into 90-day windows instead of getting a 400", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
+      .mockResolvedValue({ results: [] });
+
+    await getAdsSpend("acc1", "123", "2026-01-01", "2026-08-25");
+
+    const searchCalls = vi.mocked(mlFetch).mock.calls.filter((c) => String(c[0]).includes("campaigns/search"));
+    expect(searchCalls.length).toBeGreaterThan(1);
+    for (const call of searchCalls) {
+      const url = new URL(`https://x${call[0]}`);
+      const from = Date.parse(`${url.searchParams.get("date_from")}T00:00:00Z`);
+      const to = Date.parse(`${url.searchParams.get("date_to")}T00:00:00Z`);
+      expect((to - from) / 86400000).toBeLessThanOrEqual(89);
+    }
+  });
 });
 
 describe("listCampaigns", () => {
@@ -367,9 +415,12 @@ describe("listCampaigns", () => {
       .mockResolvedValueOnce({ results: [{ id: 1, name: "Campaña 1", status: "active", budget: 5000 }] });
 
     expect(await listCampaigns("acc1")).toEqual([{ id: "1", name: "Campaña 1", status: "active", budget: 5000 }]);
-    expect(vi.mocked(mlFetch).mock.calls[1][0]).toMatch(
-      /^\/marketplace\/advertising\/MLA\/advertisers\/999\/product_ads\/campaigns\/search\?date_from=.+&date_to=.+$/
-    );
+    const url = new URL(`https://x${vi.mocked(mlFetch).mock.calls[1][0]}`);
+    expect(url.pathname).toBe("/marketplace/advertising/MLA/advertisers/999/product_ads/campaigns/search");
+    // La API rechaza con 400 cualquier rango de más de 90 días.
+    const from = Date.parse(`${url.searchParams.get("date_from")}T00:00:00Z`);
+    const to = Date.parse(`${url.searchParams.get("date_to")}T00:00:00Z`);
+    expect((to - from) / 86400000).toBeLessThanOrEqual(89);
   });
 });
 

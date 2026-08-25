@@ -10,7 +10,7 @@ import { resolveCurrentAccount } from "@/lib/current-account";
 import { updateProductPriceStock } from "@/mcp/tools";
 import { MlApiError } from "@/mcp/ml-client";
 
-const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", createdAt: "2026-01-01" };
+const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, createdAt: "2026-01-01" };
 
 describe("POST /api/products/ml-update", () => {
   beforeEach(() => {

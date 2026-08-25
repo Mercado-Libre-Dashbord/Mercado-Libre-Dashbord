@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/consultas", label: "Consultas", icon: "question" },
   { href: "/campanas", label: "Campañas", icon: "megaphone" },
   { href: "/tendencias", label: "Tendencias", icon: "trend" },
+  { href: "/configuracion", label: "Configuración", icon: "settings" },
 ] as const;
 
 function NavIcon({ name }: { name: string }) {
@@ -42,6 +43,12 @@ function NavIcon({ name }: { name: string }) {
         <circle cx="12" cy="17.2" r="0.1" fill="currentColor" />
       </>
     ),
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </>
+    ),
     users: (
       <>
         <circle cx="9" cy="8" r="3.2" />
@@ -54,6 +61,26 @@ function NavIcon({ name }: { name: string }) {
       {paths[name]}
     </svg>
   );
+}
+
+/**
+ * Marca del sidebar. Usa public/logo.png si está, y si no cae en el
+ * monograma original — así la app nunca muestra una imagen rota mientras el
+ * archivo del logo no esté subido al repo.
+ */
+function BrandMark() {
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  if (logoFailed) {
+    return (
+      <span className="sidebar-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+          <path d="M4 17L9 8L13 14L16 9L20 17" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    );
+  }
+  return <img className="sidebar-logo" src="/logo.png" alt="MetricsField" onError={() => setLogoFailed(true)} />;
 }
 
 export function NavBar() {
@@ -89,11 +116,7 @@ export function NavBar() {
   return (
     <nav className="sidebar" aria-label="Navegación principal">
       <div className="sidebar-brand">
-        <span className="sidebar-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-            <path d="M4 17L9 8L13 14L16 9L20 17" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
+        <BrandMark />
         <span className="sidebar-brand-text">Rentabilidad ML</span>
       </div>
 

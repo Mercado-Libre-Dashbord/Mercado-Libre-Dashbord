@@ -8,7 +8,7 @@ import { withScope } from "@/db/client";
 import { resolveCurrentAccount, getCurrentUser } from "@/lib/current-account";
 import { resetColumnCache } from "@/db/schema-capabilities";
 
-const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", createdAt: "2026-01-01" };
+const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, createdAt: "2026-01-01" };
 
 describe("GET /api/summary", () => {
   beforeEach(() => {
@@ -211,13 +211,14 @@ describe("GET /api/summary", () => {
     resetColumnCache();
     vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
     const adminBody = await (await GET(request)).json();
-    expect(adminBody.pendingMigrations).toHaveLength(7);
+    expect(adminBody.pendingMigrations).toHaveLength(8);
     const sql = adminBody.pendingMigrations.join(" ");
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS tax");
     expect(sql).toContain("iva_applied");
     expect(sql).toContain("billing_charges");
     expect(sql).toContain("category_id");
     expect(sql).toContain("thumbnail");
+    expect(sql).toContain("other_tax_rate");
   });
 
   it("counts cancelled orders as refunds, separately from revenue", async () => {

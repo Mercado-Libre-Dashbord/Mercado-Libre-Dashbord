@@ -253,6 +253,33 @@ function productAdsBase(siteId: string, advertiserId: string) {
 }
 
 /**
+ * Product Ads rechaza con 400 (`invalid_request_param`) cualquier consulta con
+ * más de 90 días entre date_from y date_to. Por eso las campañas no cargaban:
+ * se pedía un año entero de una.
+ */
+const PRODUCT_ADS_MAX_DAYS = 90;
+
+function dateStr(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Parte [from, to] en tramos de como mucho 90 días. */
+export function splitIntoWindows(from: string, to: string, maxDays = PRODUCT_ADS_MAX_DAYS): { from: string; to: string }[] {
+  const start = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+
+  const windows: { from: string; to: string }[] = [];
+  let cursor = start;
+  while (cursor <= end) {
+    const windowEnd = new Date(Math.min(cursor.getTime() + (maxDays - 1) * 86400000, end.getTime()));
+    windows.push({ from: dateStr(cursor), to: dateStr(windowEnd) });
+    cursor = new Date(windowEnd.getTime() + 86400000);
+  }
+  return windows;
+}
+
+/**
  * Un 404 al *listar* campañas no es un error: Mercado Libre responde
  * `advertiser_campaigns_not_found` cuando el advertiser existe pero todavía
  * no creó ninguna campaña. Mostrarlo como error rojo hacía parecer rota una
@@ -277,19 +304,25 @@ export async function getAdsSpend(
   if (!advertiser) return [];
 
   const token = await getValidAccessToken(accountId);
-  const campaigns = await listOrEmpty(
-    () =>
-      mlFetch(
-        `${productAdsBase(advertiser.siteId, advertiser.advertiserId)}/campaigns/search?date_from=${dateFrom}&date_to=${dateTo}&metrics=cost`,
-        token,
-        { headers: { "Api-Version": "2" } }
-      ),
-    { results: [] }
-  );
+  const base = productAdsBase(advertiser.siteId, advertiser.advertiserId);
+
+  // El rango se recorre en tramos de 90 días (tope de la API). Un sync
+  // completo del historial pide desde 2020, que en una sola consulta da 400.
   const rows: { productId: string; date: string; amount: number }[] = [];
-  for (const c of campaigns.results ?? []) {
-    for (const metric of c.metrics_by_day ?? []) {
-      rows.push({ productId: metric.item_id, date: metric.date, amount: metric.cost });
+  for (const window of splitIntoWindows(dateFrom, dateTo)) {
+    const campaigns = await listOrEmpty(
+      () =>
+        mlFetch(
+          `${base}/campaigns/search?date_from=${window.from}&date_to=${window.to}&metrics=cost`,
+          token,
+          { headers: { "Api-Version": "2" } }
+        ),
+      { results: [] }
+    );
+    for (const c of campaigns.results ?? []) {
+      for (const metric of c.metrics_by_day ?? []) {
+        rows.push({ productId: metric.item_id, date: metric.date, amount: metric.cost });
+      }
     }
   }
   return rows;
@@ -307,10 +340,11 @@ export async function listCampaigns(accountId: string): Promise<MlCampaign[]> {
   if (!advertiser) return [];
 
   const token = await getValidAccessToken(accountId);
-  // Rango amplio: esto solo lista campañas (para mostrarlas y poder
-  // pausarlas/reactivarlas), no depende de que hayan tenido gasto reciente.
-  const dateTo = new Date().toISOString().slice(0, 10);
-  const dateFrom = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // Los últimos 90 días, que es el máximo que acepta la API. Acá solo se
+  // listan las campañas para poder pausarlas o reactivarlas, así que la
+  // ventana no cambia qué campañas aparecen.
+  const dateTo = dateStr(new Date());
+  const dateFrom = dateStr(new Date(Date.now() - (PRODUCT_ADS_MAX_DAYS - 1) * 86400000));
   const res = await listOrEmpty(
     () =>
       mlFetch(

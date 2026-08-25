@@ -119,6 +119,7 @@ select:focus-visible,
   align-items: center;
   justify-content: center;
 }
+.sidebar-logo { width: 32px; height: 32px; flex-shrink: 0; object-fit: contain; }
 .sidebar-brand-text { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
 
 .sidebar-account { padding: var(--space-3) 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
@@ -190,7 +191,7 @@ h2.section-title {
 /* Tabla compacta: para grillas con muchas columnas (Productos) que si no no
    entran en pantalla. */
 .table-compact table { min-width: 0; }
-.table-compact th, .table-compact td { padding: 7px 9px; font-size: 13px; }
+.table-compact th, .table-compact td { padding: 7px 7px; font-size: 13px; }
 .table-compact th { font-size: 12px; }
 .cell-title {
   display: block;
@@ -201,6 +202,18 @@ h2.section-title {
   font-weight: 500;
 }
 .cell-sub { display: block; font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+.cell-product { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.cell-thumb {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  background: var(--surface-2);
+}
+/* Con la foto al lado, el título necesita menos ancho para que la tabla
+   entre entera sin scroll horizontal. */
+.table-compact .cell-title { max-width: 15ch; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 560px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 tbody tr:last-child td { border-bottom: none; }
@@ -312,6 +325,48 @@ tbody tr:hover { background: var(--surface-2); }
   font-variant-numeric: tabular-nums;
 }
 .kpi-card-head { display: flex; align-items: center; gap: var(--space-2); }
+/* La explicación de cada métrica vive en su propia tarjeta, detrás de un ⓘ,
+   en vez de una lista larga al pie del tablero: se lee justo donde está la
+   duda. <details> nativo para tener teclado y foco sin JS. */
+.kpi-info { margin-left: auto; position: relative; }
+.kpi-info > summary {
+  list-style: none;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.4px solid var(--text-dim);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+.kpi-info > summary::-webkit-details-marker { display: none; }
+.kpi-info > summary:hover { color: var(--text); border-color: var(--text); }
+.kpi-info-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  width: max(240px, 20vw);
+  max-width: 300px;
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.kpi-card.kpi-hero .kpi-info > summary { border-color: rgba(255, 255, 255, 0.5); color: rgba(255, 255, 255, 0.8); }
+.kpi-card.kpi-hero .kpi-info > summary:hover { border-color: #fff; color: #fff; }
 .kpi-icon {
   width: 26px;
   height: 26px;

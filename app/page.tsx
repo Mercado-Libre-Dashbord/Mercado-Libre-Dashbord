@@ -186,6 +186,16 @@ const KPI_ICON_PATHS: Record<string, React.ReactNode> = {
   ),
 };
 
+/** El ⓘ de cada tarjeta con la explicación de esa métrica. */
+function KpiInfo({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="kpi-info">
+      <summary aria-label="Cómo se calcula">i</summary>
+      <div className="kpi-info-panel">{children}</div>
+    </details>
+  );
+}
+
 function KpiIcon({ name }: { name: string }) {
   return (
     <span className="kpi-icon" aria-hidden="true">
@@ -480,17 +490,17 @@ export default function HomePage() {
       <h2 className="section-title">Tienda</h2>
       <div className="kpi-grid">
         <div className="kpi-card kpi-hero">
-          <div className="kpi-card-head"><KpiIcon name="gross" /><span className="label">Facturación</span></div>
+          <div className="kpi-card-head"><KpiIcon name="gross" /><span className="label">Facturación</span><KpiInfo>Suma de precio × cantidad de todo lo vendido, antes de descontar nada. Las órdenes canceladas no cuentan.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? fmt(summary.grossSales) : "-"}</KpiValue></div>
           {summary && <DeltaPill current={summary.grossSales} previous={summary.previous?.grossSales} />}
         </div>
         <div className="kpi-card">
-          <div className="kpi-card-head"><KpiIcon name="orders" /><span className="label">Órdenes</span></div>
+          <div className="kpi-card-head"><KpiIcon name="orders" /><span className="label">Órdenes</span><KpiInfo>Cantidad de órdenes con al menos una venta en el período elegido, sin contar las canceladas.</KpiInfo></div>
           <div className="value"><KpiValue>{summary?.orders ?? "-"}</KpiValue></div>
           {summary && <DeltaPill current={summary.orders} previous={summary.previous?.orders} />}
         </div>
         <div className="kpi-card">
-          <div className="kpi-card-head"><KpiIcon name="refund" /><span className="label">Devoluciones</span></div>
+          <div className="kpi-card-head"><KpiIcon name="refund" /><span className="label">Devoluciones</span><KpiInfo>Plata de órdenes canceladas. No suma a la facturación ni a la ganancia —la venta se cayó— pero se muestra para que veas cuánto se te va por ahí.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? fmt(summary.refundAmount) : "-"}</KpiValue></div>
           {summary && (
             <div className="kpi-delta">
@@ -501,38 +511,23 @@ export default function HomePage() {
           )}
         </div>
         <div className="kpi-card">
-          <div className="kpi-card-head"><KpiIcon name="aov" /><span className="label">Ticket promedio</span></div>
+          <div className="kpi-card-head"><KpiIcon name="aov" /><span className="label">Ticket promedio</span><KpiInfo>Facturación ÷ Órdenes. Cuánto gasta en promedio cada comprador.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? fmt(summary.aov) : "-"}</KpiValue></div>
         </div>
         <div className="kpi-card">
-          <div className="kpi-card-head"><KpiIcon name="profit" /><span className="label">Ganancia neta</span></div>
+          <div className="kpi-card-head"><KpiIcon name="profit" /><span className="label">Ganancia neta</span><KpiInfo>Facturación − comisión de Mercado Libre − envío − publicidad − costo del producto − IVA − otros impuestos. Si a un producto le falta el costo cargado, sus ventas quedan afuera de este número: no se inventa un valor.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? fmt(summary.netProfit) : "-"}</KpiValue></div>
           {summary && <DeltaPill current={summary.netProfit} previous={summary.previous?.netProfit} />}
         </div>
         <div className="kpi-card">
-          <div className="kpi-card-head"><KpiIcon name="margin" /><span className="label">Margen neto</span></div>
+          <div className="kpi-card-head"><KpiIcon name="margin" /><span className="label">Margen neto</span><KpiInfo>Ganancia neta ÷ Facturación. De cada $100 que facturás, cuánto te queda de verdad.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? pct(summary.profitPct) : "-"}</KpiValue></div>
         </div>
         <div className="kpi-card">
-          <div className="kpi-card-head"><KpiIcon name="net" /><span className="label">Facturación neta</span></div>
+          <div className="kpi-card-head"><KpiIcon name="net" /><span className="label">Facturación neta</span><KpiInfo>Facturación − comisión de Mercado Libre − envío. No descuenta el costo del producto ni los impuestos.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div>
         </div>
       </div>
-
-      <details className="explain-box">
-        <summary>¿Cómo se calculan estos números?</summary>
-        <ul>
-          <li><strong>Órdenes</strong>: cantidad de órdenes con al menos una venta en el período elegido.</li>
-          <li><strong>Facturación</strong>: suma de precio × cantidad de todo lo vendido, antes de descontar nada.</li>
-          <li><strong>Ticket promedio</strong>: Facturación ÷ Órdenes.</li>
-          <li><strong>Ganancia neta</strong>: Facturación − comisión de Mercado Libre − envío − publicidad − costo de producto − impuestos. Si a un producto le falta costo cargado, sus ventas quedan afuera de este número (no se inventa un valor).</li>
-          <li><strong>Margen neto</strong>: Ganancia neta ÷ Facturación.</li>
-          <li><strong>Devoluciones</strong>: plata de órdenes canceladas. No suma a la facturación ni a la ganancia — la venta se cayó — pero se muestra para que veas cuánto se te está yendo por ahí.</li>
-          <li><strong>IVA</strong>: se calcula solo, al 21% (Responsable Inscripto). Débito de la venta menos el crédito de la comisión, el envío, la publicidad y el costo. No lo cargues a mano en Productos o lo estarías contando dos veces.</li>
-          <li><strong>Órdenes canceladas</strong>: no suman a ningún número de arriba. Aparecen en la lista de abajo para que las veas, pero su plata nunca entró.</li>
-          <li><strong>Facturación neta</strong>: Facturación − comisión de Mercado Libre − envío (sin restar costo de producto ni impuestos).</li>
-        </ul>
-      </details>
 
       {summary && summary.itemsMissingCost > 0 && (
         <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Ganancia neta</p>
