@@ -95,6 +95,18 @@ CREATE TABLE IF NOT EXISTS ads_spend (
 -- channel: 'mercado_ads' (por producto, sincronizado automático) |
 -- 'meta' | 'google' | 'tiktok' (cargados a mano, a nivel cuenta, product_id NULL)
 
+CREATE TABLE IF NOT EXISTS question_drafts (
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  ml_question_id BIGINT NOT NULL,
+  product_id TEXT NOT NULL,
+  question_text TEXT NOT NULL,
+  draft_answer TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft', -- 'draft' | 'sent'
+  date_created TIMESTAMPTZ NOT NULL,
+  answered_at TIMESTAMPTZ,
+  PRIMARY KEY (account_id, ml_question_id)
+);
+
 CREATE TABLE IF NOT EXISTS auth_tokens (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id),
   access_token TEXT NOT NULL,
@@ -107,6 +119,7 @@ CREATE INDEX IF NOT EXISTS idx_order_items_account_product ON order_items(accoun
 CREATE INDEX IF NOT EXISTS idx_product_costs_account_product ON product_costs(account_id, product_id);
 CREATE INDEX IF NOT EXISTS idx_ads_spend_account_date ON ads_spend(account_id, date);
 CREATE INDEX IF NOT EXISTS idx_orders_account_date ON orders(account_id, date_created);
+CREATE INDEX IF NOT EXISTS idx_question_drafts_account_status ON question_drafts(account_id, status);
 
 -- ── Row Level Security ───────────────────────────────────────────────────
 -- FORCE (not just ENABLE) matters: without FORCE, the table *owner* still
@@ -131,7 +144,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens']
+  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens', 'question_drafts']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);

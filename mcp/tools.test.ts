@@ -3,7 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./ml-client", () => ({ mlFetch: vi.fn() }));
 vi.mock("./auth", () => ({ getValidAccessToken: vi.fn().mockResolvedValue("token") }));
 
-import { listProducts, getOrderDetail, listOrders } from "./tools";
+import {
+  listProducts,
+  getOrderDetail,
+  listOrders,
+  listUnansweredQuestions,
+  answerQuestion,
+  updateProductPriceStock,
+} from "./tools";
 import { mlFetch } from "./ml-client";
 
 describe("listProducts", () => {
@@ -98,5 +105,56 @@ describe("listOrders", () => {
   it("returns order ids from the search results", async () => {
     vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: 1 }, { id: 2 }] });
     expect(await listOrders("acc1", "123", "2026-01-01T00:00:00Z")).toEqual(["1", "2"]);
+  });
+});
+
+describe("listUnansweredQuestions", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("maps ML's question shape to our own", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({
+      questions: [{ id: 55, item_id: "MLA1", text: "¿Tiene stock?", date_created: "2026-01-01T00:00:00Z" }],
+    });
+    const questions = await listUnansweredQuestions("acc1", "123");
+    expect(questions).toEqual([{ id: 55, productId: "MLA1", text: "¿Tiene stock?", dateCreated: "2026-01-01T00:00:00Z" }]);
+  });
+
+  it("returns an empty array when there are no unanswered questions", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ questions: [] });
+    expect(await listUnansweredQuestions("acc1", "123")).toEqual([]);
+  });
+});
+
+describe("answerQuestion", () => {
+  it("posts the question id and text to /answers", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({});
+    await answerQuestion("acc1", 55, "Sí, tenemos stock.");
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledWith(
+      "/answers",
+      "token",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ question_id: 55, text: "Sí, tenemos stock." }) })
+    );
+  });
+});
+
+describe("updateProductPriceStock", () => {
+  it("PUTs only the fields that were passed", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({});
+    await updateProductPriceStock("acc1", "MLA1", { price: 21500 });
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledWith(
+      "/items/MLA1",
+      "token",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ price: 21500 }) })
+    );
+  });
+
+  it("PUTs stock as available_quantity", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({});
+    await updateProductPriceStock("acc1", "MLA1", { stock: 10 });
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledWith(
+      "/items/MLA1",
+      "token",
+      expect.objectContaining({ body: JSON.stringify({ available_quantity: 10 }) })
+    );
   });
 });

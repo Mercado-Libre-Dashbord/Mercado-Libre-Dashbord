@@ -117,3 +117,54 @@ export async function getAdsSpend(
   }
   return rows;
 }
+
+export interface MlQuestion {
+  id: number;
+  productId: string;
+  text: string;
+  dateCreated: string;
+}
+
+export async function listUnansweredQuestions(accountId: string, sellerId: string): Promise<MlQuestion[]> {
+  const token = await getValidAccessToken(accountId);
+  const search = await mlFetch(
+    `/questions/search?seller_id=${sellerId}&status=UNANSWERED&sort_fields=date_created&sort_types=DESC`,
+    token
+  );
+  return (search.questions ?? []).map((q: any) => ({
+    id: q.id,
+    productId: q.item_id,
+    text: q.text,
+    dateCreated: q.date_created,
+  }));
+}
+
+// Requiere que la app tenga habilitado el scope "Write" en developers.mercadolibre.com
+// — con solo "Read" (el que usa el resto de esta app) esto devuelve 403.
+export async function answerQuestion(accountId: string, questionId: number, text: string): Promise<void> {
+  const token = await getValidAccessToken(accountId);
+  await mlFetch(`/answers`, token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question_id: questionId, text }),
+  });
+}
+
+// También requiere el scope "Write". Escribe directo sobre la publicación en vivo
+// del vendedor — a diferencia del resto de la app (que es de solo lectura), un
+// error acá modifica precio/stock reales en Mercado Libre.
+export async function updateProductPriceStock(
+  accountId: string,
+  itemId: string,
+  updates: { price?: number; stock?: number }
+): Promise<void> {
+  const token = await getValidAccessToken(accountId);
+  const body: Record<string, number> = {};
+  if (updates.price !== undefined) body.price = updates.price;
+  if (updates.stock !== undefined) body.available_quantity = updates.stock;
+  await mlFetch(`/items/${itemId}`, token, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
