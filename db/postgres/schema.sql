@@ -91,9 +91,11 @@ CREATE TABLE IF NOT EXISTS order_items (
   ads_cost_allocated DOUBLE PRECISION NOT NULL DEFAULT 0,
   cost_applied DOUBLE PRECISION,
   tax_applied DOUBLE PRECISION,
+  iva_applied DOUBLE PRECISION,
   net_profit DOUBLE PRECISION
 );
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tax_applied DOUBLE PRECISION;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS iva_applied DOUBLE PRECISION;
 
 CREATE TABLE IF NOT EXISTS ads_spend (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -118,6 +120,22 @@ CREATE TABLE IF NOT EXISTS question_drafts (
   PRIMARY KEY (account_id, ml_question_id)
 );
 
+-- Cargos reales facturados por Mercado Libre (API de facturación). A
+-- diferencia del resto de las tablas, esto no se calcula: es lo que ML dice
+-- que efectivamente te cobró, y sirve para conciliar contra lo que estimamos.
+CREATE TABLE IF NOT EXISTS billing_charges (
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  detail_id TEXT NOT NULL,
+  period_key TEXT NOT NULL,
+  detail_type TEXT,
+  detail_sub_type TEXT,
+  concept TEXT,
+  order_id TEXT,
+  amount DOUBLE PRECISION NOT NULL,
+  charged_at TIMESTAMPTZ,
+  PRIMARY KEY (account_id, detail_id)
+);
+
 CREATE TABLE IF NOT EXISTS auth_tokens (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id),
   access_token TEXT NOT NULL,
@@ -131,6 +149,8 @@ CREATE INDEX IF NOT EXISTS idx_product_costs_account_product ON product_costs(ac
 CREATE INDEX IF NOT EXISTS idx_ads_spend_account_date ON ads_spend(account_id, date);
 CREATE INDEX IF NOT EXISTS idx_orders_account_date ON orders(account_id, date_created);
 CREATE INDEX IF NOT EXISTS idx_question_drafts_account_status ON question_drafts(account_id, status);
+CREATE INDEX IF NOT EXISTS idx_billing_charges_account_period ON billing_charges(account_id, period_key);
+CREATE INDEX IF NOT EXISTS idx_billing_charges_account_order ON billing_charges(account_id, order_id);
 
 -- ── Row Level Security ───────────────────────────────────────────────────
 -- FORCE (not just ENABLE) matters: without FORCE, the table *owner* still
@@ -155,7 +175,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens', 'question_drafts']
+  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens', 'question_drafts', 'billing_charges']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);

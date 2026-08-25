@@ -36,6 +36,8 @@ export function allocateAdsCost(
   return (dailySpend / unitsSoldThatDay) * unitsInThisLine;
 }
 
+import { ivaBalance } from "@/lib/iva";
+
 export interface NetProfitInput {
   unitPrice: number;
   quantity: number;
@@ -46,6 +48,19 @@ export interface NetProfitInput {
   taxApplied: number | null;
 }
 
+/**
+ * IVA que esta línea de venta le deja a pagar a AFIP (débito menos crédito).
+ * Se expone aparte de calculateNetProfit para poder mostrarlo como una franja
+ * propia en el gráfico de "de qué está hecha tu facturación".
+ */
+export function calculateIva(input: NetProfitInput): number {
+  return ivaBalance({
+    grossRevenue: input.unitPrice * input.quantity,
+    mlCharges: input.mlCommission + input.shippingCost + input.adsCostAllocated,
+    productCost: (input.costApplied ?? 0) * input.quantity,
+  });
+}
+
 export function calculateNetProfit(input: NetProfitInput): number | null {
   if (input.costApplied === null) return null;
   return (
@@ -54,6 +69,9 @@ export function calculateNetProfit(input: NetProfitInput): number | null {
     input.shippingCost -
     input.adsCostAllocated -
     input.costApplied * input.quantity -
-    (input.taxApplied ?? 0) * input.quantity
+    // Impuestos cargados a mano por producto (IIBB, internos): el IVA NO va
+    // acá, se calcula solo abajo.
+    (input.taxApplied ?? 0) * input.quantity -
+    calculateIva(input)
   );
 }

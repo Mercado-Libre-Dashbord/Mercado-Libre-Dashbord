@@ -45,6 +45,17 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     column: "tax_applied",
     ddl: "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tax_applied DOUBLE PRECISION;",
   },
+  {
+    table: "order_items",
+    column: "iva_applied",
+    ddl: "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS iva_applied DOUBLE PRECISION;",
+  },
+  {
+    // La tabla entera llega por migración; se detecta por una columna suya.
+    table: "billing_charges",
+    column: "detail_id",
+    ddl: "-- Falta la tabla billing_charges: corré db/postgres/migrations/002-iva-y-facturacion.sql",
+  },
 ];
 
 export async function missingMigrations(client: QueryExecutor): Promise<{ table: string; column: string; ddl: string }[]> {

@@ -70,6 +70,9 @@ export async function GET(request: NextRequest) {
       const taxSum = (await hasColumn(client, "order_items", "tax_applied"))
         ? "COALESCE(SUM(oi.tax_applied * oi.quantity), 0)"
         : "0::double precision";
+      const ivaSum = (await hasColumn(client, "order_items", "iva_applied"))
+        ? "COALESCE(SUM(oi.iva_applied), 0)"
+        : "0::double precision";
 
       const result = await client.query(
         `SELECT to_char(o.date_created, 'YYYY-MM-DD') as day,
@@ -78,6 +81,7 @@ export async function GET(request: NextRequest) {
                 COALESCE(SUM(oi.shipping_cost), 0) as shipping,
                 COALESCE(SUM(oi.cost_applied * oi.quantity), 0) as cost,
                 ${taxSum} as tax,
+                ${ivaSum} as iva,
                 COALESCE(SUM(oi.net_profit), 0) as "netProfit"
          FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
          WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
@@ -99,6 +103,7 @@ export async function GET(request: NextRequest) {
          COALESCE(SUM(oi.shipping_cost), 0) as "totalShipping",
          COALESCE(SUM(oi.ads_cost_allocated), 0) as "totalMercadoAds",
          COALESCE(SUM(oi.cost_applied * oi.quantity), 0) as "totalCost",
+         ${(await hasColumn(client, "order_items", "iva_applied")) ? "COALESCE(SUM(oi.iva_applied), 0)" : "0::double precision"} as "totalIva",
          COALESCE(SUM(oi.net_profit), 0) as "netProfit",
          SUM(CASE WHEN oi.cost_applied IS NULL THEN 1 ELSE 0 END) as "itemsMissingCost",
          COUNT(DISTINCT CASE WHEN oi.cost_applied IS NOT NULL THEN o.id END) as "ordersWithCost"
@@ -141,6 +146,7 @@ export async function GET(request: NextRequest) {
       totalCommission: Number(totals.totalCommission),
       totalShipping: Number(totals.totalShipping),
       totalCost: Number(totals.totalCost),
+      totalIva: Number(totals.totalIva),
       adSpend,
       mer: adSpend > 0 ? revenue / adSpend : 0,
       roas: adSpend > 0 ? revenue / adSpend : 0,

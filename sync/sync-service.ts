@@ -1,11 +1,13 @@
 import type { QueryExecutor } from "@/db/client";
-import { listProducts, listOrders, getOrderDetail, getAdsSpend } from "@/mcp/tools";
-import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit } from "./profitability";
+import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges } from "@/mcp/tools";
+import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit, calculateIva } from "./profitability";
+import { hasColumn } from "@/db/schema-capabilities";
 
 export interface SyncResult {
   productsSynced: number;
   ordersSynced: number;
   adsRowsSynced: number;
+  billingChargesSynced: number;
 }
 
 export async function runSync(
@@ -15,6 +17,7 @@ export async function runSync(
   sinceIso: string
 ): Promise<SyncResult> {
   const now = new Date().toISOString();
+  const hasIva = await hasColumn(db, "order_items", "iva_applied");
 
   const products = await listProducts(accountId, sellerId);
   for (const p of products) {
@@ -50,7 +53,7 @@ export async function runSync(
         validFrom: new Date(r.validfrom).toISOString(),
       }));
       const entry = getCostEntryAtDate(costs, order.dateCreated);
-      const netProfit = calculateNetProfit({
+      const profitInput = {
         unitPrice: item.unitPrice,
         quantity: item.quantity,
         mlCommission: item.mlCommission,
@@ -58,11 +61,13 @@ export async function runSync(
         adsCostAllocated: 0,
         costApplied: entry?.cost ?? null,
         taxApplied: entry?.tax ?? null,
-      });
+      };
+      const netProfit = calculateNetProfit(profitInput);
+      const iva = calculateIva(profitInput);
       await db.query(
         `INSERT INTO order_items
-           (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated, cost_applied, tax_applied, net_profit)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+           (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated, cost_applied, tax_applied${hasIva ? ", iva_applied" : ""}, net_profit)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10${hasIva ? ", $12" : ""}, $11)`,
         [
           accountId,
           order.id,
@@ -75,6 +80,7 @@ export async function runSync(
           entry?.cost ?? null,
           entry?.tax ?? null,
           netProfit,
+          ...(hasIva ? [iva] : []),
         ]
       );
     }
@@ -105,9 +111,55 @@ export async function runSync(
     console.error("No se pudo sincronizar publicidad, se continúa sin ese dato:", (err as Error).message);
   }
 
-  await reallocateAdsCosts(db, accountId);
+  await reallocateAdsCosts(db, accountId, hasIva);
 
-  return { productsSynced: products.length, ordersSynced, adsRowsSynced };
+  const billingChargesSynced = await syncBillingCharges(db, accountId);
+
+  return { productsSynced: products.length, ordersSynced, adsRowsSynced, billingChargesSynced };
+}
+
+/**
+ * Trae los cargos reales que Mercado Libre facturó (comisiones, envíos,
+ * percepciones impositivas, Product Ads) para los últimos períodos.
+ *
+ * Es puramente informativo por ahora: alimenta la conciliación "lo que ML te
+ * cobró vs. lo que calculamos", pero NO entra todavía en la ganancia neta,
+ * porque duplicaría la comisión y el envío que ya se descuentan por orden.
+ *
+ * Como todo lo de facturación puede fallar por permisos, un error acá no
+ * rompe el resto del sync que ya se guardó.
+ */
+async function syncBillingCharges(db: QueryExecutor, accountId: string): Promise<number> {
+  try {
+    if (!(await hasColumn(db, "billing_charges", "detail_id"))) return 0;
+
+    const periods = await listBillingPeriods(accountId);
+    // Los últimos 3 meses alcanzan para conciliar y acotan el volumen: los
+    // períodos viejos ya están cerrados y no cambian.
+    const recent = periods.slice(0, 3);
+    let saved = 0;
+
+    for (const period of recent) {
+      const charges = await getBillingCharges(accountId, period.key);
+      for (const c of charges) {
+        await db.query(
+          `INSERT INTO billing_charges
+             (account_id, detail_id, period_key, detail_type, detail_sub_type, concept, order_id, amount, charged_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (account_id, detail_id) DO UPDATE SET
+             period_key = excluded.period_key, detail_type = excluded.detail_type,
+             detail_sub_type = excluded.detail_sub_type, concept = excluded.concept,
+             order_id = excluded.order_id, amount = excluded.amount, charged_at = excluded.charged_at`,
+          [accountId, c.detailId, c.periodKey, c.detailType, c.detailSubType, c.concept, c.orderId, c.amount, c.chargedAt]
+        );
+        saved += 1;
+      }
+    }
+    return saved;
+  } catch (err) {
+    console.error("No se pudo sincronizar la facturación de ML, se continúa sin ese dato:", (err as Error).message);
+    return 0;
+  }
 }
 
 interface OrderItemRow {
@@ -120,7 +172,7 @@ interface OrderItemRow {
   shippingcost: number;
 }
 
-async function reallocateAdsCosts(db: QueryExecutor, accountId: string): Promise<void> {
+async function reallocateAdsCosts(db: QueryExecutor, accountId: string, hasIva: boolean): Promise<void> {
   const itemsResult = await db.query<OrderItemRow>(
     `SELECT oi.id, oi.product_id as productId, oi.quantity, o.date_created as dateCreated,
             oi.unit_price as unitPrice, oi.ml_commission as mlCommission,
@@ -169,7 +221,7 @@ async function reallocateAdsCosts(db: QueryExecutor, accountId: string): Promise
     const unitsSoldThatDay = unitsSoldByProductDate.get(key) ?? 0;
     const adsCostAllocated = allocateAdsCost(dailySpend, unitsSoldThatDay, Number(it.quantity));
     const entry = getCostEntryAtDate(costsByProduct.get(it.productid) ?? [], new Date(it.datecreated).toISOString());
-    const netProfit = calculateNetProfit({
+    const profitInput = {
       unitPrice: Number(it.unitprice),
       quantity: Number(it.quantity),
       mlCommission: Number(it.mlcommission),
@@ -177,10 +229,11 @@ async function reallocateAdsCosts(db: QueryExecutor, accountId: string): Promise
       adsCostAllocated,
       costApplied: entry?.cost ?? null,
       taxApplied: entry?.tax ?? null,
-    });
+    };
+    const netProfit = calculateNetProfit(profitInput);
     await db.query(
-      `UPDATE order_items SET ads_cost_allocated = $1, net_profit = $2, cost_applied = $3, tax_applied = $4 WHERE id = $5`,
-      [adsCostAllocated, netProfit, entry?.cost ?? null, entry?.tax ?? null, it.id]
+      `UPDATE order_items SET ads_cost_allocated = $1, net_profit = $2, cost_applied = $3, tax_applied = $4${hasIva ? ", iva_applied = $6" : ""} WHERE id = $5`,
+      [adsCostAllocated, netProfit, entry?.cost ?? null, entry?.tax ?? null, it.id, ...(hasIva ? [calculateIva(profitInput)] : [])]
     );
   }
 }

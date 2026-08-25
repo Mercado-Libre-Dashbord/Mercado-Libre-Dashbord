@@ -7,6 +7,7 @@ import { NoAccountState } from "./NoAccountState";
 import { PeriodBar } from "./PeriodBar";
 import { Period, rangeForPeriod, toDateStr } from "@/lib/period";
 import { countsAsRevenue } from "@/lib/order-status";
+import { ivaBalance } from "@/lib/iva";
 
 interface PreviousTotals {
   orders: number;
@@ -23,6 +24,9 @@ interface Summary {
   profitPct: number;
   netRevenue: number;
   itemsMissingCost: number;
+  totalIva: number;
+  totalCommission: number;
+  totalShipping: number;
   previous: PreviousTotals | null;
   /** SQL de migraciones pendientes — solo llega si sos admin. */
   pendingMigrations?: string[];
@@ -34,8 +38,22 @@ interface DailyBreakdown {
   commission: number;
   shipping: number;
   tax: number;
+  iva: number;
   cost: number;
   netProfit: number;
+}
+
+interface BillingBucket {
+  bucket: string;
+  label: string;
+  amount: number;
+}
+
+interface Billing {
+  available: boolean;
+  buckets: BillingBucket[];
+  total: number;
+  charges?: number;
 }
 
 interface OrderLine {
@@ -180,6 +198,7 @@ export default function HomePage() {
   const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[] | null>(null);
   const [products, setProducts] = useState<ProductRow[] | null>(null);
+  const [billing, setBilling] = useState<Billing | null>(null);
   const [period, setPeriod] = useState<Period>("hoy");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
@@ -212,6 +231,7 @@ export default function HomePage() {
     safeFetch<OrderLine[]>(`/api/orders?from=${from}&to=${to}`, (rows) => setLastOrder(rows[0] ?? null), []);
     safeFetch<OrderSummaryRow[]>(`/api/orders?groupBy=order&from=${from}&to=${to}`, setOrders, []);
     safeFetch<ProductRow[]>(`/api/products?from=${from}&to=${to}`, setProducts, []);
+    safeFetch<Billing | null>(`/api/billing?from=${from}&to=${to}`, setBilling, null);
   }
 
   useEffect(loadAll, [from, to]);
@@ -297,6 +317,7 @@ export default function HomePage() {
           <li><strong>Ticket promedio</strong>: Facturación ÷ Órdenes.</li>
           <li><strong>Ganancia neta</strong>: Facturación − comisión de Mercado Libre − envío − publicidad − costo de producto − impuestos. Si a un producto le falta costo cargado, sus ventas quedan afuera de este número (no se inventa un valor).</li>
           <li><strong>Margen neto</strong>: Ganancia neta ÷ Facturación.</li>
+          <li><strong>IVA</strong>: se calcula solo, al 21% (Responsable Inscripto). Débito de la venta menos el crédito de la comisión, el envío, la publicidad y el costo. No lo cargues a mano en Productos o lo estarías contando dos veces.</li>
           <li><strong>Órdenes canceladas</strong>: no suman a ningún número de arriba. Aparecen en la lista de abajo para que las veas, pero su plata nunca entró.</li>
           <li><strong>Facturación neta</strong>: Facturación − comisión de Mercado Libre − envío (sin restar costo de producto ni impuestos).</li>
         </ul>
@@ -338,22 +359,84 @@ export default function HomePage() {
                   formatter={(value: number) => fmt(value)}
                 />
                 <Legend verticalAlign="bottom" wrapperStyle={{ fontSize: 13, color: "var(--text-dim)" }} />
-                <Bar dataKey="commission" name="Comisión ML" stackId="a" fill="var(--chart-commission)" />
-                <Bar dataKey="shipping" name="Envío" stackId="a" fill="var(--chart-shipping)" />
-                <Bar dataKey="tax" name="Impuestos" stackId="a" fill="var(--chart-tax)" />
-                <Bar dataKey="cost" name="Costo de producto" stackId="a" fill="var(--chart-cost)" />
-                <Bar dataKey="netProfit" name="Ganancia neta" stackId="a" fill="var(--positive)" radius={[4, 4, 0, 0]} />
+                {/* Orden fijo de colores (paleta validada con el validador de
+                    la skill dataviz en este mismo orden de adyacencia), y 2px
+                    de separación entre segmentos apilados. */}
+                <Bar dataKey="commission" name="Comisión ML" stackId="a" fill="var(--chart-commission)" stroke="var(--surface)" strokeWidth={2} />
+                <Bar dataKey="shipping" name="Envío" stackId="a" fill="var(--chart-shipping)" stroke="var(--surface)" strokeWidth={2} />
+                <Bar dataKey="tax" name="Otros impuestos" stackId="a" fill="var(--chart-tax)" stroke="var(--surface)" strokeWidth={2} />
+                <Bar dataKey="iva" name="IVA (saldo a AFIP)" stackId="a" fill="var(--chart-iva)" stroke="var(--surface)" strokeWidth={2} />
+                <Bar dataKey="cost" name="Costo de producto" stackId="a" fill="var(--chart-cost)" stroke="var(--surface)" strokeWidth={2} />
+                <Bar dataKey="netProfit" name="Ganancia neta" stackId="a" fill="var(--positive)" stroke="var(--surface)" strokeWidth={2} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <details className="explain-box">
             <summary>¿Qué muestra este gráfico?</summary>
             <p>
-              Cada barra es un día, y muestra en qué se fue tu facturación de ese día: cuánto se lo llevó la
-              comisión de Mercado Libre, cuánto el envío, cuánto los impuestos que cargaste por producto, cuánto
-              el costo del producto, y cuánto quedó como ganancia neta real. Los cuatro primeros componentes
-              salen directo de lo que Mercado Libre cobra en cada venta y de lo que cargaste en Productos — nada
-              es estimado.
+              Cada barra es un día y muestra en qué se fue tu facturación: la comisión de Mercado Libre, el
+              envío, los impuestos que cargaste a mano por producto, el IVA que le queda a pagar a AFIP, el
+              costo del producto, y lo que sobra como ganancia neta real.
+            </p>
+            <p>
+              <strong>IVA</strong>: el precio publicado en Mercado Libre ya lo incluye. De cada $121 que cobrás,
+              $21 no son tuyos. Contra ese débito se descuenta el IVA que ya pagaste en la comisión, el envío,
+              la publicidad y el costo del producto — lo que sobra es lo que sale de tu bolsillo, calculado al
+              21% (Responsable Inscripto).
+            </p>
+          </details>
+        </>
+      )}
+
+      {billing?.available && billing.buckets.length > 0 && (
+        <>
+          <h2 className="section-title">Lo que Mercado Libre te facturó</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Concepto</th>
+                  <th className="num">Importe</th>
+                  <th className="num">Lo que calculamos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {billing.buckets.map((b) => {
+                  // Solo comisión y envío son comparables: son los dos cargos
+                  // que la app también estima por orden.
+                  const estimated =
+                    b.bucket === "comision" ? summary?.totalCommission :
+                    b.bucket === "envio" ? summary?.totalShipping : undefined;
+                  return (
+                    <tr key={b.bucket}>
+                      <td>{b.label}</td>
+                      <td className="num">{fmt(b.amount)}</td>
+                      <td className="num" style={{ color: "var(--text-dim)" }}>
+                        {estimated === undefined ? "—" : fmt(estimated)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr>
+                  <td style={{ fontWeight: 600 }}>Total facturado por ML</td>
+                  <td className="num" style={{ fontWeight: 600 }}>{fmt(billing.total)}</td>
+                  <td className="num">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <details className="explain-box">
+            <summary>¿Qué es esta tabla?</summary>
+            <p>
+              Son los cargos <strong>reales</strong> de tu factura de Mercado Libre, traídos de su API de
+              facturación: comisiones, envíos, percepciones impositivas y publicidad. El resto del dashboard
+              estima estos costos venta por venta; acá ves lo que ML efectivamente te cobró, para poder
+              comparar.
+            </p>
+            <p>
+              Todavía <strong>no</strong> entran en la ganancia neta: la comisión y el envío ya se descuentan
+              por orden, así que sumarlos otra vez los contaría dos veces. Si los números de las dos columnas
+              no cierran, avisanos y ajustamos el cálculo.
             </p>
           </details>
         </>
@@ -425,8 +508,18 @@ export default function HomePage() {
               tone="negative"
             />
             <WaterfallRow
-              label="Impuestos"
+              label="Otros impuestos"
               value={(lastOrder.taxApplied ?? 0) * lastOrder.quantity}
+              max={lastOrder.unitPrice * lastOrder.quantity}
+              tone="negative"
+            />
+            <WaterfallRow
+              label="IVA"
+              value={ivaBalance({
+                grossRevenue: lastOrder.unitPrice * lastOrder.quantity,
+                mlCharges: lastOrder.mlCommission + lastOrder.shippingCost + lastOrder.adsCostAllocated,
+                productCost: (lastOrder.costApplied ?? 0) * lastOrder.quantity,
+              })}
               max={lastOrder.unitPrice * lastOrder.quantity}
               tone="negative"
             />

@@ -92,6 +92,7 @@ describe("GET /api/summary", () => {
   it("compares against the equivalent previous period", async () => {
     let totalsCalls = 0;
     const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
       if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
       if (sql.includes("totalCommission")) {
         // Totales del período actual (2026-08-01..2026-08-10, 10 días).
@@ -207,7 +208,10 @@ describe("GET /api/summary", () => {
     resetColumnCache();
     vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
     const adminBody = await (await GET(request)).json();
-    expect(adminBody.pendingMigrations).toHaveLength(2);
-    expect(adminBody.pendingMigrations.join(" ")).toContain("ADD COLUMN IF NOT EXISTS tax");
+    expect(adminBody.pendingMigrations).toHaveLength(4);
+    const sql = adminBody.pendingMigrations.join(" ");
+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS tax");
+    expect(sql).toContain("iva_applied");
+    expect(sql).toContain("billing_charges");
   });
 });

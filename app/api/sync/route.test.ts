@@ -44,11 +44,11 @@ describe("POST /api/sync", () => {
     });
     const query = vi.fn().mockResolvedValue({ rows: [{ latest: "2026-01-01T00:00:00Z" }] });
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
-    vi.mocked(runSync).mockResolvedValue({ productsSynced: 1, ordersSynced: 2, adsRowsSynced: 0 });
+    vi.mocked(runSync).mockResolvedValue({ productsSynced: 1, ordersSynced: 2, adsRowsSynced: 0, billingChargesSynced: 0 });
 
     const res = await POST();
 
-    expect(await res.json()).toEqual({ productsSynced: 1, ordersSynced: 2, adsRowsSynced: 0 });
+    expect(await res.json()).toEqual({ productsSynced: 1, ordersSynced: 2, adsRowsSynced: 0, billingChargesSynced: 0 });
   });
 
   it("returns a 500 with the error message when sync fails", async () => {

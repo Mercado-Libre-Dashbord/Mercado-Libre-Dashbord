@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit } from "./profitability";
+import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit, calculateIva } from "./profitability";
 
 describe("getCostEntryAtDate", () => {
   it("returns null when no cost entries exist", () => {
@@ -68,8 +68,8 @@ describe("calculateNetProfit", () => {
     expect(result).toBeNull();
   });
 
-  it("computes net profit subtracting all costs including tax", () => {
-    const result = calculateNetProfit({
+  it("computes net profit subtracting all costs, the manual tax and IVA", () => {
+    const input = {
       unitPrice: 1000,
       quantity: 2,
       mlCommission: 130,
@@ -77,12 +77,17 @@ describe("calculateNetProfit", () => {
       adsCostAllocated: 50,
       costApplied: 300,
       taxApplied: 20,
-    });
-    expect(result).toBe(1090); // 1130 - (20*2)
+    };
+    // Bruto 2000 − 130 − 90 − 50 − 600 de costo − 40 de impuesto manual = 1090,
+    // y de ahí sale además el saldo de IVA (débito de la venta menos crédito
+    // de los cargos de ML y del costo).
+    const result = calculateNetProfit(input);
+    expect(result).toBeCloseTo(1090 - calculateIva(input));
+    expect(result).toBeLessThan(1090);
   });
 
   it("treats a null tax as 0", () => {
-    const result = calculateNetProfit({
+    const input = {
       unitPrice: 1000,
       quantity: 2,
       mlCommission: 130,
@@ -90,7 +95,36 @@ describe("calculateNetProfit", () => {
       adsCostAllocated: 50,
       costApplied: 300,
       taxApplied: null,
+    };
+    expect(calculateNetProfit(input)).toBeCloseTo(1130 - calculateIva(input));
+  });
+});
+
+describe("calculateIva", () => {
+  it("charges IVA on the margin, not on the whole sale", () => {
+    const iva = calculateIva({
+      unitPrice: 1210,
+      quantity: 1,
+      mlCommission: 121,
+      shippingCost: 0,
+      adsCostAllocated: 0,
+      costApplied: 605,
+      taxApplied: null,
     });
-    expect(result).toBe(1130);
+    // Débito 210 − crédito (21 de comisión + 105 del costo).
+    expect(iva).toBeCloseTo(210 - 21 - 105);
+  });
+
+  it("treats a missing cost as no IVA credit rather than crashing", () => {
+    const iva = calculateIva({
+      unitPrice: 1210,
+      quantity: 1,
+      mlCommission: 0,
+      shippingCost: 0,
+      adsCostAllocated: 0,
+      costApplied: null,
+      taxApplied: null,
+    });
+    expect(iva).toBeCloseTo(210);
   });
 });

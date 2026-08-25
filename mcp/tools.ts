@@ -308,3 +308,95 @@ export async function updateProductPriceStock(
     body: JSON.stringify(body),
   });
 }
+
+// ── API de facturación de Mercado Libre ──────────────────────────────────
+// Fuente de verdad de lo que ML EFECTIVAMENTE cobró (comisiones, envíos,
+// percepciones impositivas, Product Ads), a diferencia del resto de la app
+// que lo estima a partir de cada orden. Sirve para conciliar.
+
+export interface MlBillingPeriod {
+  /** Siempre el primer día del mes: "2026-08-01". */
+  key: string;
+  dateFrom: string | null;
+  dateTo: string | null;
+  amount: number;
+}
+
+export interface MlBillingCharge {
+  detailId: string;
+  periodKey: string;
+  detailType: string | null;
+  detailSubType: string | null;
+  concept: string | null;
+  orderId: string | null;
+  amount: number;
+  chargedAt: string | null;
+}
+
+export async function listBillingPeriods(accountId: string): Promise<MlBillingPeriod[]> {
+  const token = await getValidAccessToken(accountId);
+  const res = await listOrEmpty(
+    () => mlFetch(`/billing/integration/monthly/periods?group=ML&offset=0&limit=12`, token),
+    { results: [] }
+  );
+  const rows = res.results ?? res.periods ?? [];
+  return rows.map((p: any) => ({
+    key: String(p.key ?? p.period?.date_from ?? "").slice(0, 10),
+    dateFrom: p.period?.date_from ?? null,
+    dateTo: p.period?.date_to ?? null,
+    amount: Number(p.amount ?? 0),
+  })).filter((p: MlBillingPeriod) => p.key);
+}
+
+/**
+ * Detalle de cargos de un período. Se pagina con `from_id` hasta que ML deja
+ * de devolver resultados; el tope de vueltas evita un loop infinito si la API
+ * ignora el cursor.
+ */
+export async function getBillingCharges(accountId: string, periodKey: string): Promise<MlBillingCharge[]> {
+  const token = await getValidAccessToken(accountId);
+  const PAGE_SIZE = 100;
+  const MAX_PAGES = 50;
+  const charges: MlBillingCharge[] = [];
+  let fromId: string | null = null;
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const query = new URLSearchParams({ document_type: "BILL", limit: String(PAGE_SIZE) });
+    if (fromId) query.set("from_id", fromId);
+    const res: any = await listOrEmpty(
+      () => mlFetch(`/billing/integration/periods/key/${periodKey}/group/ML/details?${query}`, token),
+      { results: [] }
+    );
+    const rows: any[] = res.results ?? res.details ?? [];
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      charges.push({
+        detailId: String(row.detail_id ?? row.id),
+        periodKey,
+        detailType: row.detail_type ?? null,
+        detailSubType: row.detail_sub_type ?? null,
+        concept: row.concept ?? row.detail_sub_type ?? row.detail_type ?? null,
+        // ML nombra este campo distinto según el tipo de cargo; el primero que
+        // exista es el que ata el cargo a una venta nuestra.
+        orderId: firstDefined(row.order_id, row.transaction_detail?.order_id, row.sales_info?.order_id),
+        amount: Number(row.detail_amount ?? row.charge_amount ?? row.amount ?? 0),
+        chargedAt: row.creation_date_time ?? row.date_created ?? null,
+      });
+    }
+
+    const last = rows[rows.length - 1];
+    const nextId = last?.detail_id ?? last?.id;
+    if (!nextId || rows.length < PAGE_SIZE) break;
+    fromId = String(nextId);
+  }
+
+  return charges;
+}
+
+function firstDefined(...values: unknown[]): string | null {
+  for (const v of values) {
+    if (v !== undefined && v !== null && String(v).length > 0) return String(v);
+  }
+  return null;
+}

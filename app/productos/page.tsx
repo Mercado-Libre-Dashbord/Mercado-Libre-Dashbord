@@ -104,7 +104,7 @@ export default function ProductosPage() {
     const cost = Number(draft.cost);
     const tax = draft.tax.trim() === "" ? 0 : Number(draft.tax);
     if (draft.cost.trim() === "" || Number.isNaN(cost) || cost < 0 || Number.isNaN(tax) || tax < 0) {
-      setErrors((prev) => ({ ...prev, [productId]: "Costo requerido (≥ 0); impuestos opcional (≥ 0)." }));
+      setErrors((prev) => ({ ...prev, [productId]: "Costo requerido (≥ 0); otros impuestos opcional (≥ 0)." }));
       return;
     }
     setErrors((prev) => ({ ...prev, [productId]: "" }));
@@ -125,6 +125,10 @@ export default function ProductosPage() {
   return (
     <div>
       <h1>Productos</h1>
+      <p className="field-hint" style={{ marginBottom: "var(--space-3)" }}>
+        Cargá el costo de compra por unidad. En &quot;Otros imp.&quot; van impuestos por unidad que no sean IVA
+        (IIBB, internos) — el IVA se calcula solo al 21%, no lo pongas acá o se contaría dos veces.
+      </p>
       {loadError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{loadError}</p>}
       {products === null ? (
         <p className="empty-state">Cargando productos…</p>
@@ -145,7 +149,7 @@ export default function ProductosPage() {
                 <th className="num">Precio</th>
                 <th className="num">Stock</th>
                 <th className="num">Costo</th>
-                <th className="num">Imp.</th>
+                <th className="num" title="Otros impuestos por unidad (IIBB, internos). El IVA se calcula solo.">Otros imp.</th>
                 <th className="num">Margen</th>
                 <th className="num">Vendidas</th>
                 <th className="num">Rentabilidad</th>
@@ -221,8 +225,8 @@ export default function ProductosPage() {
                         />
                       </div>
                       <div className="field-group">
-                        <label className="field-hint" htmlFor={`tax-${p.id}`}>
-                          Impuestos
+                        <label className="field-hint" htmlFor={`tax-${p.id}`} title="Otros impuestos por unidad (IIBB, internos). No cargues IVA: se calcula solo al 21%.">
+                          Otros imp.
                         </label>
                         <input
                           id={`tax-${p.id}`}
