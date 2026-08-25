@@ -78,6 +78,31 @@ describe("listProducts", () => {
   });
 });
 
+describe("listOrders", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns order ids from the search results", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: 1 }, { id: 2 }], paging: { total: 2 } });
+    expect(await listOrders("acc1", "123", "2026-01-01T00:00:00Z")).toEqual(["1", "2"]);
+  });
+
+  it("pages through every order instead of stopping at the first 50", async () => {
+    const page = (n: number, from: number) => ({
+      results: Array.from({ length: n }, (_, i) => ({ id: from + i })),
+      paging: { total: 120 },
+    });
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce(page(50, 1))
+      .mockResolvedValueOnce(page(50, 51))
+      .mockResolvedValueOnce(page(20, 101));
+
+    const ids = await listOrders("acc1", "S1", "2020-01-01T00:00:00Z");
+
+    expect(ids).toHaveLength(120);
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("offset=50");
+  });
+});
+
 describe("getOrderDetail", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -105,13 +130,6 @@ describe("getOrderDetail", () => {
     });
     const order = await getOrderDetail("acc1", "1000");
     expect(order.items[0].shippingCost).toBe(0);
-  });
-});
-
-describe("listOrders", () => {
-  it("returns order ids from the search results", async () => {
-    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: 1 }, { id: 2 }] });
-    expect(await listOrders("acc1", "123", "2026-01-01T00:00:00Z")).toEqual(["1", "2"]);
   });
 });
 

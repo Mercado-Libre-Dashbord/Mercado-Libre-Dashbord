@@ -104,8 +104,13 @@ export async function getShipmentSellerCost(accountId: string, shipmentId: strin
       const value = Number(candidate);
       if (Number.isFinite(value)) return value;
     }
+    console.warn(`Envío ${shipmentId}: /costs respondió sin costo de vendedor reconocible.`);
     return 0;
-  } catch {
+  } catch (err) {
+    // Silenciar esto del todo dejaba el envío en $0 sin ninguna pista de por
+    // qué (permisos, endpoint, formato). Se sigue devolviendo 0 para no
+    // abortar el sync, pero queda registrado.
+    console.warn(`No se pudo obtener el costo del envío ${shipmentId}:`, (err as Error).message);
     return 0;
   }
 }
@@ -145,8 +150,23 @@ export async function getOrderDetail(accountId: string, orderId: string): Promis
 
 export async function listOrders(accountId: string, sellerId: string, sinceIso: string): Promise<string[]> {
   const token = await getValidAccessToken(accountId);
-  const search = await mlFetch(`/orders/search?seller=${sellerId}&order.date_created.from=${sinceIso}`, token);
-  return search.results.map((o: any) => String(o.id));
+  // /orders/search pagina de a 50 por defecto. Sin recorrer las páginas, un
+  // sync completo del historial se cortaba en las primeras 50 órdenes.
+  const PAGE_SIZE = 50;
+  const ids: string[] = [];
+  let offset = 0;
+  while (true) {
+    const search = await mlFetch(
+      `/orders/search?seller=${sellerId}&order.date_created.from=${sinceIso}&limit=${PAGE_SIZE}&offset=${offset}`,
+      token
+    );
+    const page: any[] = search.results ?? [];
+    ids.push(...page.map((o: any) => String(o.id)));
+    offset += page.length;
+    const total = search.paging?.total ?? offset;
+    if (page.length === 0 || offset >= total) break;
+  }
+  return ids;
 }
 
 // Product Ads cuelga de un "advertiser" propio, no directo del seller.
