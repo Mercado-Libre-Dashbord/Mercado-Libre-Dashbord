@@ -81,17 +81,18 @@ describe("listProducts", () => {
 describe("getOrderDetail", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("maps order items with the shared shipping cost per line", async () => {
+  it("maps order items, with no shipping charge when the order has no shipment", async () => {
     vi.mocked(mlFetch).mockResolvedValueOnce({
       id: 999,
       date_created: "2026-01-01T00:00:00Z",
       status: "paid",
       total_amount: 1000,
-      shipping: { cost: 90 },
       order_items: [{ item: { id: "MLA1" }, unit_price: 500, quantity: 2, sale_fee: 65 }],
     });
     const order = await getOrderDetail("acc1", "999");
-    expect(order.items).toEqual([{ productId: "MLA1", unitPrice: 500, quantity: 2, mlCommission: 65, shippingCost: 90 }]);
+    expect(order.items).toEqual([{ productId: "MLA1", unitPrice: 500, quantity: 2, mlCommission: 65, shippingCost: 0 }]);
+    // Sin shipment no se pide /shipments/.../costs.
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(1);
   });
 
   it("defaults shipping cost to 0 when the order has no shipping info", async () => {
@@ -162,6 +163,83 @@ describe("updateProductPriceStock", () => {
       "token",
       expect.objectContaining({ body: JSON.stringify({ available_quantity: 10 }) })
     );
+  });
+});
+
+describe("getOrderDetail", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reads the seller's shipping cost from /shipments/{id}/costs, not from the order", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({
+        id: 999,
+        date_created: "2026-01-05T10:00:00Z",
+        status: "paid",
+        total_amount: 1000,
+        shipping: { id: 5551 },
+        order_items: [{ item: { id: "MLA1" }, unit_price: 1000, quantity: 1, sale_fee: 130 }],
+      })
+      .mockResolvedValueOnce({ senders: [{ cost: 420 }] });
+
+    const order = await getOrderDetail("acc1", "999");
+
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toBe("/shipments/5551/costs");
+    expect(order.items[0].shippingCost).toBe(420);
+  });
+
+  it("splits one order's shipping across its lines instead of charging it to each", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({
+        id: 999,
+        date_created: "2026-01-05T10:00:00Z",
+        status: "paid",
+        total_amount: 1000,
+        shipping: { id: 5551 },
+        order_items: [
+          { item: { id: "MLA1" }, unit_price: 750, quantity: 1, sale_fee: 100 },
+          { item: { id: "MLA2" }, unit_price: 250, quantity: 1, sale_fee: 30 },
+        ],
+      })
+      .mockResolvedValueOnce({ senders: [{ cost: 400 }] });
+
+    const order = await getOrderDetail("acc1", "999");
+
+    expect(order.items[0].shippingCost).toBeCloseTo(300);
+    expect(order.items[1].shippingCost).toBeCloseTo(100);
+    const total = order.items.reduce((s, i) => s + i.shippingCost, 0);
+    expect(total).toBeCloseTo(400);
+  });
+
+  it("falls back to zero shipping instead of failing the order when the shipment lookup errors", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({
+        id: 999,
+        date_created: "2026-01-05T10:00:00Z",
+        status: "paid",
+        total_amount: 1000,
+        shipping: { id: 5551 },
+        order_items: [{ item: { id: "MLA1" }, unit_price: 1000, quantity: 1, sale_fee: 130 }],
+      })
+      .mockRejectedValueOnce(new MlApiError(403, "forbidden"));
+
+    const order = await getOrderDetail("acc1", "999");
+    expect(order.items[0].shippingCost).toBe(0);
+  });
+
+  it("charges no shipping when the buyer paid it (empty senders)", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({
+        id: 999,
+        date_created: "2026-01-05T10:00:00Z",
+        status: "paid",
+        total_amount: 1000,
+        shipping: { id: 5551 },
+        order_items: [{ item: { id: "MLA1" }, unit_price: 1000, quantity: 1, sale_fee: 130 }],
+      })
+      .mockResolvedValueOnce({ senders: [], receiver: { cost: 400 } });
+
+    const order = await getOrderDetail("acc1", "999");
+    expect(order.items[0].shippingCost).toBe(0);
   });
 });
 

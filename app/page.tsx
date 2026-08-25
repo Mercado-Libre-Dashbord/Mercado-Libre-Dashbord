@@ -370,7 +370,7 @@ export default function HomePage() {
             <p style={{ margin: "var(--space-2) 0 0" }}>Probá con un período más largo para ver tus productos más rentables.</p>
           </div>
         ) : (
-          <div className="table-wrap" style={{ marginBottom: "var(--space-3)" }}>
+          <div className="table-wrap table-scroll" style={{ marginBottom: "var(--space-3)" }}>
             <table>
               <thead>
                 <tr>
@@ -442,7 +442,7 @@ export default function HomePage() {
           <p style={{ margin: "var(--space-2) 0 0" }}>Cambiá el período de arriba o sincronizá para traer ventas nuevas.</p>
         </div>
       ) : (
-        <div className="table-wrap orders-table">
+        <div className="table-wrap table-scroll orders-table">
           <table>
             <thead>
               <tr>

@@ -156,6 +156,37 @@ h2.section-title {
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
 }
+
+/* Tabla larga: en vez de estirar la página al infinito, scrollea dentro de su
+   propia caja con el encabezado clavado arriba, así nunca perdés de vista qué
+   columna estás mirando.
+   (El thead tiene que ser sticky *dentro* de este contenedor: como .table-wrap
+   ya scrollea en X, el navegador lo trata como área de scroll también en Y, y
+   un sticky relativo al viewport no funcionaría acá.) */
+.table-scroll { max-height: min(70vh, 720px); overflow: auto; }
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  /* border-bottom del th no se pinta sobre las filas al scrollear; el box-shadow sí. */
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+/* Tabla compacta: para grillas con muchas columnas (Productos) que si no no
+   entran en pantalla. */
+.table-compact table { min-width: 0; }
+.table-compact th, .table-compact td { padding: 7px 9px; font-size: 13px; }
+.table-compact th { font-size: 12px; }
+.cell-title {
+  display: block;
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.cell-sub { display: block; font-size: 11px; color: var(--text-dim); margin-top: 1px; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 560px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 tbody tr:last-child td { border-bottom: none; }

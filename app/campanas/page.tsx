@@ -143,7 +143,7 @@ export default function CampanasPage() {
           </p>
         </div>
       ) : campaigns.length > 0 ? (
-        <div className="table-wrap" style={{ marginBottom: "var(--space-5)" }}>
+        <div className="table-wrap table-scroll" style={{ marginBottom: "var(--space-5)" }}>
           <table>
             <thead>
               <tr>

@@ -73,22 +73,73 @@ export interface MlOrder {
   items: MlOrderItem[];
 }
 
+/**
+ * Cuánto le costó el envío al VENDEDOR en una orden.
+ *
+ * `/orders/{id}` NO trae el costo: su campo `shipping` es solo `{ id }`, el
+ * id del envío. El código anterior leía `order.shipping.cost`, que nunca
+ * existió — por eso el envío venía siempre en $0 y la ganancia neta salía
+ * inflada. El costo real está en `/shipments/{id}/costs`, que separa lo que
+ * paga quien despacha (`senders`, o sea el vendedor) de lo que paga el
+ * comprador (`receiver`): si el comprador pagó el envío, al vendedor no le
+ * cuesta nada y esto devuelve 0 correctamente.
+ *
+ * Devuelve 0 ante cualquier problema: no tener el dato de envío es mucho
+ * mejor que abortar la sincronización entera de la orden.
+ */
+export async function getShipmentSellerCost(accountId: string, shipmentId: string): Promise<number> {
+  const token = await getValidAccessToken(accountId);
+  try {
+    const costs = await mlFetch(`/shipments/${shipmentId}/costs`, token, {
+      headers: { "x-format-new": "true" },
+    });
+
+    // Formato nuevo: senders[] (puede haber más de uno en carritos multi-vendedor).
+    if (Array.isArray(costs?.senders)) {
+      const total = costs.senders.reduce((sum: number, s: any) => sum + Number(s?.cost ?? 0), 0);
+      if (Number.isFinite(total)) return total;
+    }
+    // Formato viejo: costo del vendedor plano.
+    for (const candidate of [costs?.sender?.cost, costs?.gross_amount]) {
+      const value = Number(candidate);
+      if (Number.isFinite(value)) return value;
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function getOrderDetail(accountId: string, orderId: string): Promise<MlOrder> {
   const token = await getValidAccessToken(accountId);
   const order = await mlFetch(`/orders/${orderId}`, token);
-  const shippingCost = order.shipping?.cost ?? 0;
+
+  const shipmentId = order.shipping?.id;
+  const orderShippingCost = shipmentId ? await getShipmentSellerCost(accountId, String(shipmentId)) : 0;
+
+  // El envío se cobra una vez por ORDEN, no por producto. Antes se copiaba el
+  // costo completo en cada línea, así que una orden con 2 productos distintos
+  // descontaba el envío dos veces. Se reparte proporcional a lo facturado por
+  // línea (y en partes iguales si la orden facturó 0).
+  const items = order.order_items ?? [];
+  const orderRevenue = items.reduce((sum: number, oi: any) => sum + Number(oi.unit_price) * Number(oi.quantity), 0);
+
   return {
     id: String(order.id),
     dateCreated: order.date_created,
     status: order.status,
     buyerTotal: order.total_amount,
-    items: order.order_items.map((oi: any) => ({
-      productId: oi.item.id,
-      unitPrice: oi.unit_price,
-      quantity: oi.quantity,
-      mlCommission: oi.sale_fee ?? 0,
-      shippingCost,
-    })),
+    items: items.map((oi: any) => {
+      const lineRevenue = Number(oi.unit_price) * Number(oi.quantity);
+      const share = orderRevenue > 0 ? lineRevenue / orderRevenue : 1 / (items.length || 1);
+      return {
+        productId: oi.item.id,
+        unitPrice: oi.unit_price,
+        quantity: oi.quantity,
+        mlCommission: oi.sale_fee ?? 0,
+        shippingCost: orderShippingCost * share,
+      };
+    }),
   };
 }
 

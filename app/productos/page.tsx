@@ -137,28 +137,29 @@ export default function ProductosPage() {
           <a className="btn btn-primary btn-sm" href="/">Ir a Resumen y sincronizar</a>
         </div>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap table-scroll table-compact">
           <table>
             <thead>
               <tr>
-                <th>Título</th>
-                <th>SKU</th>
+                <th>Producto</th>
                 <th className="num">Precio</th>
                 <th className="num">Stock</th>
-                <th className="num">Costo vigente</th>
-                <th className="num">Impuestos vigente</th>
-                <th className="num">Margen %</th>
-                <th className="num">Unidades vendidas</th>
-                <th className="num">Rentabilidad total</th>
-                <th>Nuevo costo</th>
-                <th>Mercado Libre</th>
+                <th className="num">Costo</th>
+                <th className="num">Imp.</th>
+                <th className="num">Margen</th>
+                <th className="num">Vendidas</th>
+                <th className="num">Rentabilidad</th>
+                <th>Actualizar costo</th>
+                <th>ML</th>
               </tr>
             </thead>
             <tbody>
               {products.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.title}</td>
-                  <td>{p.sku ?? "-"}</td>
+                  <td>
+                    <span className="cell-title" title={p.title}>{p.title}</span>
+                    {p.sku && <span className="cell-sub">SKU {p.sku}</span>}
+                  </td>
                   <td className="num">
                     {mlEditing[p.id] ? (
                       <input
@@ -169,7 +170,7 @@ export default function ProductosPage() {
                         aria-label={`Precio nuevo para ${p.title}`}
                         value={mlEditing[p.id].price}
                         onChange={(e) => setMlEditing((prev) => ({ ...prev, [p.id]: { ...prev[p.id], price: e.target.value } }))}
-                        style={{ width: 80, padding: "6px" }}
+                        style={{ width: 74, padding: "5px" }}
                       />
                     ) : (
                       p.currentPrice?.toFixed(2)
@@ -185,7 +186,7 @@ export default function ProductosPage() {
                         aria-label={`Stock nuevo para ${p.title}`}
                         value={mlEditing[p.id].stock}
                         onChange={(e) => setMlEditing((prev) => ({ ...prev, [p.id]: { ...prev[p.id], stock: e.target.value } }))}
-                        style={{ width: 60, padding: "6px" }}
+                        style={{ width: 54, padding: "5px" }}
                       />
                     ) : (
                       p.stock
@@ -216,7 +217,7 @@ export default function ProductosPage() {
                             setEditing((prev) => ({ ...prev, [p.id]: { cost: e.target.value, tax: prev[p.id]?.tax ?? "" } }));
                             if (errors[p.id]) setErrors((prev) => ({ ...prev, [p.id]: "" }));
                           }}
-                          style={{ width: 60, padding: "9px 6px" }}
+                          style={{ width: 58, padding: "6px" }}
                         />
                       </div>
                       <div className="field-group">
@@ -233,7 +234,7 @@ export default function ProductosPage() {
                             setEditing((prev) => ({ ...prev, [p.id]: { cost: prev[p.id]?.cost ?? "", tax: e.target.value } }));
                             if (errors[p.id]) setErrors((prev) => ({ ...prev, [p.id]: "" }));
                           }}
-                          style={{ width: 60, padding: "9px 6px" }}
+                          style={{ width: 58, padding: "6px" }}
                         />
                       </div>
                       <button className="btn btn-secondary btn-sm" onClick={() => saveCost(p.id)} disabled={savingId === p.id}>
@@ -248,7 +249,7 @@ export default function ProductosPage() {
                       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", alignItems: "start" }}>
                         <div style={{ display: "flex", gap: "var(--space-1)" }}>
                           <button className="btn btn-primary btn-sm" onClick={() => saveMlEdit(p.id)} disabled={mlSavingId === p.id}>
-                            {mlSavingId === p.id ? "Guardando…" : "Guardar en ML"}
+                            {mlSavingId === p.id ? "Guardando…" : "Guardar"}
                           </button>
                           <button className="btn btn-secondary btn-sm" onClick={() => cancelMlEdit(p.id)} disabled={mlSavingId === p.id}>
                             Cancelar
