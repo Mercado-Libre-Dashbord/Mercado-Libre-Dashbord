@@ -38,8 +38,22 @@ describe("listProducts", () => {
     expect(products).toHaveLength(2);
     expect(products[0]).toEqual({
       id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url1",
-      categoryId: null, categoryName: null,
+      categoryId: null, categoryName: null, thumbnail: null,
     });
+  });
+
+  it("prefers the https thumbnail so the browser does not block it", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: ["MLA1", "MLA2"] })
+      .mockResolvedValueOnce([
+        { body: { id: "MLA1", title: "A", price: 1, available_quantity: 1, permalink: "", secure_thumbnail: "https://x/a.jpg", thumbnail: "http://x/a.jpg" } },
+        { body: { id: "MLA2", title: "B", price: 1, available_quantity: 1, permalink: "", thumbnail: "http://x/b.jpg" } },
+      ]);
+
+    const products = await listProducts("acc1", "123");
+
+    expect(products[0].thumbnail).toBe("https://x/a.jpg");
+    expect(products[1].thumbnail).toBe("http://x/b.jpg");
   });
 
   it("resolves each category name once, not once per product", async () => {

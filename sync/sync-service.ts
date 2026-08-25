@@ -14,19 +14,21 @@ export interface SyncResult {
 export async function syncProducts(db: QueryExecutor, accountId: string, sellerId: string): Promise<number> {
   const now = new Date().toISOString();
   const hasCategory = await hasColumn(db, "products", "category_id");
+  const hasThumbnail = await hasColumn(db, "products", "thumbnail");
   const products = await listProducts(accountId, sellerId);
   for (const p of products) {
     await db.query(
-      `INSERT INTO products (account_id, id, title, sku, current_price, stock, permalink, updated_at${hasCategory ? ", category_id, category_name" : ""})
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8${hasCategory ? ", $9, $10" : ""})
+      `INSERT INTO products (account_id, id, title, sku, current_price, stock, permalink, updated_at${hasCategory ? ", category_id, category_name" : ""}${hasThumbnail ? ", thumbnail" : ""})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8${hasCategory ? ", $9, $10" : ""}${hasThumbnail ? `, $${hasCategory ? 11 : 9}` : ""})
        ON CONFLICT (account_id, id) DO UPDATE SET
          title = excluded.title, sku = excluded.sku, current_price = excluded.current_price,
          stock = excluded.stock, permalink = excluded.permalink, updated_at = excluded.updated_at${
            hasCategory ? ", category_id = excluded.category_id, category_name = excluded.category_name" : ""
-         }`,
+         }${hasThumbnail ? ", thumbnail = excluded.thumbnail" : ""}`,
       [
         accountId, p.id, p.title, p.sku, p.price, p.stock, p.permalink, now,
         ...(hasCategory ? [p.categoryId, p.categoryName] : []),
+        ...(hasThumbnail ? [p.thumbnail] : []),
       ]
     );
   }

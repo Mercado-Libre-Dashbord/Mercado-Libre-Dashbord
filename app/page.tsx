@@ -97,6 +97,8 @@ interface ProductRow {
   unitsSold: number;
   totalProfit: number;
   marginPct: number | null;
+  stock: number;
+  thumbnail: string | null;
 }
 
 function fmt(n: number) {
@@ -241,7 +243,7 @@ function CategoryDonut({ rows }: { rows: CategoryRow[] }) {
               data={data}
               dataKey="revenue"
               nameKey="category"
-              innerRadius="62%"
+              innerRadius="68%"
               outerRadius="92%"
               paddingAngle={2}
               stroke="var(--surface)"
@@ -265,7 +267,9 @@ function CategoryDonut({ rows }: { rows: CategoryRow[] }) {
             alignItems: "center", justifyContent: "center", pointerEvents: "none",
           }}
         >
-          <span style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</span>
+          {/* El agujero del donut es angosto: 15px entra cómodo hasta cifras
+              de millones sin pisar el anillo. */}
+          <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>facturado</span>
         </div>
       </div>
@@ -279,6 +283,70 @@ function CategoryDonut({ rows }: { rows: CategoryRow[] }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * Los 5 productos que más unidades vendieron en el período.
+ *
+ * "Más vendido" y "más rentable" no son lo mismo — por eso cada fila muestra
+ * también la ganancia que dejó: un producto puede encabezar esta lista y
+ * estar dando pérdida.
+ */
+function TopProductsCard({ rows }: { rows: ProductRow[] }) {
+  const top = [...rows].filter((p) => p.unitsSold > 0).sort((a, b) => b.unitsSold - a.unitsSold).slice(0, 5);
+
+  return (
+    <div className="chart-card">
+      <div className="chart-card-head">
+        <h3 className="chart-card-title">Productos más vendidos</h3>
+        <a className="field-hint" style={{ margin: 0 }} href="/productos">Ver todos</a>
+      </div>
+      {top.length === 0 ? (
+        <div className="empty-state" style={{ padding: "var(--space-5) var(--space-3)" }}>
+          Sin ventas en este período.
+        </div>
+      ) : (
+        <ul className="top-products">
+          {top.map((p) => (
+            <li className="top-product" key={p.id}>
+              {p.thumbnail ? (
+                // <img> y no next/image: son URLs de mlstatic que cambian por
+                // cuenta, y no vale configurar dominios remotos para un thumb.
+                <img className="top-product-img" src={p.thumbnail} alt="" loading="lazy" />
+              ) : (
+                <span className="top-product-img" aria-hidden="true" />
+              )}
+              <span className="top-product-main">
+                <span className="top-product-name" title={p.title}>{p.title}</span>
+                <span className="top-product-meta">
+                  {p.unitsSold} vendidas ·{" "}
+                  <span style={{ color: p.totalProfit >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 }}>
+                    {fmt(p.totalProfit)}
+                  </span>
+                </span>
+              </span>
+              <span className="top-product-side">
+                <StockBadge stock={p.stock} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const LOW_STOCK_THRESHOLD = 5;
+
+function StockBadge({ stock }: { stock: number }) {
+  const tone = stock <= 0 ? "out" : stock <= LOW_STOCK_THRESHOLD ? "low" : "ok";
+  const label = stock <= 0 ? "Sin stock" : `${stock} en stock`;
+  return (
+    <span className={`stock-badge ${tone}`}>
+      <span className="stock-dot" aria-hidden="true" />
+      {label}
+    </span>
   );
 }
 
@@ -479,19 +547,22 @@ export default function HomePage() {
           <p style={{ margin: "var(--space-2) 0 0" }}>Probá con un período más largo — &quot;Este mes&quot; o &quot;Este año&quot;.</p>
         </div>
       ) : (
-        <div className="chart-split">
+        <>
           <PerformanceChart daily={daily} />
-          {categories.length > 0 ? (
-            <CategoryDonut rows={categories} />
-          ) : (
-            <div className="chart-card">
-              <div className="chart-card-head"><h3 className="chart-card-title">Categorías más vendidas</h3></div>
-              <div className="empty-state" style={{ padding: "var(--space-5) var(--space-3)" }}>
-                Todavía no hay categorías. Sincronizá para traerlas desde Mercado Libre.
+          <div className="chart-split-even">
+            <TopProductsCard rows={products ?? []} />
+            {categories.length > 0 ? (
+              <CategoryDonut rows={categories} />
+            ) : (
+              <div className="chart-card">
+                <div className="chart-card-head"><h3 className="chart-card-title">Categorías más vendidas</h3></div>
+                <div className="empty-state" style={{ padding: "var(--space-5) var(--space-3)" }}>
+                  Todavía no hay categorías. Sincronizá y volvé a entrar para traerlas desde Mercado Libre.
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </>
       )}
 
       <h2 className="section-title">De qué está hecha tu facturación</h2>

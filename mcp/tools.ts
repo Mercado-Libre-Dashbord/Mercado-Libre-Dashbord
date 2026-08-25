@@ -10,6 +10,7 @@ export interface MlProduct {
   permalink: string;
   categoryId: string | null;
   categoryName: string | null;
+  thumbnail: string | null;
 }
 
 export async function listProducts(accountId: string, sellerId: string): Promise<MlProduct[]> {
@@ -55,6 +56,9 @@ export async function listProducts(accountId: string, sellerId: string): Promise
         permalink: entry.body.permalink,
         categoryId: entry.body.category_id ?? null,
         categoryName: null,
+        // secure_thumbnail primero: el `thumbnail` a secas viene por http y
+        // el navegador lo bloquea como contenido mixto en una página https.
+        thumbnail: entry.body.secure_thumbnail ?? entry.body.thumbnail ?? null,
       });
     }
   }

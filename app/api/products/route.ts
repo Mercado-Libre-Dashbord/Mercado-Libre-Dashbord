@@ -17,12 +17,14 @@ export async function GET(request: NextRequest) {
   const withMargin = await withScope({ accountId: account.id }, async (client) => {
     // Si todavía no se corrió la migración de impuestos, se devuelve null en
     // vez de romper toda la página (ver db/schema-capabilities.ts).
+    const thumbnailColumn = (await hasColumn(client, "products", "thumbnail")) ? "p.thumbnail" : "NULL::text";
     const taxColumn = (await hasColumn(client, "product_costs", "tax"))
       ? `(SELECT tax FROM product_costs pc WHERE pc.account_id = p.account_id AND pc.product_id = p.id ORDER BY pc.valid_from DESC LIMIT 1)`
       : `NULL::double precision`;
 
     const result = await client.query(
       `SELECT p.id, p.title, p.sku, p.current_price as "currentPrice", p.stock,
+              ${thumbnailColumn} as thumbnail,
               (SELECT cost FROM product_costs pc WHERE pc.account_id = p.account_id AND pc.product_id = p.id ORDER BY pc.valid_from DESC LIMIT 1) as "currentCost",
               ${taxColumn} as "currentTax",
               (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
@@ -41,6 +43,7 @@ export async function GET(request: NextRequest) {
       sku: string | null;
       currentPrice: number;
       stock: number;
+      thumbnail: string | null;
       currentCost: number | null;
       currentTax: number | null;
       unitsSold: number;

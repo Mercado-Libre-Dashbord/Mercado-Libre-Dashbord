@@ -30,7 +30,7 @@ describe("runSync", () => {
   it("persists products, orders and a computed net_profit per order item", async () => {
     const { listProducts, listOrders, getOrderDetail, getAdsSpend } = await import("@/mcp/tools");
     vi.mocked(listProducts).mockResolvedValueOnce([
-      { id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url", categoryId: "MLA1234", categoryName: "Categoría de prueba" },
+      { id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url", categoryId: "MLA1234", categoryName: "Categoría de prueba", thumbnail: null },
     ]);
     vi.mocked(listOrders).mockResolvedValueOnce(["ORD1"]);
     vi.mocked(getOrderDetail).mockResolvedValueOnce({
@@ -130,7 +130,7 @@ describe("runSync", () => {
   it("keeps products and orders synced even when getAdsSpend fails", async () => {
     const { listProducts, listOrders, getOrderDetail, getAdsSpend } = await import("@/mcp/tools");
     vi.mocked(listProducts).mockResolvedValueOnce([
-      { id: "MLA4", title: "Producto 4", sku: null, price: 100, stock: 1, permalink: "url", categoryId: "MLA1234", categoryName: "Categoría de prueba" },
+      { id: "MLA4", title: "Producto 4", sku: null, price: 100, stock: 1, permalink: "url", categoryId: "MLA1234", categoryName: "Categoría de prueba", thumbnail: null },
     ]);
     vi.mocked(listOrders).mockResolvedValueOnce(["ORD4"]);
     vi.mocked(getOrderDetail).mockResolvedValueOnce({

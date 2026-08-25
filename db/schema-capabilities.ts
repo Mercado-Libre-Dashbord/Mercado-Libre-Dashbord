@@ -61,6 +61,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     ddl: "ALTER TABLE products ADD COLUMN IF NOT EXISTS category_name TEXT;",
   },
   {
+    table: "products",
+    column: "thumbnail",
+    ddl: "ALTER TABLE products ADD COLUMN IF NOT EXISTS thumbnail TEXT;",
+  },
+  {
     // La tabla entera llega por migración; se detecta por una columna suya.
     table: "billing_charges",
     column: "detail_id",

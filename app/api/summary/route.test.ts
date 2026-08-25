@@ -211,12 +211,13 @@ describe("GET /api/summary", () => {
     resetColumnCache();
     vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
     const adminBody = await (await GET(request)).json();
-    expect(adminBody.pendingMigrations).toHaveLength(6);
+    expect(adminBody.pendingMigrations).toHaveLength(7);
     const sql = adminBody.pendingMigrations.join(" ");
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS tax");
     expect(sql).toContain("iva_applied");
     expect(sql).toContain("billing_charges");
     expect(sql).toContain("category_id");
+    expect(sql).toContain("thumbnail");
   });
 
   it("counts cancelled orders as refunds, separately from revenue", async () => {

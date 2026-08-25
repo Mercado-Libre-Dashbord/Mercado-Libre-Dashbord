@@ -58,11 +58,13 @@ CREATE TABLE IF NOT EXISTS products (
   permalink TEXT,
   category_id TEXT,
   category_name TEXT,
+  thumbnail TEXT,
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (account_id, id)
 );
 ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS category_name TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS thumbnail TEXT;
 
 CREATE TABLE IF NOT EXISTS product_costs (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
