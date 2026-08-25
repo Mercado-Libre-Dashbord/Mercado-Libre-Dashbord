@@ -1,4 +1,4 @@
-import { mlFetch } from "./ml-client";
+import { mlFetch, MlApiError } from "./ml-client";
 import { getValidAccessToken } from "./auth";
 
 export interface MlProduct {
@@ -98,15 +98,29 @@ export async function listOrders(accountId: string, sellerId: string, sinceIso: 
   return search.results.map((o: any) => String(o.id));
 }
 
+// Product Ads cuelga de un "advertiser" propio, no directo del seller — un
+// endpoint plano tipo /advertising/product_ads/campaigns (lo que había acá
+// antes) devuelve 404 porque no existe sin resolver esto primero. Devuelve
+// null si la cuenta no tiene Product Ads habilitado (nunca creó una campaña).
+async function getAdvertiserId(accountId: string): Promise<string | null> {
+  const token = await getValidAccessToken(accountId);
+  const res = await mlFetch(`/advertising/advertisers?product_id=PADS`, token);
+  const advertiser = (res.advertisers ?? [])[0];
+  return advertiser ? String(advertiser.advertiser_id) : null;
+}
+
 export async function getAdsSpend(
   accountId: string,
   sellerId: string,
   dateFrom: string,
   dateTo: string
 ): Promise<{ productId: string; date: string; amount: number }[]> {
+  const advertiserId = await getAdvertiserId(accountId);
+  if (!advertiserId) return [];
+
   const token = await getValidAccessToken(accountId);
   const campaigns = await mlFetch(
-    `/advertising/product_ads/campaigns?date_from=${dateFrom}&date_to=${dateTo}`,
+    `/advertising/advertisers/${advertiserId}/product_ads/campaigns?date_from=${dateFrom}&date_to=${dateTo}`,
     token
   );
   const rows: { productId: string; date: string; amount: number }[] = [];
@@ -116,6 +130,42 @@ export async function getAdsSpend(
     }
   }
   return rows;
+}
+
+export interface MlCampaign {
+  id: string;
+  name: string;
+  status: string;
+  budget: number;
+}
+
+export async function listCampaigns(accountId: string): Promise<MlCampaign[]> {
+  const advertiserId = await getAdvertiserId(accountId);
+  if (!advertiserId) return [];
+
+  const token = await getValidAccessToken(accountId);
+  const res = await mlFetch(`/advertising/advertisers/${advertiserId}/product_ads/campaigns`, token);
+  return (res.results ?? []).map((c: any) => ({
+    id: String(c.id),
+    name: c.name,
+    status: c.status,
+    budget: c.budget,
+  }));
+}
+
+// Requiere el scope "Write". Solo cambia el estado de una campaña que ya
+// existe (pausar/reactivar) — no crea campañas nuevas ni toca presupuestos.
+export async function setCampaignStatus(accountId: string, campaignId: string, status: "active" | "paused"): Promise<void> {
+  const advertiserId = await getAdvertiserId(accountId);
+  if (!advertiserId) {
+    throw new MlApiError(404, "No se encontró un advertiser de Product Ads para esta cuenta.");
+  }
+  const token = await getValidAccessToken(accountId);
+  await mlFetch(`/advertising/advertisers/${advertiserId}/product_ads/campaigns/${campaignId}`, token, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
 }
 
 export interface MlQuestion {

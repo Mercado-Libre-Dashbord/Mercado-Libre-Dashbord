@@ -12,6 +12,13 @@ interface Summary {
   trueCpa: number;
 }
 
+interface Campaign {
+  id: string;
+  name: string;
+  status: string;
+  budget: number;
+}
+
 function fmt(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 }
@@ -60,6 +67,9 @@ export default function CampanasPage() {
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
   const [noAccount, setNoAccount] = useState(false);
+  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
+  const [campaignsError, setCampaignsError] = useState("");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const { from, to } = rangeForPeriod(period, customFrom, customTo);
 
@@ -70,7 +80,42 @@ export default function CampanasPage() {
     });
   }
 
+  function loadCampaigns() {
+    setCampaignsError("");
+    fetch("/api/campaigns").then(async (r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        setCampaignsError(data.error ?? "No se pudieron cargar las campañas.");
+        setCampaigns([]);
+        return;
+      }
+      r.json().then(setCampaigns);
+    });
+  }
+
   useEffect(load, [from, to]);
+  useEffect(loadCampaigns, []);
+
+  async function toggleCampaign(campaignId: string, currentStatus: string) {
+    const nextStatus = currentStatus === "active" ? "paused" : "active";
+    setTogglingId(campaignId);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignId, status: nextStatus }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCampaignsError(data.error ?? "No se pudo cambiar el estado de la campaña.");
+        return;
+      }
+      loadCampaigns();
+    } finally {
+      setTogglingId(null);
+    }
+  }
 
   if (noAccount) {
     return (
@@ -128,6 +173,47 @@ export default function CampanasPage() {
           </>
         )}
       </div>
+
+      <h2 className="section-title">Campañas de Mercado Ads</h2>
+      {campaignsError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{campaignsError}</p>}
+      {campaigns === null ? (
+        <p className="empty-state">Cargando campañas…</p>
+      ) : campaigns.length === 0 && !campaignsError ? (
+        <div className="empty-state">No tenés campañas de Mercado Ads todavía.</div>
+      ) : campaigns.length > 0 ? (
+        <div className="table-wrap" style={{ marginBottom: "var(--space-5)" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Campaña</th>
+                <th>Estado</th>
+                <th className="num">Presupuesto</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {campaigns.map((c) => (
+                <tr key={c.id}>
+                  <td>{c.name}</td>
+                  <td>
+                    <span className={`badge ${c.status === "active" ? "badge-paid" : "badge-other"}`}>{c.status}</span>
+                  </td>
+                  <td className="num">{fmt(c.budget)}</td>
+                  <td>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => toggleCampaign(c.id, c.status)}
+                      disabled={togglingId === c.id}
+                    >
+                      {togglingId === c.id ? "…" : c.status === "active" ? "Pausar" : "Reactivar"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
 
       <h2 className="section-title">Anuncios</h2>
       <div className="kpi-grid">

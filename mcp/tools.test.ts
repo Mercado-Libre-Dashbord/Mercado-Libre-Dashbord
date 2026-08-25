@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("./ml-client", () => ({ mlFetch: vi.fn() }));
+vi.mock("./ml-client", async () => {
+  const actual = await vi.importActual<typeof import("./ml-client")>("./ml-client");
+  return { ...actual, mlFetch: vi.fn() };
+});
 vi.mock("./auth", () => ({ getValidAccessToken: vi.fn().mockResolvedValue("token") }));
 
 import {
@@ -10,8 +13,11 @@ import {
   listUnansweredQuestions,
   answerQuestion,
   updateProductPriceStock,
+  getAdsSpend,
+  listCampaigns,
+  setCampaignStatus,
 } from "./tools";
-import { mlFetch } from "./ml-client";
+import { mlFetch, MlApiError } from "./ml-client";
 
 describe("listProducts", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -155,6 +161,71 @@ describe("updateProductPriceStock", () => {
       "/items/MLA1",
       "token",
       expect.objectContaining({ body: JSON.stringify({ available_quantity: 10 }) })
+    );
+  });
+});
+
+describe("getAdsSpend", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns an empty array when the account has no Product Ads advertiser", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ advertisers: [] });
+    expect(await getAdsSpend("acc1", "123", "2026-01-01", "2026-01-31")).toEqual([]);
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves the advertiser id before listing campaigns", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999 }] })
+      .mockResolvedValueOnce({
+        results: [{ metrics_by_day: [{ item_id: "MLA1", date: "2026-01-05", cost: 100 }] }],
+      });
+
+    const rows = await getAdsSpend("acc1", "123", "2026-01-01", "2026-01-31");
+
+    expect(rows).toEqual([{ productId: "MLA1", date: "2026-01-05", amount: 100 }]);
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toBe(
+      "/advertising/advertisers/999/product_ads/campaigns?date_from=2026-01-01&date_to=2026-01-31"
+    );
+  });
+});
+
+describe("listCampaigns", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns an empty array when there is no advertiser", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ advertisers: [] });
+    expect(await listCampaigns("acc1")).toEqual([]);
+  });
+
+  it("maps campaign fields", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999 }] })
+      .mockResolvedValueOnce({ results: [{ id: 1, name: "Campaña 1", status: "active", budget: 5000 }] });
+
+    expect(await listCampaigns("acc1")).toEqual([{ id: "1", name: "Campaña 1", status: "active", budget: 5000 }]);
+  });
+});
+
+describe("setCampaignStatus", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("throws when there is no advertiser", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ advertisers: [] });
+    await expect(setCampaignStatus("acc1", "1", "paused")).rejects.toBeInstanceOf(MlApiError);
+  });
+
+  it("PUTs the new status for the campaign", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999 }] })
+      .mockResolvedValueOnce({});
+
+    await setCampaignStatus("acc1", "1", "paused");
+
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledWith(
+      "/advertising/advertisers/999/product_ads/campaigns/1",
+      "token",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ status: "paused" }) })
     );
   });
 });
