@@ -1,18 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/db/client", () => ({ withScope: vi.fn() }));
-vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
+vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn(), getCurrentUser: vi.fn() }));
 
 import { GET } from "./route";
 import { withScope } from "@/db/client";
-import { resolveCurrentAccount } from "@/lib/current-account";
+import { resolveCurrentAccount, getCurrentUser } from "@/lib/current-account";
+import { resetColumnCache } from "@/db/schema-capabilities";
 
 const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", createdAt: "2026-01-01" };
 
 describe("GET /api/summary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetColumnCache();
     vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
+    vi.mocked(getCurrentUser).mockResolvedValue({ email: "a@example.com", isAdmin: false });
   });
 
   it("returns 401 when there is no active account", async () => {
@@ -122,10 +125,15 @@ describe("GET /api/summary", () => {
   });
 
   it("returns the daily breakdown when groupBy=day", async () => {
-    const query = vi.fn().mockResolvedValue({
-      rows: [
-        { day: "2026-01-05", revenue: 1000, commission: 130, shipping: 90, cost: 300, tax: 20, netProfit: 460 },
-      ],
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) {
+        return { rows: [{ table_name: "order_items", column_name: "tax_applied" }] };
+      }
+      return {
+        rows: [
+          { day: "2026-01-05", revenue: 1000, commission: 130, shipping: 90, cost: 300, tax: 20, netProfit: 460 },
+        ],
+      };
     });
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
 
@@ -135,5 +143,46 @@ describe("GET /api/summary", () => {
     expect(body).toEqual([
       { day: "2026-01-05", revenue: 1000, commission: 130, shipping: 90, cost: 300, tax: 20, netProfit: 460 },
     ]);
+  });
+
+  it("still returns the daily breakdown when the tax column has not been migrated yet", async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      // Sin la columna la query pide 0 como impuestos en vez de fallar.
+      expect(sql).not.toContain("tax_applied");
+      return { rows: [{ day: "2026-01-05", revenue: 1000, commission: 130, shipping: 90, cost: 300, tax: 0, netProfit: 480 }] };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams("groupBy=day") } } as any;
+    const body = await (await GET(request)).json();
+
+    expect(body[0].tax).toBe(0);
+  });
+
+  it("reports pending migrations to admins only", async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      return {
+        rows: [
+          {
+            orders: 0, grossSales: 0, totalCommission: 0, totalShipping: 0, totalMercadoAds: 0,
+            totalCost: 0, netProfit: 0, itemsMissingCost: 0, ordersWithCost: 0,
+          },
+        ],
+      };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+    const request = { nextUrl: { searchParams: new URLSearchParams() } } as any;
+
+    vi.mocked(getCurrentUser).mockResolvedValue({ email: "a@example.com", isAdmin: false });
+    expect((await (await GET(request)).json()).pendingMigrations).toEqual([]);
+
+    resetColumnCache();
+    vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
+    const adminBody = await (await GET(request)).json();
+    expect(adminBody.pendingMigrations).toHaveLength(2);
+    expect(adminBody.pendingMigrations.join(" ")).toContain("ADD COLUMN IF NOT EXISTS tax");
   });
 });

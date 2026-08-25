@@ -22,6 +22,7 @@ export default function ProductosPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   // Edición de precio/stock que se escribe de vuelta a la publicación real en
   // Mercado Libre — separado a propósito de "editing" (que es el costo,
@@ -31,10 +32,19 @@ export default function ProductosPage() {
   const [mlSavingId, setMlSavingId] = useState<string | null>(null);
 
   function load() {
-    fetch("/api/products").then((r) => {
-      if (r.status === 401) { setNoAccount(true); return; }
-      r.json().then(setProducts);
-    });
+    setLoadError("");
+    fetch("/api/products")
+      .then(async (r) => {
+        if (r.status === 401) { setNoAccount(true); return; }
+        if (!r.ok) throw new Error(String(r.status));
+        setProducts(await r.json());
+      })
+      .catch(() => {
+        // Sin esto la página se quedaba para siempre en "Cargando productos…"
+        // cuando la API fallaba, y parecía que se habían borrado los costos.
+        setLoadError("No se pudieron cargar los productos. Probá recargar la página.");
+        setProducts([]);
+      });
   }
 
   useEffect(load, []);
@@ -115,11 +125,16 @@ export default function ProductosPage() {
   return (
     <div>
       <h1>Productos</h1>
+      {loadError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{loadError}</p>}
       {products === null ? (
         <p className="empty-state">Cargando productos…</p>
       ) : products.length === 0 ? (
         <div className="empty-state">
-          Todavía no hay productos sincronizados. Conectá Mercado Libre y apretá &quot;Sincronizar&quot; en Resumen.
+          <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Todavía no hay productos sincronizados.</p>
+          <p style={{ margin: "var(--space-2) 0 var(--space-3)" }}>
+            Conectá Mercado Libre y sincronizá para traer tus publicaciones.
+          </p>
+          <a className="btn btn-primary btn-sm" href="/">Ir a Resumen y sincronizar</a>
         </div>
       ) : (
         <div className="table-wrap">

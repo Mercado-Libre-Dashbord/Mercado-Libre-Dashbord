@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
-import { resolveCurrentAccount } from "@/lib/current-account";
+import { hasColumn, missingMigrations } from "@/db/schema-capabilities";
+import { getCurrentUser, resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
 
@@ -61,13 +62,19 @@ export async function GET(request: NextRequest) {
 
   if (groupBy === "day") {
     const rows = await withScope({ accountId: account.id }, async (client) => {
+      // Sin la migración de impuestos el gráfico se dibuja igual con la franja
+      // de impuestos en cero, en vez de quedarse cargando para siempre.
+      const taxSum = (await hasColumn(client, "order_items", "tax_applied"))
+        ? "COALESCE(SUM(oi.tax_applied * oi.quantity), 0)"
+        : "0::double precision";
+
       const result = await client.query(
         `SELECT to_char(o.date_created, 'YYYY-MM-DD') as day,
                 COALESCE(SUM(oi.unit_price * oi.quantity), 0) as revenue,
                 COALESCE(SUM(oi.ml_commission), 0) as commission,
                 COALESCE(SUM(oi.shipping_cost), 0) as shipping,
                 COALESCE(SUM(oi.cost_applied * oi.quantity), 0) as cost,
-                COALESCE(SUM(oi.tax_applied * oi.quantity), 0) as tax,
+                ${taxSum} as tax,
                 COALESCE(SUM(oi.net_profit), 0) as "netProfit"
          FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
          WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
@@ -114,6 +121,11 @@ export async function GET(request: NextRequest) {
     const prevRange = previousRange(from, to);
     const previous = prevRange ? await totalsFor(client, account.id, prevRange.from, prevRange.to) : null;
 
+    // Solo para el dueño de la app (admin): avisa en la UI que falta correr
+    // una migración, con el SQL exacto. El cliente final nunca lo ve.
+    const user = await getCurrentUser();
+    const pendingMigrations = user?.isAdmin ? (await missingMigrations(client)).map((m) => m.ddl) : [];
+
     return {
       orders,
       grossSales: revenue,
@@ -132,6 +144,7 @@ export async function GET(request: NextRequest) {
       trueCpa: ordersWithCost > 0 ? adSpend / ordersWithCost : 0,
       itemsMissingCost: Number(totals.itemsMissingCost),
       previous,
+      pendingMigrations,
     };
   });
 

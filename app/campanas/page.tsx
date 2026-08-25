@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { NoAccountState } from "../NoAccountState";
-import { Period, PERIOD_OPTIONS, rangeForPeriod, toDateStr } from "@/lib/period";
+import { PeriodBar } from "../PeriodBar";
+import { Period, rangeForPeriod, toDateStr } from "@/lib/period";
 
 interface Summary {
   adSpend: number;
@@ -120,35 +121,27 @@ export default function CampanasPage() {
     <div>
       <h1>Campañas</h1>
 
-      <div className="ad-form" style={{ marginBottom: 24 }}>
-        <label>
-          Período
-          <select value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
-            {PERIOD_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </label>
-        {period === "custom" && (
-          <>
-            <label>
-              Desde
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-            </label>
-            <label>
-              Hasta
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
-            </label>
-          </>
-        )}
-      </div>
+      <PeriodBar
+        period={period}
+        onPeriodChange={setPeriod}
+        customFrom={customFrom}
+        customTo={customTo}
+        onCustomFromChange={setCustomFrom}
+        onCustomToChange={setCustomTo}
+      />
 
       <h2 className="section-title">Campañas de Mercado Ads</h2>
       {campaignsError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{campaignsError}</p>}
       {campaigns === null ? (
         <p className="empty-state">Cargando campañas…</p>
       ) : campaigns.length === 0 && !campaignsError ? (
-        <div className="empty-state">No tenés campañas de Mercado Ads todavía.</div>
+        <div className="empty-state">
+          <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>No tenés campañas de Mercado Ads.</p>
+          <p style={{ margin: "var(--space-2) 0 0" }}>
+            Cuando crees una campaña de Product Ads en Mercado Libre, va a aparecer acá y vas a poder
+            pausarla o reactivarla sin salir del dashboard.
+          </p>
+        </div>
       ) : campaigns.length > 0 ? (
         <div className="table-wrap" style={{ marginBottom: "var(--space-5)" }}>
           <table>

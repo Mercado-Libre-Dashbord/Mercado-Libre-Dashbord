@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
+import { hasColumn } from "@/db/schema-capabilities";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
@@ -13,10 +14,16 @@ export async function GET(request: NextRequest) {
   const to = searchParams.get("to") ?? "9999-12-31";
 
   const withMargin = await withScope({ accountId: account.id }, async (client) => {
+    // Si todavía no se corrió la migración de impuestos, se devuelve null en
+    // vez de romper toda la página (ver db/schema-capabilities.ts).
+    const taxColumn = (await hasColumn(client, "product_costs", "tax"))
+      ? `(SELECT tax FROM product_costs pc WHERE pc.account_id = p.account_id AND pc.product_id = p.id ORDER BY pc.valid_from DESC LIMIT 1)`
+      : `NULL::double precision`;
+
     const result = await client.query(
       `SELECT p.id, p.title, p.sku, p.current_price as "currentPrice", p.stock,
               (SELECT cost FROM product_costs pc WHERE pc.account_id = p.account_id AND pc.product_id = p.id ORDER BY pc.valid_from DESC LIMIT 1) as "currentCost",
-              (SELECT tax FROM product_costs pc WHERE pc.account_id = p.account_id AND pc.product_id = p.id ORDER BY pc.valid_from DESC LIMIT 1) as "currentTax",
+              ${taxColumn} as "currentTax",
               (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
                 WHERE oi.account_id = p.account_id AND oi.product_id = p.id AND o.date_created::date BETWEEN $1::date AND $2::date) as "unitsSold",
               (SELECT COALESCE(SUM(oi.net_profit), 0) FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
@@ -60,11 +67,19 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "productId, cost (>= 0) y tax (>= 0, opcional) son requeridos" }, { status: 400 });
   }
 
-  await withScope({ accountId: account.id }, (client) =>
-    client.query(
-      `INSERT INTO product_costs (account_id, product_id, cost, tax, valid_from) VALUES ($1, $2, $3, $4, $5)`,
-      [account.id, productId, cost, taxValue, new Date().toISOString()]
-    )
-  );
+  await withScope({ accountId: account.id }, async (client) => {
+    // Sin la columna `tax` se guarda igual el costo — perder el impuesto es
+    // mucho mejor que rechazar la carga entera del costo.
+    if (await hasColumn(client, "product_costs", "tax")) {
+      return client.query(
+        `INSERT INTO product_costs (account_id, product_id, cost, tax, valid_from) VALUES ($1, $2, $3, $4, $5)`,
+        [account.id, productId, cost, taxValue, new Date().toISOString()]
+      );
+    }
+    return client.query(
+      `INSERT INTO product_costs (account_id, product_id, cost, valid_from) VALUES ($1, $2, $3, $4)`,
+      [account.id, productId, cost, new Date().toISOString()]
+    );
+  });
   return NextResponse.json({ ok: true });
 }

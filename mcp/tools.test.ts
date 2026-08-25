@@ -174,6 +174,14 @@ describe("getAdsSpend", () => {
     expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(1);
   });
 
+  it("returns no ad spend instead of failing the whole sync on a 404", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
+      .mockRejectedValueOnce(new MlApiError(404, "advertiser_campaigns_not_found"));
+
+    expect(await getAdsSpend("acc1", "123", "2026-01-01", "2026-01-31")).toEqual([]);
+  });
+
   it("resolves the advertiser id and site id before listing campaigns", async () => {
     vi.mocked(mlFetch)
       .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
@@ -196,6 +204,14 @@ describe("listCampaigns", () => {
 
   it("returns an empty array when there is no advertiser", async () => {
     vi.mocked(mlFetch).mockResolvedValueOnce({ advertisers: [] });
+    expect(await listCampaigns("acc1")).toEqual([]);
+  });
+
+  it("treats a 404 from Mercado Libre as 'no campaigns yet', not an error", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
+      .mockRejectedValueOnce(new MlApiError(404, "advertiser_campaigns_not_found"));
+
     expect(await listCampaigns("acc1")).toEqual([]);
   });
 

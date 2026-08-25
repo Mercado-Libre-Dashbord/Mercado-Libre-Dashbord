@@ -201,6 +201,54 @@ tbody tr:hover { background: var(--surface-2); }
 .explain-box li { margin-bottom: var(--space-1); }
 .explain-box p { margin: var(--space-2) 0 0; line-height: 1.5; }
 
+/* ---- Selector de período (barra de botones a todo el ancho) ---- */
+.period-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-1);
+  margin-bottom: var(--space-5);
+}
+.period-bar {
+  display: flex;
+  gap: 2px;
+  /* En pantallas angostas scrollea en vez de apretar los botones hasta que
+     las etiquetas se corten. */
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.period-btn {
+  /* `auto` y no `0`: los segmentos se reparten toda la barra pero en
+     proporción a su texto, así "Hoy" no queda tan ancho como
+     "Rango personalizado". */
+  flex: 1 1 auto;
+  min-width: max-content;
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 14px;
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.period-btn:hover:not(.active) { background: var(--surface-2); color: var(--text); }
+.period-btn.active { background: var(--accent-strong); color: #fff; }
+.period-custom {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-1);
+}
+.period-custom label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-dim); gap: var(--space-1); }
+
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-3); }
 .kpi-card {
   background: var(--surface);
@@ -244,6 +292,28 @@ tbody tr:hover { background: var(--surface-2); }
   font-weight: 700;
 }
 .missing-cost { color: var(--negative); font-weight: 600; }
+.migration-banner {
+  background: rgba(168, 50, 50, 0.06);
+  border: 1px solid var(--negative);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.migration-banner pre {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Empty states con jerarquía: título accionable + explicación. */
+.empty-state strong, .empty-state p:first-child { color: var(--text); }
 .success-text { color: var(--positive); font-weight: 600; }
 
 /* Tarjeta usada en Consultas para cada pregunta/respuesta. */

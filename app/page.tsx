@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } from "recharts";
 import { SyncButton } from "./SyncButton";
 import { NoAccountState } from "./NoAccountState";
-import { Period, PERIOD_OPTIONS, rangeForPeriod, toDateStr } from "@/lib/period";
+import { PeriodBar } from "./PeriodBar";
+import { Period, rangeForPeriod, toDateStr } from "@/lib/period";
 
 interface PreviousTotals {
   orders: number;
@@ -22,6 +23,8 @@ interface Summary {
   netRevenue: number;
   itemsMissingCost: number;
   previous: PreviousTotals | null;
+  /** SQL de migraciones pendientes — solo llega si sos admin. */
+  pendingMigrations?: string[];
 }
 
 interface DailyBreakdown {
@@ -231,30 +234,23 @@ export default function HomePage() {
         </p>
       )}
       {loadError && <p className="field-error" role="alert">{loadError}</p>}
+      {summary?.pendingMigrations && summary.pendingMigrations.length > 0 && (
+        <div className="migration-banner" role="alert">
+          <strong>Falta correr una migración en la base.</strong> Los impuestos por producto no se
+          están guardando ni mostrando hasta que corras esto en el SQL Editor de Supabase:
+          <pre>{summary.pendingMigrations.join("\n")}</pre>
+        </div>
+      )}
       <SyncButton />
 
-      <div className="ad-form" style={{ marginBottom: 24 }}>
-        <label>
-          Período
-          <select value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
-            {PERIOD_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </label>
-        {period === "custom" && (
-          <>
-            <label>
-              Desde
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-            </label>
-            <label>
-              Hasta
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
-            </label>
-          </>
-        )}
-      </div>
+      <PeriodBar
+        period={period}
+        onPeriodChange={setPeriod}
+        customFrom={customFrom}
+        customTo={customTo}
+        onCustomFromChange={setCustomFrom}
+        onCustomToChange={setCustomTo}
+      />
 
       <h2 className="section-title">Tienda</h2>
       <div className="kpi-grid">
@@ -307,7 +303,10 @@ export default function HomePage() {
       {daily === null ? (
         <p className="empty-state">Cargando gráfico…</p>
       ) : daily.length === 0 ? (
-        <div className="empty-state">Todavía no hay ventas en este período para graficar.</div>
+        <div className="empty-state">
+          <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Sin ventas en este período.</p>
+          <p style={{ margin: "var(--space-2) 0 0" }}>Probá con un período más largo — &quot;Este mes&quot; o &quot;Este año&quot;.</p>
+        </div>
       ) : (
         <>
           <div
@@ -359,7 +358,10 @@ export default function HomePage() {
       ) : (() => {
         const top = [...products].filter((p) => p.unitsSold > 0).sort((a, b) => b.totalProfit - a.totalProfit).slice(0, 5);
         return top.length === 0 ? (
-          <div className="empty-state">Todavía no hay ventas en este período.</div>
+          <div className="empty-state">
+            <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Sin ventas en este período.</p>
+            <p style={{ margin: "var(--space-2) 0 0" }}>Probá con un período más largo para ver tus productos más rentables.</p>
+          </div>
         ) : (
           <div className="table-wrap" style={{ marginBottom: "var(--space-3)" }}>
             <table>
@@ -428,7 +430,10 @@ export default function HomePage() {
 
       <h2 className="section-title">Últimas órdenes</h2>
       {orders && orders.length === 0 ? (
-        <div className="empty-state">Todavía no hay órdenes sincronizadas para este período.</div>
+        <div className="empty-state">
+          <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Sin órdenes en este período.</p>
+          <p style={{ margin: "var(--space-2) 0 0" }}>Cambiá el período de arriba o sincronizá para traer ventas nuevas.</p>
+        </div>
       ) : (
         <div className="table-wrap orders-table">
           <table>

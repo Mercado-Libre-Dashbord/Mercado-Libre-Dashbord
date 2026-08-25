@@ -116,6 +116,21 @@ function productAdsBase(siteId: string, advertiserId: string) {
   return `/marketplace/advertising/${siteId}/advertisers/${advertiserId}/product_ads`;
 }
 
+/**
+ * Un 404 al *listar* campañas no es un error: Mercado Libre responde
+ * `advertiser_campaigns_not_found` cuando el advertiser existe pero todavía
+ * no creó ninguna campaña. Mostrarlo como error rojo hacía parecer rota una
+ * cuenta que simplemente no usa Product Ads.
+ */
+async function listOrEmpty<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof MlApiError && err.status === 404) return fallback;
+    throw err;
+  }
+}
+
 export async function getAdsSpend(
   accountId: string,
   sellerId: string,
@@ -126,10 +141,14 @@ export async function getAdsSpend(
   if (!advertiser) return [];
 
   const token = await getValidAccessToken(accountId);
-  const campaigns = await mlFetch(
-    `${productAdsBase(advertiser.siteId, advertiser.advertiserId)}/campaigns/search?date_from=${dateFrom}&date_to=${dateTo}&metrics=cost`,
-    token,
-    { headers: { "Api-Version": "2" } }
+  const campaigns = await listOrEmpty(
+    () =>
+      mlFetch(
+        `${productAdsBase(advertiser.siteId, advertiser.advertiserId)}/campaigns/search?date_from=${dateFrom}&date_to=${dateTo}&metrics=cost`,
+        token,
+        { headers: { "Api-Version": "2" } }
+      ),
+    { results: [] }
   );
   const rows: { productId: string; date: string; amount: number }[] = [];
   for (const c of campaigns.results ?? []) {
@@ -156,10 +175,14 @@ export async function listCampaigns(accountId: string): Promise<MlCampaign[]> {
   // pausarlas/reactivarlas), no depende de que hayan tenido gasto reciente.
   const dateTo = new Date().toISOString().slice(0, 10);
   const dateFrom = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const res = await mlFetch(
-    `${productAdsBase(advertiser.siteId, advertiser.advertiserId)}/campaigns/search?date_from=${dateFrom}&date_to=${dateTo}`,
-    token,
-    { headers: { "Api-Version": "2" } }
+  const res = await listOrEmpty(
+    () =>
+      mlFetch(
+        `${productAdsBase(advertiser.siteId, advertiser.advertiserId)}/campaigns/search?date_from=${dateFrom}&date_to=${dateTo}`,
+        token,
+        { headers: { "Api-Version": "2" } }
+      ),
+    { results: [] }
   );
   return (res.results ?? []).map((c: any) => ({
     id: String(c.id),

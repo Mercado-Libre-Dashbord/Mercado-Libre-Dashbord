@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
+import { hasColumn } from "@/db/schema-capabilities";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
@@ -42,12 +43,18 @@ export async function GET(request: NextRequest) {
       conditions.push(`o.status = $${args.length}`);
     }
 
+    // Degrada a null si falta la migración de impuestos, en vez de tirar 500
+    // y dejar la página entera en blanco (ver db/schema-capabilities.ts).
+    const taxColumn = (await hasColumn(client, "order_items", "tax_applied"))
+      ? "oi.tax_applied"
+      : "NULL::double precision";
+
     const result = await client.query(
       `SELECT oi.id, o.id as "orderId", o.date_created as "dateCreated", oi.product_id as "productId",
               p.title as "productTitle", oi.unit_price as "unitPrice", oi.quantity,
               oi.ml_commission as "mlCommission", oi.shipping_cost as "shippingCost",
               oi.ads_cost_allocated as "adsCostAllocated", oi.cost_applied as "costApplied",
-              oi.tax_applied as "taxApplied",
+              ${taxColumn} as "taxApplied",
               oi.net_profit as "netProfit", o.status as "estadoPago",
               -- El costo aplicado puede venir de un registro cargado *después* de esta
               -- venta (fallback al costo más viejo conocido, ver getCostAtDate) — acá
