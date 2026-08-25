@@ -98,15 +98,22 @@ export async function listOrders(accountId: string, sellerId: string, sinceIso: 
   return search.results.map((o: any) => String(o.id));
 }
 
-// Product Ads cuelga de un "advertiser" propio, no directo del seller — un
-// endpoint plano tipo /advertising/product_ads/campaigns (lo que había acá
-// antes) devuelve 404 porque no existe sin resolver esto primero. Devuelve
-// null si la cuenta no tiene Product Ads habilitado (nunca creó una campaña).
-async function getAdvertiserId(accountId: string): Promise<string | null> {
+// Product Ads cuelga de un "advertiser" propio, no directo del seller.
+// El endpoint viejo /advertising/product_ads/campaigns (plano) y el
+// siguiente intento /advertising/advertisers/{id}/product_ads/campaigns
+// (sin site_id) dan ambos 404: Mercado Libre migró Product Ads a una versión
+// nueva en 2025 bajo /marketplace/advertising/{site_id}/advertisers/{id}/...
+// que además requiere el header Api-Version. Devuelve null si la cuenta no
+// tiene Product Ads habilitado (nunca creó una campaña).
+async function getAdvertiserId(accountId: string): Promise<{ advertiserId: string; siteId: string } | null> {
   const token = await getValidAccessToken(accountId);
   const res = await mlFetch(`/advertising/advertisers?product_id=PADS`, token);
   const advertiser = (res.advertisers ?? [])[0];
-  return advertiser ? String(advertiser.advertiser_id) : null;
+  return advertiser ? { advertiserId: String(advertiser.advertiser_id), siteId: String(advertiser.site_id) } : null;
+}
+
+function productAdsBase(siteId: string, advertiserId: string) {
+  return `/marketplace/advertising/${siteId}/advertisers/${advertiserId}/product_ads`;
 }
 
 export async function getAdsSpend(
@@ -115,13 +122,14 @@ export async function getAdsSpend(
   dateFrom: string,
   dateTo: string
 ): Promise<{ productId: string; date: string; amount: number }[]> {
-  const advertiserId = await getAdvertiserId(accountId);
-  if (!advertiserId) return [];
+  const advertiser = await getAdvertiserId(accountId);
+  if (!advertiser) return [];
 
   const token = await getValidAccessToken(accountId);
   const campaigns = await mlFetch(
-    `/advertising/advertisers/${advertiserId}/product_ads/campaigns?date_from=${dateFrom}&date_to=${dateTo}`,
-    token
+    `${productAdsBase(advertiser.siteId, advertiser.advertiserId)}/campaigns/search?date_from=${dateFrom}&date_to=${dateTo}&metrics=cost`,
+    token,
+    { headers: { "Api-Version": "2" } }
   );
   const rows: { productId: string; date: string; amount: number }[] = [];
   for (const c of campaigns.results ?? []) {
@@ -140,11 +148,19 @@ export interface MlCampaign {
 }
 
 export async function listCampaigns(accountId: string): Promise<MlCampaign[]> {
-  const advertiserId = await getAdvertiserId(accountId);
-  if (!advertiserId) return [];
+  const advertiser = await getAdvertiserId(accountId);
+  if (!advertiser) return [];
 
   const token = await getValidAccessToken(accountId);
-  const res = await mlFetch(`/advertising/advertisers/${advertiserId}/product_ads/campaigns`, token);
+  // Rango amplio: esto solo lista campañas (para mostrarlas y poder
+  // pausarlas/reactivarlas), no depende de que hayan tenido gasto reciente.
+  const dateTo = new Date().toISOString().slice(0, 10);
+  const dateFrom = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const res = await mlFetch(
+    `${productAdsBase(advertiser.siteId, advertiser.advertiserId)}/campaigns/search?date_from=${dateFrom}&date_to=${dateTo}`,
+    token,
+    { headers: { "Api-Version": "2" } }
+  );
   return (res.results ?? []).map((c: any) => ({
     id: String(c.id),
     name: c.name,
@@ -156,14 +172,14 @@ export async function listCampaigns(accountId: string): Promise<MlCampaign[]> {
 // Requiere el scope "Write". Solo cambia el estado de una campaña que ya
 // existe (pausar/reactivar) — no crea campañas nuevas ni toca presupuestos.
 export async function setCampaignStatus(accountId: string, campaignId: string, status: "active" | "paused"): Promise<void> {
-  const advertiserId = await getAdvertiserId(accountId);
-  if (!advertiserId) {
+  const advertiser = await getAdvertiserId(accountId);
+  if (!advertiser) {
     throw new MlApiError(404, "No se encontró un advertiser de Product Ads para esta cuenta.");
   }
   const token = await getValidAccessToken(accountId);
-  await mlFetch(`/advertising/advertisers/${advertiserId}/product_ads/campaigns/${campaignId}`, token, {
+  await mlFetch(`${productAdsBase(advertiser.siteId, advertiser.advertiserId)}/campaigns/${campaignId}`, token, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Api-Version": "2" },
     body: JSON.stringify({ status }),
   });
 }

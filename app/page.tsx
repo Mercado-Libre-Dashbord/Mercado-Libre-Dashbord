@@ -71,6 +71,16 @@ function pct(n: number) {
   return `${(n * 100).toFixed(2)}%`;
 }
 
+const ESTADO_LABEL: Record<string, string> = { paid: "Pagado", cancelled: "Cancelado", pending: "Pendiente" };
+function estadoLabel(estado: string) {
+  return ESTADO_LABEL[estado] ?? estado;
+}
+function estadoBadgeClass(estado: string) {
+  if (estado === "paid") return "badge-paid";
+  if (estado === "cancelled") return "badge-cancelled";
+  return "badge-other";
+}
+
 function WaterfallRow({
   label,
   value,
@@ -161,35 +171,38 @@ export default function HomePage() {
   const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[] | null>(null);
   const [products, setProducts] = useState<ProductRow[] | null>(null);
-  const [period, setPeriod] = useState<Period>("mes");
+  const [period, setPeriod] = useState<Period>("hoy");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
   const [mlConnected, setMlConnected] = useState<boolean | null>(null);
   const [noAccount, setNoAccount] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const { from, to } = rangeForPeriod(period, customFrom, customTo);
 
+  // Si una llamada falla (red caída, error del servidor, etc.) esto evita que
+  // la sección se quede en "Cargando…" para siempre: se resuelve al valor de
+  // respaldo y se muestra un aviso arriba.
+  function safeFetch<T>(url: string, onSuccess: (data: T) => void, fallback: T) {
+    fetch(url)
+      .then(async (r) => {
+        if (r.status === 401) { setNoAccount(true); return; }
+        if (!r.ok) throw new Error(`${r.status}`);
+        onSuccess((await r.json()) as T);
+      })
+      .catch(() => {
+        setLoadError("Algunos datos no se pudieron cargar. Probá recargar la página.");
+        onSuccess(fallback);
+      });
+  }
+
   function loadAll() {
-    fetch(`/api/summary?from=${from}&to=${to}`).then((r) => {
-      if (r.status === 401) { setNoAccount(true); return; }
-      r.json().then(setSummary);
-    });
-    fetch(`/api/summary?groupBy=day&from=${from}&to=${to}`).then((r) => {
-      if (r.status === 401) { setNoAccount(true); return; }
-      r.json().then(setDaily);
-    });
-    fetch("/api/orders").then((r) => {
-      if (r.status === 401) { setNoAccount(true); return; }
-      r.json().then((rows: OrderLine[]) => setLastOrder(rows[0] ?? null));
-    });
-    fetch("/api/orders?groupBy=order").then((r) => {
-      if (r.status === 401) { setNoAccount(true); return; }
-      r.json().then(setOrders);
-    });
-    fetch(`/api/products?from=${from}&to=${to}`).then((r) => {
-      if (r.status === 401) { setNoAccount(true); return; }
-      r.json().then(setProducts);
-    });
+    setLoadError("");
+    safeFetch<Summary | null>(`/api/summary?from=${from}&to=${to}`, setSummary, null);
+    safeFetch<DailyBreakdown[]>(`/api/summary?groupBy=day&from=${from}&to=${to}`, setDaily, []);
+    safeFetch<OrderLine[]>(`/api/orders?from=${from}&to=${to}`, (rows) => setLastOrder(rows[0] ?? null), []);
+    safeFetch<OrderSummaryRow[]>(`/api/orders?groupBy=order&from=${from}&to=${to}`, setOrders, []);
+    safeFetch<ProductRow[]>(`/api/products?from=${from}&to=${to}`, setProducts, []);
   }
 
   useEffect(loadAll, [from, to]);
@@ -217,6 +230,7 @@ export default function HomePage() {
           Todavía no conectaste Mercado Libre. <a href="/api/ml/login">Conectar ahora</a>
         </p>
       )}
+      {loadError && <p className="field-error" role="alert">{loadError}</p>}
       <SyncButton />
 
       <div className="ad-form" style={{ marginBottom: 24 }}>
@@ -416,7 +430,7 @@ export default function HomePage() {
       {orders && orders.length === 0 ? (
         <div className="empty-state">Todavía no hay órdenes sincronizadas para este período.</div>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap orders-table">
           <table>
             <thead>
               <tr>
@@ -430,13 +444,13 @@ export default function HomePage() {
             <tbody>
               {(orders ?? []).map((o) => (
                 <tr key={o.orderId}>
-                  <td>{o.orderId}</td>
+                  <td className="order-id">{o.orderId}</td>
                   <td>
-                    <span className={`badge ${o.estadoPago === "paid" ? "badge-paid" : "badge-other"}`}>{o.estadoPago}</span>
+                    <span className={`badge ${estadoBadgeClass(o.estadoPago)}`}>{estadoLabel(o.estadoPago)}</span>
                   </td>
-                  <td>{new Date(o.dateCreated).toLocaleString("es-AR")}</td>
+                  <td>{new Date(o.dateCreated).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                   <td className="num">{fmt(o.totalOrder)}</td>
-                  <td className="num">{fmt(o.totalNeto)}</td>
+                  <td className="num" style={{ color: o.totalNeto >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 }}>{fmt(o.totalNeto)}</td>
                 </tr>
               ))}
             </tbody>

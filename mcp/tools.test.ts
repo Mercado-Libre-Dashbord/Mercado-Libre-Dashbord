@@ -174,9 +174,9 @@ describe("getAdsSpend", () => {
     expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(1);
   });
 
-  it("resolves the advertiser id before listing campaigns", async () => {
+  it("resolves the advertiser id and site id before listing campaigns", async () => {
     vi.mocked(mlFetch)
-      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999 }] })
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
       .mockResolvedValueOnce({
         results: [{ metrics_by_day: [{ item_id: "MLA1", date: "2026-01-05", cost: 100 }] }],
       });
@@ -185,8 +185,9 @@ describe("getAdsSpend", () => {
 
     expect(rows).toEqual([{ productId: "MLA1", date: "2026-01-05", amount: 100 }]);
     expect(vi.mocked(mlFetch).mock.calls[1][0]).toBe(
-      "/advertising/advertisers/999/product_ads/campaigns?date_from=2026-01-01&date_to=2026-01-31"
+      "/marketplace/advertising/MLA/advertisers/999/product_ads/campaigns/search?date_from=2026-01-01&date_to=2026-01-31&metrics=cost"
     );
+    expect(vi.mocked(mlFetch).mock.calls[1][2]).toEqual(expect.objectContaining({ headers: { "Api-Version": "2" } }));
   });
 });
 
@@ -200,10 +201,13 @@ describe("listCampaigns", () => {
 
   it("maps campaign fields", async () => {
     vi.mocked(mlFetch)
-      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999 }] })
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
       .mockResolvedValueOnce({ results: [{ id: 1, name: "Campaña 1", status: "active", budget: 5000 }] });
 
     expect(await listCampaigns("acc1")).toEqual([{ id: "1", name: "Campaña 1", status: "active", budget: 5000 }]);
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toMatch(
+      /^\/marketplace\/advertising\/MLA\/advertisers\/999\/product_ads\/campaigns\/search\?date_from=.+&date_to=.+$/
+    );
   });
 });
 
@@ -217,13 +221,13 @@ describe("setCampaignStatus", () => {
 
   it("PUTs the new status for the campaign", async () => {
     vi.mocked(mlFetch)
-      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999 }] })
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
       .mockResolvedValueOnce({});
 
     await setCampaignStatus("acc1", "1", "paused");
 
     expect(vi.mocked(mlFetch)).toHaveBeenCalledWith(
-      "/advertising/advertisers/999/product_ads/campaigns/1",
+      "/marketplace/advertising/MLA/advertisers/999/product_ads/campaigns/1",
       "token",
       expect.objectContaining({ method: "PUT", body: JSON.stringify({ status: "paused" }) })
     );

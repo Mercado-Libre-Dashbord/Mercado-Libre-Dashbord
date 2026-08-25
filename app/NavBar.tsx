@@ -11,10 +11,8 @@ interface AccountOption {
 
 const NAV_ITEMS = [
   { href: "/", label: "Resumen", icon: "grid" },
-  { href: "/resultado-del-dia", label: "Resultado del día", icon: "bolt" },
   { href: "/productos", label: "Productos", icon: "box" },
-  { href: "/ventas", label: "Ventas", icon: "cart" },
-  { href: "/preguntas", label: "Preguntas", icon: "question" },
+  { href: "/consultas", label: "Consultas", icon: "question" },
   { href: "/campanas", label: "Campañas", icon: "megaphone" },
   { href: "/tendencias", label: "Tendencias", icon: "trend" },
 ] as const;
@@ -30,13 +28,6 @@ function NavIcon({ name }: { name: string }) {
       </>
     ),
     box: <path d="M3 7.5L12 3l9 4.5-9 4.5-9-4.5zM3 7.5v9L12 21m0-9v9m9-13.5v9L12 21" />,
-    cart: (
-      <>
-        <circle cx="9" cy="20" r="1.4" />
-        <circle cx="18" cy="20" r="1.4" />
-        <path d="M2.5 3h2.5l2.3 12.2a2 2 0 0 0 2 1.6h8.4a2 2 0 0 0 2-1.6L21.5 7H6" />
-      </>
-    ),
     trend: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
     megaphone: (
       <>
@@ -44,7 +35,6 @@ function NavIcon({ name }: { name: string }) {
         <path d="M18 9.5a3.5 3.5 0 0 1 0 5" />
       </>
     ),
-    bolt: <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" strokeLinejoin="round" />,
     question: (
       <>
         <circle cx="12" cy="12" r="9.2" />

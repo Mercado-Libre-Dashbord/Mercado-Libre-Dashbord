@@ -46,7 +46,7 @@ export default function PreguntasPage() {
   if (noAccount) {
     return (
       <div>
-        <h1>Preguntas</h1>
+        <h1>Consultas</h1>
         <NoAccountState />
       </div>
     );
@@ -79,15 +79,15 @@ export default function PreguntasPage() {
 
   return (
     <div>
-      <h1>Preguntas</h1>
+      <h1>Consultas</h1>
       <p className="field-hint" style={{ marginBottom: "var(--space-4)" }}>
         Las respuestas sugeridas son un borrador — revisalas antes de mandar. Nada se envía a Mercado Libre solo.
       </p>
       {loadError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-4)" }}>{loadError}</p>}
       {questions === null ? (
-        <p className="empty-state">Cargando preguntas…</p>
+        <p className="empty-state">Cargando consultas…</p>
       ) : questions.length === 0 ? (
-        <div className="empty-state">No tenés preguntas sin responder por ahora.</div>
+        <div className="empty-state">No tenés consultas sin responder por ahora.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           {questions.map((q) => (
