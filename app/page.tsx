@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } from "recharts";
 import { SyncButton } from "./SyncButton";
 import { NoAccountState } from "./NoAccountState";
+import { Period, PERIOD_OPTIONS, rangeForPeriod, toDateStr } from "@/lib/period";
 
 interface PreviousTotals {
   orders: number;
@@ -68,36 +69,6 @@ function fmt(n: number) {
 }
 function pct(n: number) {
   return `${(n * 100).toFixed(2)}%`;
-}
-
-type Period = "hoy" | "ayer" | "semana" | "mes" | "custom";
-
-function toDateStr(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
-
-function rangeForPeriod(period: Period, customFrom: string, customTo: string): { from: string; to: string } {
-  const today = new Date();
-  if (period === "hoy") {
-    const d = toDateStr(today);
-    return { from: d, to: d };
-  }
-  if (period === "ayer") {
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const d = toDateStr(yesterday);
-    return { from: d, to: d };
-  }
-  if (period === "semana") {
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 6);
-    return { from: toDateStr(weekAgo), to: toDateStr(today) };
-  }
-  if (period === "mes") {
-    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { from: toDateStr(firstOfMonth), to: toDateStr(today) };
-  }
-  return { from: customFrom, to: customTo };
 }
 
 function WaterfallRow({
@@ -252,11 +223,9 @@ export default function HomePage() {
         <label>
           Período
           <select value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
-            <option value="hoy">Hoy</option>
-            <option value="ayer">Ayer</option>
-            <option value="semana">Últimos 7 días</option>
-            <option value="mes">Este mes</option>
-            <option value="custom">Rango custom</option>
+            {PERIOD_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
           </select>
         </label>
         {period === "custom" && (
