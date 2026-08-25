@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/productos", label: "Productos", icon: "box" },
   { href: "/ventas", label: "Ventas", icon: "cart" },
   { href: "/preguntas", label: "Preguntas", icon: "question" },
+  { href: "/campanas", label: "Campañas", icon: "megaphone" },
   { href: "/tendencias", label: "Tendencias", icon: "trend" },
 ] as const;
 
@@ -37,6 +38,12 @@ function NavIcon({ name }: { name: string }) {
       </>
     ),
     trend: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
+    megaphone: (
+      <>
+        <path d="M3 11v2a2 2 0 0 0 2 2h1l1 5h2l-1-5h2l8 4V6l-8 4H5a2 2 0 0 0-2 2z" />
+        <path d="M18 9.5a3.5 3.5 0 0 1 0 5" />
+      </>
+    ),
     bolt: <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" strokeLinejoin="round" />,
     question: (
       <>

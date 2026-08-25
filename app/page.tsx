@@ -11,12 +11,6 @@ interface Summary {
   netProfit: number;
   profitPct: number;
   netRevenue: number;
-  adSpend: number;
-  mer: number;
-  roas: number;
-  cpa: number;
-  netAov: number;
-  trueCpa: number;
   itemsMissingCost: number;
 }
 
@@ -113,9 +107,6 @@ export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
   const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
-  const [adForm, setAdForm] = useState({ channel: "meta", date: new Date().toISOString().slice(0, 10), amount: "" });
-  const [adFormError, setAdFormError] = useState("");
-  const [adFormSuccess, setAdFormSuccess] = useState(false);
   const [period, setPeriod] = useState<Period>("mes");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
@@ -154,25 +145,6 @@ export default function HomePage() {
         <NoAccountState />
       </div>
     );
-  }
-
-  async function submitAdSpend(e: React.FormEvent) {
-    e.preventDefault();
-    setAdFormError("");
-    setAdFormSuccess(false);
-    const amount = Number(adForm.amount);
-    if (adForm.amount.trim() === "" || Number.isNaN(amount) || amount < 0) {
-      setAdFormError("Ingresá un monto válido (mayor o igual a 0).");
-      return;
-    }
-    await fetch("/api/ads-spend", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel: adForm.channel, date: adForm.date, amount }),
-    });
-    setAdForm((prev) => ({ ...prev, amount: "" }));
-    setAdFormSuccess(true);
-    loadAll();
   }
 
   return (
@@ -220,56 +192,9 @@ export default function HomePage() {
         <div className="kpi-card"><div className="label">Net Rev.</div><div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div></div>
       </div>
 
-      <h2 className="section-title">Anuncios</h2>
-      <div className="kpi-grid">
-        <div className="kpi-card"><div className="label">Ad Spend</div><div className="value"><KpiValue>{summary ? fmt(summary.adSpend) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">MER</div><div className="value"><KpiValue>{summary ? summary.mer.toFixed(2) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">ROAS</div><div className="value"><KpiValue>{summary ? summary.roas.toFixed(2) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">CPA</div><div className="value"><KpiValue>{summary ? fmt(summary.cpa) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Net AOV</div><div className="value"><KpiValue>{summary ? fmt(summary.netAov) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">True CPA</div><div className="value"><KpiValue>{summary ? fmt(summary.trueCpa) : "-"}</KpiValue></div></div>
-      </div>
       {summary && summary.itemsMissingCost > 0 && (
         <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Net Profit</p>
       )}
-
-      <h2 className="section-title">Cargar publicidad externa</h2>
-      <form className="ad-form" onSubmit={submitAdSpend} noValidate>
-        <label>
-          Canal
-          <select value={adForm.channel} onChange={(e) => setAdForm((p) => ({ ...p, channel: e.target.value }))}>
-            <option value="meta">Meta</option>
-            <option value="google">Google Ads</option>
-            <option value="tiktok">TikTok</option>
-          </select>
-        </label>
-        <label>
-          Fecha
-          <input type="date" value={adForm.date} onChange={(e) => setAdForm((p) => ({ ...p, date: e.target.value }))} />
-        </label>
-        <div className="field-group">
-          <label htmlFor="ad-amount">Monto</label>
-          <input
-            id="ad-amount"
-            type="number"
-            min="0"
-            inputMode="decimal"
-            aria-invalid={adFormError ? true : undefined}
-            value={adForm.amount}
-            onChange={(e) => {
-              setAdForm((p) => ({ ...p, amount: e.target.value }));
-              if (adFormError) setAdFormError("");
-            }}
-          />
-          {adFormError && <p className="field-error" role="alert">{adFormError}</p>}
-        </div>
-        <button type="submit" className="btn btn-primary">Cargar</button>
-        {adFormSuccess && (
-          <span role="status" aria-live="polite" className="success-text">
-            Publicidad cargada.
-          </span>
-        )}
-      </form>
 
       {lastOrder && (
         <>
