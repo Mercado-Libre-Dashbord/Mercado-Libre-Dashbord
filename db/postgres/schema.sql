@@ -2,6 +2,13 @@
 -- Postgres instance) as the project owner / superuser. It is safe to re-run:
 -- every statement is idempotent (CREATE ... IF NOT EXISTS / OR REPLACE).
 --
+-- OJO: el SQL Editor de Supabase corre todo lo pegado como UNA transacción.
+-- Si un solo statement falla (p. ej. el CREATE ROLE de abajo, o un GRANT
+-- sobre una tabla ajena), se hace rollback de TODO el archivo y parece que
+-- "corrió" cuando en realidad no aplicó nada. Si sólo necesitás las columnas
+-- nuevas, corré db/postgres/migrations/001-tax.sql, que son dos ALTER sueltos
+-- sin esa dependencia.
+--
 -- Security model: the app never connects as `postgres` or Supabase's
 -- `service_role` (both bypass Row Level Security). It connects as the
 -- `app_user` role created below, which is a non-superuser, non-owner role —
