@@ -22,6 +22,13 @@ export default function ProductosPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
 
+  // Edición de precio/stock que se escribe de vuelta a la publicación real en
+  // Mercado Libre — separado a propósito de "editing" (que es el costo,
+  // interno nuestro, nunca toca ML).
+  const [mlEditing, setMlEditing] = useState<Record<string, { price: string; stock: string }>>({});
+  const [mlErrors, setMlErrors] = useState<Record<string, string>>({});
+  const [mlSavingId, setMlSavingId] = useState<string | null>(null);
+
   function load() {
     fetch("/api/products").then((r) => {
       if (r.status === 401) { setNoAccount(true); return; }
@@ -38,6 +45,47 @@ export default function ProductosPage() {
         <NoAccountState />
       </div>
     );
+  }
+
+  function startMlEdit(p: Product) {
+    setMlEditing((prev) => ({ ...prev, [p.id]: { price: String(p.currentPrice), stock: String(p.stock) } }));
+  }
+
+  function cancelMlEdit(productId: string) {
+    setMlEditing((prev) => {
+      const next = { ...prev };
+      delete next[productId];
+      return next;
+    });
+    setMlErrors((prev) => ({ ...prev, [productId]: "" }));
+  }
+
+  async function saveMlEdit(productId: string) {
+    const draft = mlEditing[productId];
+    const price = Number(draft?.price);
+    const stock = Number(draft?.stock);
+    if (!draft || Number.isNaN(price) || price <= 0 || Number.isNaN(stock) || stock < 0 || !Number.isInteger(stock)) {
+      setMlErrors((prev) => ({ ...prev, [productId]: "Precio > 0 y stock entero ≥ 0." }));
+      return;
+    }
+    setMlErrors((prev) => ({ ...prev, [productId]: "" }));
+    setMlSavingId(productId);
+    try {
+      const res = await fetch("/api/products/ml-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, price, stock }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMlErrors((prev) => ({ ...prev, [productId]: data.error ?? "No se pudo guardar en Mercado Libre." }));
+        return;
+      }
+      cancelMlEdit(productId);
+      load();
+    } finally {
+      setMlSavingId(null);
+    }
   }
 
   async function saveCost(productId: string) {
@@ -85,6 +133,7 @@ export default function ProductosPage() {
                 <th className="num">Unidades vendidas</th>
                 <th className="num">Rentabilidad total</th>
                 <th>Nuevo costo</th>
+                <th>Mercado Libre</th>
               </tr>
             </thead>
             <tbody>
@@ -92,8 +141,38 @@ export default function ProductosPage() {
                 <tr key={p.id}>
                   <td>{p.title}</td>
                   <td>{p.sku ?? "-"}</td>
-                  <td className="num">{p.currentPrice?.toFixed(2)}</td>
-                  <td className="num">{p.stock}</td>
+                  <td className="num">
+                    {mlEditing[p.id] ? (
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        inputMode="decimal"
+                        aria-label={`Precio nuevo para ${p.title}`}
+                        value={mlEditing[p.id].price}
+                        onChange={(e) => setMlEditing((prev) => ({ ...prev, [p.id]: { ...prev[p.id], price: e.target.value } }))}
+                        style={{ width: 80, padding: "6px" }}
+                      />
+                    ) : (
+                      p.currentPrice?.toFixed(2)
+                    )}
+                  </td>
+                  <td className="num">
+                    {mlEditing[p.id] ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputMode="numeric"
+                        aria-label={`Stock nuevo para ${p.title}`}
+                        value={mlEditing[p.id].stock}
+                        onChange={(e) => setMlEditing((prev) => ({ ...prev, [p.id]: { ...prev[p.id], stock: e.target.value } }))}
+                        style={{ width: 60, padding: "6px" }}
+                      />
+                    ) : (
+                      p.stock
+                    )}
+                  </td>
                   <td className={`num ${p.currentCost === null ? "missing-cost" : ""}`}>
                     {p.currentCost === null ? "Sin costo cargado" : p.currentCost.toFixed(2)}
                   </td>
@@ -125,6 +204,25 @@ export default function ProductosPage() {
                         {savingId === p.id ? "Guardando…" : "Guardar"}
                       </button>
                     </div>
+                  </td>
+                  <td>
+                    {mlEditing[p.id] ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", alignItems: "start" }}>
+                        <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                          <button className="btn btn-primary btn-sm" onClick={() => saveMlEdit(p.id)} disabled={mlSavingId === p.id}>
+                            {mlSavingId === p.id ? "Guardando…" : "Guardar en ML"}
+                          </button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => cancelMlEdit(p.id)} disabled={mlSavingId === p.id}>
+                            Cancelar
+                          </button>
+                        </div>
+                        {mlErrors[p.id] && <p className="field-error">{mlErrors[p.id]}</p>}
+                      </div>
+                    ) : (
+                      <button className="btn btn-secondary btn-sm" onClick={() => startMlEdit(p)}>
+                        Editar precio/stock
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

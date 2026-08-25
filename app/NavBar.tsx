@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/resultado-del-dia", label: "Resultado del día", icon: "bolt" },
   { href: "/productos", label: "Productos", icon: "box" },
   { href: "/ventas", label: "Ventas", icon: "cart" },
+  { href: "/preguntas", label: "Preguntas", icon: "question" },
   { href: "/tendencias", label: "Tendencias", icon: "trend" },
 ] as const;
 
@@ -37,6 +38,13 @@ function NavIcon({ name }: { name: string }) {
     ),
     trend: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
     bolt: <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" strokeLinejoin="round" />,
+    question: (
+      <>
+        <circle cx="12" cy="12" r="9.2" />
+        <path d="M9.2 9.3a2.8 2.8 0 1 1 4.2 2.4c-.9.6-1.4 1.1-1.4 2.1" />
+        <circle cx="12" cy="17.2" r="0.1" fill="currentColor" />
+      </>
+    ),
     users: (
       <>
         <circle cx="9" cy="8" r="3.2" />
