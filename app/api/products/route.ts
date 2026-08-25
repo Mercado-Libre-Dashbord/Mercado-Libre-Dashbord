@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
 import { resolveCurrentAccount } from "@/lib/current-account";
+import { revenueStatusFilter } from "@/lib/order-status";
 
 export const runtime = "nodejs";
 
@@ -25,9 +26,11 @@ export async function GET(request: NextRequest) {
               (SELECT cost FROM product_costs pc WHERE pc.account_id = p.account_id AND pc.product_id = p.id ORDER BY pc.valid_from DESC LIMIT 1) as "currentCost",
               ${taxColumn} as "currentTax",
               (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
-                WHERE oi.account_id = p.account_id AND oi.product_id = p.id AND o.date_created::date BETWEEN $1::date AND $2::date) as "unitsSold",
+                WHERE oi.account_id = p.account_id AND oi.product_id = p.id AND o.date_created::date BETWEEN $1::date AND $2::date
+                  AND ${revenueStatusFilter()}) as "unitsSold",
               (SELECT COALESCE(SUM(oi.net_profit), 0) FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
-                WHERE oi.account_id = p.account_id AND oi.product_id = p.id AND o.date_created::date BETWEEN $1::date AND $2::date) as "totalProfit"
+                WHERE oi.account_id = p.account_id AND oi.product_id = p.id AND o.date_created::date BETWEEN $1::date AND $2::date
+                  AND ${revenueStatusFilter()}) as "totalProfit"
          FROM products p WHERE p.account_id = $3 ORDER BY p.title`,
       [from, to, account.id]
     );

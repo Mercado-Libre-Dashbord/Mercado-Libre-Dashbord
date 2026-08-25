@@ -124,6 +124,31 @@ describe("GET /api/summary", () => {
     expect(body.previous).toEqual({ orders: 2, grossSales: 2000, netProfit: 1000, profitPct: 0.5 });
   });
 
+  it("excludes cancelled orders from every financial aggregate", async () => {
+    const seen: string[] = [];
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      seen.push(sql);
+      return {
+        rows: [
+          {
+            orders: 0, grossSales: 0, totalCommission: 0, totalShipping: 0, totalMercadoAds: 0,
+            totalCost: 0, netProfit: 0, itemsMissingCost: 0, ordersWithCost: 0,
+          },
+        ],
+      };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams("from=2026-08-01&to=2026-08-10") } } as any;
+    await GET(request);
+
+    // Totales del período y del período anterior: ambos deben filtrar.
+    expect(seen).toHaveLength(2);
+    for (const sql of seen) expect(sql).toContain("o.status NOT IN ('cancelled', 'invalid')");
+  });
+
   it("returns the daily breakdown when groupBy=day", async () => {
     const query = vi.fn().mockImplementation(async (sql: string) => {
       if (sql.includes("information_schema.columns")) {

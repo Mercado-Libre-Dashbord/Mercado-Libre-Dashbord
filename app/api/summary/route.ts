@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { hasColumn, missingMigrations } from "@/db/schema-capabilities";
 import { getCurrentUser, resolveCurrentAccount } from "@/lib/current-account";
+import { revenueStatusFilter } from "@/lib/order-status";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,8 @@ async function totalsFor(client: { query: (sql: string, args: unknown[]) => Prom
        COALESCE(SUM(oi.net_profit), 0) as "netProfit"
      FROM order_items oi
      JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
-     WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date`,
+     WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
+       AND ${revenueStatusFilter()}`,
     [accountId, from, to]
   );
   const row = totalsResult.rows[0];
@@ -52,6 +54,7 @@ export async function GET(request: NextRequest) {
         `SELECT to_char(o.date_created, 'YYYY-MM') as month, COALESCE(SUM(oi.net_profit), 0) as "netProfit"
          FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
          WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
+           AND ${revenueStatusFilter()}
          GROUP BY month ORDER BY month`,
         [account.id, from, to]
       );
@@ -78,6 +81,7 @@ export async function GET(request: NextRequest) {
                 COALESCE(SUM(oi.net_profit), 0) as "netProfit"
          FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
          WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
+           AND ${revenueStatusFilter()}
          GROUP BY day ORDER BY day`,
         [account.id, from, to]
       );
@@ -100,7 +104,8 @@ export async function GET(request: NextRequest) {
          COUNT(DISTINCT CASE WHEN oi.cost_applied IS NOT NULL THEN o.id END) as "ordersWithCost"
        FROM order_items oi
        JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
-       WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date`,
+       WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
+         AND ${revenueStatusFilter()}`,
       [account.id, from, to]
     );
     const totals = totalsResult.rows[0] as Record<string, string | number>;

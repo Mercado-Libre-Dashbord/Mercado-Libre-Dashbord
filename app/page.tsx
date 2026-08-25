@@ -6,6 +6,7 @@ import { SyncButton } from "./SyncButton";
 import { NoAccountState } from "./NoAccountState";
 import { PeriodBar } from "./PeriodBar";
 import { Period, rangeForPeriod, toDateStr } from "@/lib/period";
+import { countsAsRevenue } from "@/lib/order-status";
 
 interface PreviousTotals {
   orders: number;
@@ -161,10 +162,15 @@ function DeltaPill({ current, previous }: { current: number; previous: number | 
   const change = (current - previous) / previous;
   if (!Number.isFinite(change)) return null;
   const up = change >= 0;
+  // El "vs. período anterior" va afuera de la píldora: adentro obligaba a la
+  // píldora redondeada a partirse en dos líneas en las tarjetas angostas.
   return (
-    <span className={`delta-pill ${up ? "up" : "down"}`}>
-      {up ? "↑" : "↓"} {Math.abs(change * 100).toFixed(1)}% vs. período anterior
-    </span>
+    <div className="kpi-delta">
+      <span className={`delta-pill ${up ? "up" : "down"}`}>
+        {up ? "↑" : "↓"} {Math.abs(change * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%
+      </span>
+      <span className="kpi-delta-caption">vs. período anterior</span>
+    </div>
   );
 }
 
@@ -291,6 +297,7 @@ export default function HomePage() {
           <li><strong>Ticket promedio</strong>: Facturación ÷ Órdenes.</li>
           <li><strong>Ganancia neta</strong>: Facturación − comisión de Mercado Libre − envío − publicidad − costo de producto − impuestos. Si a un producto le falta costo cargado, sus ventas quedan afuera de este número (no se inventa un valor).</li>
           <li><strong>Margen neto</strong>: Ganancia neta ÷ Facturación.</li>
+          <li><strong>Órdenes canceladas</strong>: no suman a ningún número de arriba. Aparecen en la lista de abajo para que las veas, pero su plata nunca entró.</li>
           <li><strong>Facturación neta</strong>: Facturación − comisión de Mercado Libre − envío (sin restar costo de producto ni impuestos).</li>
         </ul>
       </details>
@@ -454,8 +461,12 @@ export default function HomePage() {
                     <span className={`badge ${estadoBadgeClass(o.estadoPago)}`}>{estadoLabel(o.estadoPago)}</span>
                   </td>
                   <td>{new Date(o.dateCreated).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
-                  <td className="num">{fmt(o.totalOrder)}</td>
-                  <td className="num" style={{ color: o.totalNeto >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 }}>{fmt(o.totalNeto)}</td>
+                  <td className="num" style={countsAsRevenue(o.estadoPago) ? undefined : { color: "var(--text-dim)", textDecoration: "line-through" }}>{fmt(o.totalOrder)}</td>
+                  {/* Una orden cancelada no dejó ganancia: mostrar su neto en
+                      verde como si fuera plata ganada era directamente falso. */}
+                  <td className="num" style={countsAsRevenue(o.estadoPago) ? { color: o.totalNeto >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 } : { color: "var(--text-dim)" }}>
+                    {countsAsRevenue(o.estadoPago) ? fmt(o.totalNeto) : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
