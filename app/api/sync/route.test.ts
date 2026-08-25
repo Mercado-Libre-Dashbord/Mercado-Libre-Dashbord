@@ -1,12 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/db/client", () => ({ withScope: vi.fn() }));
-vi.mock("@/sync/sync-service", () => ({ runSync: vi.fn() }));
+vi.mock("@/sync/sync-service", () => ({
+  runSync: vi.fn(),
+  syncProducts: vi.fn().mockResolvedValue(0),
+  syncOrders: vi.fn().mockResolvedValue(0),
+  syncAds: vi.fn().mockResolvedValue(0),
+  syncBillingCharges: vi.fn().mockResolvedValue(0),
+  recalculate: vi.fn(),
+}));
+vi.mock("@/mcp/tools", () => ({ listOrdersPage: vi.fn() }));
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 
 import { POST } from "./route";
 import { withScope } from "@/db/client";
-import { runSync } from "@/sync/sync-service";
+import { runSync, syncOrders, syncProducts, recalculate } from "@/sync/sync-service";
+import { listOrdersPage } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
 /** El route lee `full` del body; los tests que no lo pasan mandan uno vacío. */
@@ -53,7 +62,9 @@ describe("POST /api/sync", () => {
 
     const res = await POST(req());
 
-    expect(await res.json()).toEqual({ productsSynced: 1, ordersSynced: 2, adsRowsSynced: 0, billingChargesSynced: 0 });
+    // `done` acompaña a la respuesta también en el sync incremental, para que
+    // el cliente use la misma forma en los dos modos.
+    expect(await res.json()).toEqual({ productsSynced: 1, ordersSynced: 2, adsRowsSynced: 0, billingChargesSynced: 0, done: true });
   });
 
   it("returns a 500 with the error message when sync fails", async () => {
@@ -85,17 +96,45 @@ describe("POST /api/sync", () => {
     expect(vi.mocked(runSync).mock.calls[0][3]).toBe("2026-08-10T00:00:00.000Z");
   });
 
-  it("reprocesses the whole history when full is requested", async () => {
+  it("processes the history in batches instead of one long request", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1" } as any);
-    const query = vi.fn().mockResolvedValue({ rows: [{ latest: "2026-08-10T00:00:00Z" }] });
+    const query = vi.fn().mockResolvedValue({ rows: [{}] });
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
-    vi.mocked(runSync).mockResolvedValue({ productsSynced: 0, ordersSynced: 0, adsRowsSynced: 0, billingChargesSynced: 0 });
+    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1", "2"], total: 25 });
+    vi.mocked(syncOrders).mockResolvedValue(2);
+
+    const body = await (await POST(req({ full: true, offset: 10 }))).json();
+
+    // Sigue desde donde quedó y todavía no terminó: el cliente vuelve a llamar.
+    expect(vi.mocked(listOrdersPage).mock.calls[0][3]).toBe(10);
+    expect(body.done).toBe(false);
+    expect(body.offset).toBe(12);
+    expect(body.totalOrders).toBe(25);
+    // El catálogo solo se sincroniza en el primer lote.
+    expect(vi.mocked(syncProducts)).not.toHaveBeenCalled();
+    // Y el recálculo espera a tener todas las órdenes.
+    expect(vi.mocked(recalculate)).not.toHaveBeenCalled();
+  });
+
+  it("reads the whole history from the start, not from the newest stored order", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1" } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [{}] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue({ ids: [], total: 0 });
 
     await POST(req({ full: true }));
 
-    // Ignora la última orden guardada y arranca del principio, para poder
-    // rellenar datos que antes se guardaron mal (ej. el envío en $0).
-    expect(vi.mocked(runSync).mock.calls[0][3]).toBe("2020-01-01T00:00:00Z");
-    expect(query).not.toHaveBeenCalled();
+    expect(vi.mocked(listOrdersPage).mock.calls[0][2]).toBe("2020-01-01T00:00:00Z");
+  });
+
+  it("finishes the run — ads, recalc and billing — only on the last batch", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1" } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [{}] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1"], total: 6 });
+    vi.mocked(syncOrders).mockResolvedValue(1);
+
+    const body = await (await POST(req({ full: true, offset: 5 }))).json();
+
+    expect(body.done).toBe(true);
+    expect(vi.mocked(recalculate)).toHaveBeenCalled();
   });
 });

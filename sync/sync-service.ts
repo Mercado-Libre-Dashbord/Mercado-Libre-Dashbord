@@ -10,15 +10,9 @@ export interface SyncResult {
   billingChargesSynced: number;
 }
 
-export async function runSync(
-  db: QueryExecutor,
-  accountId: string,
-  sellerId: string,
-  sinceIso: string
-): Promise<SyncResult> {
+/** Sincroniza el catálogo. Barato: una llamada paginada + un upsert por producto. */
+export async function syncProducts(db: QueryExecutor, accountId: string, sellerId: string): Promise<number> {
   const now = new Date().toISOString();
-  const hasIva = await hasColumn(db, "order_items", "iva_applied");
-
   const products = await listProducts(accountId, sellerId);
   for (const p of products) {
     await db.query(
@@ -30,9 +24,21 @@ export async function runSync(
       [accountId, p.id, p.title, p.sku, p.price, p.stock, p.permalink, now]
     );
   }
+  return products.length;
+}
 
-  const orderIds = await listOrders(accountId, sellerId, sinceIso);
-  let ordersSynced = 0;
+/**
+ * Procesa un lote concreto de órdenes. Es la parte cara —cada orden son dos
+ * llamadas a la API de ML— así que el recálculo del historial la invoca por
+ * tandas chicas en vez de todo de una.
+ */
+export async function syncOrders(
+  db: QueryExecutor,
+  accountId: string,
+  orderIds: string[],
+  hasIva: boolean
+): Promise<number> {
+  let synced = 0;
   for (const orderId of orderIds) {
     const order = await getOrderDetail(accountId, orderId);
     await db.query(
@@ -62,34 +68,32 @@ export async function runSync(
         costApplied: entry?.cost ?? null,
         taxApplied: entry?.tax ?? null,
       };
-      const netProfit = calculateNetProfit(profitInput);
-      const iva = calculateIva(profitInput);
       await db.query(
         `INSERT INTO order_items
            (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated, cost_applied, tax_applied${hasIva ? ", iva_applied" : ""}, net_profit)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10${hasIva ? ", $12" : ""}, $11)`,
         [
-          accountId,
-          order.id,
-          item.productId,
-          item.unitPrice,
-          item.quantity,
-          item.mlCommission,
-          item.shippingCost,
-          0,
-          entry?.cost ?? null,
-          entry?.tax ?? null,
-          netProfit,
-          ...(hasIva ? [iva] : []),
+          accountId, order.id, item.productId, item.unitPrice, item.quantity,
+          item.mlCommission, item.shippingCost, 0,
+          entry?.cost ?? null, entry?.tax ?? null,
+          calculateNetProfit(profitInput),
+          ...(hasIva ? [calculateIva(profitInput)] : []),
         ]
       );
     }
-    ordersSynced += 1;
+    synced += 1;
   }
+  return synced;
+}
 
-  let adsRowsSynced = 0;
+export async function syncAds(
+  db: QueryExecutor,
+  accountId: string,
+  sellerId: string,
+  sinceIso: string
+): Promise<number> {
   try {
-    const dateTo = now.slice(0, 10);
+    const dateTo = new Date().toISOString().slice(0, 10);
     const adsRows = await getAdsSpend(accountId, sellerId, sinceIso.slice(0, 10), dateTo);
     // Solo borra filas de Mercado Ads: las cargadas a mano (Meta/Google/TikTok)
     // tienen otro channel y no deben tocarse en un re-sync de ML.
@@ -103,45 +107,58 @@ export async function runSync(
         [accountId, row.productId, row.date, row.amount]
       );
     }
-    adsRowsSynced = adsRows.length;
+    return adsRows.length;
   } catch (err) {
-    // La sincronización de productos y órdenes ya se guardó arriba; si falla
-    // Mercado Ads (ej. sin acceso a la API) el resto del dashboard sigue
-    // funcionando, solo sin dato de publicidad hasta el próximo sync exitoso.
+    // Productos y órdenes ya se guardaron; si falla Mercado Ads el resto del
+    // dashboard sigue funcionando, solo sin dato de publicidad.
     console.error("No se pudo sincronizar publicidad, se continúa sin ese dato:", (err as Error).message);
+    return 0;
   }
+}
 
+export async function recalculate(db: QueryExecutor, accountId: string, hasIva: boolean): Promise<void> {
   await reallocateAdsCosts(db, accountId, hasIva);
+}
 
+export async function runSync(
+  db: QueryExecutor,
+  accountId: string,
+  sellerId: string,
+  sinceIso: string
+): Promise<SyncResult> {
+  const hasIva = await hasColumn(db, "order_items", "iva_applied");
+
+  const productsSynced = await syncProducts(db, accountId, sellerId);
+  const orderIds = await listOrders(accountId, sellerId, sinceIso);
+  const ordersSynced = await syncOrders(db, accountId, orderIds, hasIva);
+  const adsRowsSynced = await syncAds(db, accountId, sellerId, sinceIso);
+  await recalculate(db, accountId, hasIva);
   const billingChargesSynced = await syncBillingCharges(db, accountId);
 
-  return { productsSynced: products.length, ordersSynced, adsRowsSynced, billingChargesSynced };
+  return { productsSynced, ordersSynced, adsRowsSynced, billingChargesSynced };
 }
 
 /**
  * Trae los cargos reales que Mercado Libre facturó (comisiones, envíos,
  * percepciones impositivas, Product Ads) para los últimos períodos.
  *
- * Es puramente informativo por ahora: alimenta la conciliación "lo que ML te
- * cobró vs. lo que calculamos", pero NO entra todavía en la ganancia neta,
- * porque duplicaría la comisión y el envío que ya se descuentan por orden.
+ * Es informativo por ahora: alimenta la conciliación "lo que ML te cobró vs.
+ * lo que calculamos", pero NO entra todavía en la ganancia neta, porque
+ * duplicaría la comisión y el envío que ya se descuentan por orden.
  *
  * Como todo lo de facturación puede fallar por permisos, un error acá no
  * rompe el resto del sync que ya se guardó.
  */
-async function syncBillingCharges(db: QueryExecutor, accountId: string): Promise<number> {
+export async function syncBillingCharges(db: QueryExecutor, accountId: string): Promise<number> {
   try {
     if (!(await hasColumn(db, "billing_charges", "detail_id"))) return 0;
 
     const periods = await listBillingPeriods(accountId);
     // Los últimos 3 meses alcanzan para conciliar y acotan el volumen: los
     // períodos viejos ya están cerrados y no cambian.
-    const recent = periods.slice(0, 3);
     let saved = 0;
-
-    for (const period of recent) {
-      const charges = await getBillingCharges(accountId, period.key);
-      for (const c of charges) {
+    for (const period of periods.slice(0, 3)) {
+      for (const c of await getBillingCharges(accountId, period.key)) {
         await db.query(
           `INSERT INTO billing_charges
              (account_id, detail_id, period_key, detail_type, detail_sub_type, concept, order_id, amount, charged_at)

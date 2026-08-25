@@ -148,6 +148,31 @@ export async function getOrderDetail(accountId: string, orderId: string): Promis
   };
 }
 
+/**
+ * Una sola página de órdenes, más el total. El recálculo del historial va por
+ * lotes (cada orden cuesta 2 llamadas a la API, así que traerlas todas en un
+ * request se pasa del límite de tiempo de la función), y para eso necesita
+ * poder pedir "dame las 10 órdenes a partir de la N".
+ */
+export async function listOrdersPage(
+  accountId: string,
+  sellerId: string,
+  sinceIso: string,
+  offset: number,
+  limit: number
+): Promise<{ ids: string[]; total: number }> {
+  const token = await getValidAccessToken(accountId);
+  const search = await mlFetch(
+    `/orders/search?seller=${sellerId}&order.date_created.from=${sinceIso}&limit=${limit}&offset=${offset}`,
+    token
+  );
+  const results: any[] = search.results ?? [];
+  return {
+    ids: results.map((o: any) => String(o.id)),
+    total: search.paging?.total ?? offset + results.length,
+  };
+}
+
 export async function listOrders(accountId: string, sellerId: string, sinceIso: string): Promise<string[]> {
   const token = await getValidAccessToken(accountId);
   // /orders/search pagina de a 50 por defecto. Sin recorrer las páginas, un
