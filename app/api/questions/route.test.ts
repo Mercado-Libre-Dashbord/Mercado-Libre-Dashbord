@@ -60,6 +60,7 @@ describe("GET /api/questions", () => {
         mlQuestionId: "55",
         productId: "MLA1",
         productTitle: "Producto 1",
+        thumbnail: null,
         questionText: "¿Tienen stock?",
         draftAnswer: "Sí, tenemos stock disponible (5 unidades).",
         dateCreated: "2026-01-01T00:00:00.000Z",

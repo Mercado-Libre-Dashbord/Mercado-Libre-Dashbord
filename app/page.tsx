@@ -296,6 +296,87 @@ function CategoryDonut({ rows }: { rows: CategoryRow[] }) {
   );
 }
 
+const LAST_SALE_RAMP = [
+  "var(--chart-commission)",
+  "var(--chart-shipping)",
+  "var(--chart-cost)",
+  "var(--chart-iva)",
+  "var(--chart-tax)",
+];
+
+/**
+ * Cómo se repartió la facturación de la última venta. Es parte-de-un-todo con
+ * pocas porciones —el caso en que una torta se lee de un vistazo— y va al lado
+ * del desglose en barras, que es el que permite comparar montos parecidos.
+ */
+function LastSalePie({ slices, revenue }: { slices: { name: string; value: number }[]; revenue: number }) {
+  const visible = slices.filter((s) => s.value > 0);
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="chart-card" style={{ marginBottom: 0 }}>
+      <div className="chart-card-head">
+        <h3 className="chart-card-title">Cómo se repartió</h3>
+      </div>
+      <div style={{ width: "100%", height: 200, position: "relative" }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie
+              data={visible}
+              dataKey="value"
+              nameKey="name"
+              innerRadius="60%"
+              outerRadius="90%"
+              paddingAngle={2}
+              stroke="var(--surface)"
+              strokeWidth={2}
+              isAnimationActive={false}
+            >
+              {visible.map((slice, i) => (
+                <Cell
+                  key={slice.name}
+                  fill={slice.name === "Ganancia neta" ? "var(--positive)" : LAST_SALE_RAMP[i % LAST_SALE_RAMP.length]}
+                />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+              formatter={(value: number, name: string) => [
+                `${fmt(value)} · ${revenue > 0 ? ((value / revenue) * 100).toFixed(1) : "0"}%`,
+                name,
+              ]}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", pointerEvents: "none",
+          }}
+        >
+          <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(revenue)}</span>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>facturado</span>
+        </div>
+      </div>
+      <ul className="donut-legend">
+        {visible.map((slice, i) => (
+          <li key={slice.name}>
+            <span
+              className="donut-swatch"
+              style={{ background: slice.name === "Ganancia neta" ? "var(--positive)" : LAST_SALE_RAMP[i % LAST_SALE_RAMP.length] }}
+            />
+            <span className="donut-legend-name">{slice.name}</span>
+            <span className="donut-legend-value">
+              {revenue > 0 ? `${((slice.value / revenue) * 100).toFixed(0)}%` : "—"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * Los 5 productos que más unidades vendieron en el período.
  *
@@ -701,7 +782,16 @@ export default function HomePage() {
                 {top.map((p, i) => (
                   <tr key={p.id}>
                     <td><span className="rank-badge">{i + 1}</span></td>
-                    <td>{p.title}</td>
+                    <td>
+                      <span className="cell-product">
+                        {p.thumbnail ? (
+                          <img className="cell-thumb" src={p.thumbnail} alt="" loading="lazy" />
+                        ) : (
+                          <span className="cell-thumb" aria-hidden="true" />
+                        )}
+                        <span className="cell-title" title={p.title}>{p.title}</span>
+                      </span>
+                    </td>
                     <td className="num">{p.unitsSold}</td>
                     <td className="num">{p.marginPct === null ? "-" : pct(p.marginPct)}</td>
                     <td className="num" style={{ color: p.totalProfit >= 0 ? "var(--positive)" : "var(--negative)" }}>{fmt(p.totalProfit)}</td>
@@ -724,7 +814,8 @@ export default function HomePage() {
       {lastOrder && (
         <>
           <h2 className="section-title">Última venta · {lastOrder.productTitle}</h2>
-          <div className="waterfall-card">
+          <div className="chart-split">
+          <div className="waterfall-card" style={{ marginBottom: 0 }}>
             <WaterfallRow
               label="Facturación"
               value={lastOrder.unitPrice * lastOrder.quantity}
@@ -757,6 +848,26 @@ export default function HomePage() {
               tone="negative"
             />
             <WaterfallRow label="Ganancia neta" value={lastOrder.netProfit ?? 0} max={lastOrder.unitPrice * lastOrder.quantity} tone="positive" />
+          </div>
+          <LastSalePie
+            revenue={lastOrder.unitPrice * lastOrder.quantity}
+            slices={[
+              { name: "Comisión ML", value: lastOrder.mlCommission },
+              { name: "Envío", value: lastOrder.shippingCost },
+              { name: "Publicidad", value: lastOrder.adsCostAllocated },
+              { name: "Costo", value: (lastOrder.costApplied ?? 0) * lastOrder.quantity },
+              { name: "Otros impuestos", value: (lastOrder.taxApplied ?? 0) * lastOrder.quantity },
+              {
+                name: "IVA",
+                value: ivaBalance({
+                  grossRevenue: lastOrder.unitPrice * lastOrder.quantity,
+                  mlCharges: lastOrder.mlCommission + lastOrder.shippingCost + lastOrder.adsCostAllocated,
+                  productCost: (lastOrder.costApplied ?? 0) * lastOrder.quantity,
+                }),
+              },
+              { name: "Ganancia neta", value: lastOrder.netProfit ?? 0 },
+            ]}
+          />
           </div>
         </>
       )}

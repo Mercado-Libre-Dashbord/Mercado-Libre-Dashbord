@@ -154,6 +154,52 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(rows);
   }
 
+  if (groupBy === "trend") {
+    const rows = await withScope({ accountId: account.id }, async (client) => {
+      // Frecuencia de venta (unidades por día) en la mitad reciente del
+      // período contra la mitad anterior. Se compara por ritmo y no por total
+      // para que dos mitades de distinto largo sigan siendo comparables.
+      const result = await client.query(
+        `WITH bounds AS (
+           SELECT $2::date AS from_date, $3::date AS to_date,
+                  ($2::date + ((($3::date - $2::date) + 1) / 2)) AS mid_date
+         )
+         SELECT p.id, p.title, ${(await hasColumn(client, "products", "thumbnail")) ? "p.thumbnail" : "NULL::text"} as thumbnail,
+                COALESCE(SUM(CASE WHEN o.date_created::date >= b.mid_date THEN oi.quantity ELSE 0 END), 0) as "recentUnits",
+                COALESCE(SUM(CASE WHEN o.date_created::date <  b.mid_date THEN oi.quantity ELSE 0 END), 0) as "previousUnits",
+                GREATEST((b.to_date - b.mid_date) + 1, 1) as "recentDays",
+                GREATEST(b.mid_date - b.from_date, 1) as "previousDays"
+         FROM order_items oi
+         JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
+         JOIN products p ON p.account_id = oi.account_id AND p.id = oi.product_id
+         CROSS JOIN bounds b
+         WHERE oi.account_id = $1 AND o.date_created::date BETWEEN b.from_date AND b.to_date
+           AND ${revenueStatusFilter()}
+         GROUP BY p.id, p.title, thumbnail, b.to_date, b.mid_date, b.from_date
+         HAVING COALESCE(SUM(oi.quantity), 0) > 0`,
+        [account.id, from, to]
+      );
+
+      return result.rows.map((r: Record<string, string | number | null>) => {
+        const recentRate = Number(r.recentUnits) / Number(r.recentDays);
+        const previousRate = Number(r.previousUnits) / Number(r.previousDays);
+        return {
+          id: r.id,
+          title: r.title,
+          thumbnail: r.thumbnail,
+          recentUnits: Number(r.recentUnits),
+          previousUnits: Number(r.previousUnits),
+          recentRate,
+          previousRate,
+          // Sin ventas antes, cualquier venta nueva es un producto que arranca:
+          // se marca como tal en vez de un porcentaje infinito.
+          changePct: previousRate > 0 ? (recentRate - previousRate) / previousRate : null,
+        };
+      });
+    });
+    return NextResponse.json(rows);
+  }
+
   const summary = await withScope({ accountId: account.id }, async (client) => {
     const totalsResult = await client.query(
       `SELECT

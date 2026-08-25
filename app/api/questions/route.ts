@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
+import { hasColumn } from "@/db/schema-capabilities";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { listUnansweredQuestions, answerQuestion } from "@/mcp/tools";
 import { MlApiError } from "@/mcp/ml-client";
@@ -48,8 +49,10 @@ export async function GET() {
         );
       }
 
+      const thumbnailColumn = (await hasColumn(client, "products", "thumbnail")) ? "p.thumbnail" : "NULL::text";
       const result = await client.query<QuestionRow>(
         `SELECT qd.ml_question_id as mlQuestionId, qd.product_id as productId, p.title as productTitle,
+                ${thumbnailColumn} as thumbnail,
                 qd.question_text as questionText, qd.draft_answer as draftAnswer, qd.date_created as dateCreated
          FROM question_drafts qd
          LEFT JOIN products p ON p.account_id = qd.account_id AND p.id = qd.product_id
@@ -65,6 +68,7 @@ export async function GET() {
         mlQuestionId: r.mlquestionid,
         productId: r.productid,
         productTitle: r.producttitle ?? "(producto no sincronizado)",
+        thumbnail: r.thumbnail ?? null,
         questionText: r.questiontext,
         draftAnswer: r.draftanswer,
         dateCreated: new Date(r.datecreated).toISOString(),

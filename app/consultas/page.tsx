@@ -7,6 +7,7 @@ interface QuestionDraft {
   mlQuestionId: string;
   productId: string;
   productTitle: string;
+  thumbnail: string | null;
   questionText: string;
   draftAnswer: string;
   dateCreated: string;
@@ -92,7 +93,16 @@ export default function PreguntasPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           {questions.map((q) => (
             <div key={q.mlQuestionId} className="day-card" style={{ marginBottom: 0 }}>
-              <p className="field-hint" style={{ margin: 0 }}>{q.productTitle}</p>
+              <p className="field-hint" style={{ margin: 0 }}>
+                <span className="cell-product">
+                  {q.thumbnail ? (
+                    <img className="cell-thumb" src={q.thumbnail} alt="" loading="lazy" />
+                  ) : (
+                    <span className="cell-thumb" aria-hidden="true" />
+                  )}
+                  <span>{q.productTitle}</span>
+                </span>
+              </p>
               <p style={{ margin: "var(--space-2) 0", fontWeight: 600 }}>{q.questionText}</p>
               <div className="field-group">
                 <label className="field-hint" htmlFor={`answer-${q.mlQuestionId}`}>

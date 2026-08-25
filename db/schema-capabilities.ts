@@ -61,6 +61,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     ddl: "ALTER TABLE products ADD COLUMN IF NOT EXISTS category_name TEXT;",
   },
   {
+    table: "orders",
+    column: "sync_version",
+    ddl: "ALTER TABLE orders ADD COLUMN IF NOT EXISTS sync_version INTEGER NOT NULL DEFAULT 0;",
+  },
+  {
     table: "accounts",
     column: "other_tax_rate",
     ddl: "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS other_tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0;",

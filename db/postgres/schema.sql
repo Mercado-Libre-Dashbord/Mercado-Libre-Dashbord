@@ -88,8 +88,14 @@ CREATE TABLE IF NOT EXISTS orders (
   date_created TIMESTAMPTZ NOT NULL,
   status TEXT NOT NULL,
   buyer_total DOUBLE PRECISION,
+  -- Con qué versión de la lógica de sincronización se procesó esta orden.
+  -- Permite que un solo botón "Sincronizar" recorra todo el historial sin
+  -- volver a pedirle a la API las órdenes que ya están al día, y que al
+  -- cambiar la lógica (subiendo ORDER_SYNC_VERSION) se reparen solas.
+  sync_version INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (account_id, id)
 );
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS sync_version INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS order_items (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

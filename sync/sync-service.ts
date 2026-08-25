@@ -3,6 +3,15 @@ import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPerio
 import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit, calculateIva } from "./profitability";
 import { hasColumn } from "@/db/schema-capabilities";
 
+/**
+ * Se sube cuando cambia algo de cómo se procesa una orden (por ejemplo, de
+ * dónde sale el costo de envío). Las órdenes guardadas con una versión menor
+ * se vuelven a pedir a la API en el próximo sync; las que ya están al día se
+ * saltean, que es lo que hace que un solo botón pueda recorrer todo el
+ * historial sin tardar minutos cada vez.
+ */
+export const ORDER_SYNC_VERSION = 1;
+
 export interface SyncResult {
   productsSynced: number;
   ordersSynced: number;
@@ -40,6 +49,28 @@ export async function syncProducts(db: QueryExecutor, accountId: string, sellerI
  * llamadas a la API de ML— así que el recálculo del historial la invoca por
  * tandas chicas en vez de todo de una.
  */
+/**
+ * De una lista de órdenes, cuáles hace falta volver a pedirle a la API: las
+ * que no tenemos, o las guardadas con una versión vieja de la lógica.
+ */
+export async function pendingOrderIds(
+  db: QueryExecutor,
+  accountId: string,
+  orderIds: string[]
+): Promise<string[]> {
+  if (orderIds.length === 0) return [];
+  // Sin la columna de versión no se puede saber qué está al día: se
+  // reprocesa todo, que es el comportamiento anterior.
+  if (!(await hasColumn(db, "orders", "sync_version"))) return orderIds;
+
+  const result = await db.query<{ id: string }>(
+    `SELECT id FROM orders WHERE account_id = $1 AND id = ANY($2::text[]) AND sync_version >= $3`,
+    [accountId, orderIds, ORDER_SYNC_VERSION]
+  );
+  const upToDate = new Set(result.rows.map((r) => String(r.id)));
+  return orderIds.filter((id) => !upToDate.has(id));
+}
+
 export async function syncOrders(
   db: QueryExecutor,
   accountId: string,
@@ -47,13 +78,17 @@ export async function syncOrders(
   hasIva: boolean,
   otherTaxRate = 0
 ): Promise<number> {
+  const hasVersion = await hasColumn(db, "orders", "sync_version");
   let synced = 0;
   for (const orderId of orderIds) {
     const order = await getOrderDetail(accountId, orderId);
     await db.query(
-      `INSERT INTO orders (account_id, id, date_created, status, buyer_total) VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (account_id, id) DO UPDATE SET status = excluded.status, buyer_total = excluded.buyer_total`,
-      [accountId, order.id, order.dateCreated, order.status, order.buyerTotal]
+      `INSERT INTO orders (account_id, id, date_created, status, buyer_total${hasVersion ? ", sync_version" : ""})
+       VALUES ($1, $2, $3, $4, $5${hasVersion ? ", $6" : ""})
+       ON CONFLICT (account_id, id) DO UPDATE SET status = excluded.status, buyer_total = excluded.buyer_total${
+         hasVersion ? ", sync_version = excluded.sync_version" : ""
+       }`,
+      [accountId, order.id, order.dateCreated, order.status, order.buyerTotal, ...(hasVersion ? [ORDER_SYNC_VERSION] : [])]
     );
     await db.query(`DELETE FROM order_items WHERE account_id = $1 AND order_id = $2`, [accountId, order.id]);
 
