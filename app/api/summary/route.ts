@@ -4,6 +4,38 @@ import { resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
 
+// Mismo largo de días, inmediatamente antes de `from` — para poder mostrar
+// "+12% vs. período anterior" en las tarjetas de Resumen. Si las fechas no
+// son un rango de días válido (p. ej. los defaults 1970-01-01/9999-12-31)
+// no hay un "período anterior" que tenga sentido, así que se omite.
+function previousRange(from: string, to: string): { from: string; to: string } | null {
+  const fromD = new Date(`${from}T00:00:00Z`);
+  const toD = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(fromD.getTime()) || Number.isNaN(toD.getTime()) || toD < fromD) return null;
+  const days = Math.round((toD.getTime() - fromD.getTime()) / 86400000) + 1;
+  const prevTo = new Date(fromD.getTime() - 86400000);
+  const prevFrom = new Date(prevTo.getTime() - (days - 1) * 86400000);
+  return { from: prevFrom.toISOString().slice(0, 10), to: prevTo.toISOString().slice(0, 10) };
+}
+
+async function totalsFor(client: { query: (sql: string, args: unknown[]) => Promise<{ rows: Record<string, string | number>[] }> }, accountId: string, from: string, to: string) {
+  const totalsResult = await client.query(
+    `SELECT
+       COUNT(DISTINCT o.id) as orders,
+       COALESCE(SUM(oi.unit_price * oi.quantity), 0) as "grossSales",
+       COALESCE(SUM(oi.net_profit), 0) as "netProfit"
+     FROM order_items oi
+     JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
+     WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date`,
+    [accountId, from, to]
+  );
+  const row = totalsResult.rows[0];
+  const orders = Number(row.orders);
+  const grossSales = Number(row.grossSales);
+  const netProfit = Number(row.netProfit);
+  return { orders, grossSales, netProfit, profitPct: grossSales > 0 ? netProfit / grossSales : 0 };
+}
+
 export async function GET(request: NextRequest) {
   const account = await resolveCurrentAccount();
   if (!account) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -79,6 +111,9 @@ export async function GET(request: NextRequest) {
     const netProfit = Number(totals.netProfit);
     const ordersWithCost = Number(totals.ordersWithCost);
 
+    const prevRange = previousRange(from, to);
+    const previous = prevRange ? await totalsFor(client, account.id, prevRange.from, prevRange.to) : null;
+
     return {
       orders,
       grossSales: revenue,
@@ -96,6 +131,7 @@ export async function GET(request: NextRequest) {
       netAov: orders > 0 ? netProfit / orders : 0,
       trueCpa: ordersWithCost > 0 ? adSpend / ordersWithCost : 0,
       itemsMissingCost: Number(totals.itemsMissingCost),
+      previous,
     };
   });
 

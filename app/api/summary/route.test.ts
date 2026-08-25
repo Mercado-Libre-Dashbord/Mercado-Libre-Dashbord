@@ -86,6 +86,41 @@ describe("GET /api/summary", () => {
     expect(body.cpa).toBe(0);
   });
 
+  it("compares against the equivalent previous period", async () => {
+    let totalsCalls = 0;
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      if (sql.includes("totalCommission")) {
+        // Totales del período actual (2026-08-01..2026-08-10, 10 días).
+        return {
+          rows: [
+            {
+              orders: 4,
+              grossSales: 4000,
+              totalCommission: 400,
+              totalShipping: 200,
+              totalMercadoAds: 0,
+              totalCost: 1000,
+              netProfit: 2400,
+              itemsMissingCost: 0,
+              ordersWithCost: 4,
+            },
+          ],
+        };
+      }
+      // Totales del período anterior (2026-07-22..2026-07-31, mismos 10 días).
+      totalsCalls += 1;
+      return { rows: [{ orders: 2, grossSales: 2000, netProfit: 1000 }] };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams("from=2026-08-01&to=2026-08-10") } } as any;
+    const body = await (await GET(request)).json();
+
+    expect(totalsCalls).toBe(1);
+    expect(body.previous).toEqual({ orders: 2, grossSales: 2000, netProfit: 1000, profitPct: 0.5 });
+  });
+
   it("returns the daily breakdown when groupBy=day", async () => {
     const query = vi.fn().mockResolvedValue({
       rows: [

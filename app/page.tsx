@@ -5,6 +5,13 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, Responsive
 import { SyncButton } from "./SyncButton";
 import { NoAccountState } from "./NoAccountState";
 
+interface PreviousTotals {
+  orders: number;
+  grossSales: number;
+  netProfit: number;
+  profitPct: number;
+}
+
 interface Summary {
   orders: number;
   grossSales: number;
@@ -13,6 +20,7 @@ interface Summary {
   profitPct: number;
   netRevenue: number;
   itemsMissingCost: number;
+  previous: PreviousTotals | null;
 }
 
 interface DailyBreakdown {
@@ -45,6 +53,14 @@ interface OrderSummaryRow {
   dateCreated: string;
   totalOrder: number;
   totalNeto: number;
+}
+
+interface ProductRow {
+  id: string;
+  title: string;
+  unitsSold: number;
+  totalProfit: number;
+  marginPct: number | null;
 }
 
 function fmt(n: number) {
@@ -115,11 +131,65 @@ function KpiValue({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+const KPI_ICON_PATHS: Record<string, React.ReactNode> = {
+  orders: (
+    <>
+      <circle cx="9" cy="20" r="1.4" />
+      <circle cx="18" cy="20" r="1.4" />
+      <path d="M2.5 3h2.5l2.3 12.2a2 2 0 0 0 2 1.6h8.4a2 2 0 0 0 2-1.6L21.5 7H6" />
+    </>
+  ),
+  gross: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  aov: (
+    <>
+      <path d="M6 2v20l2-1.5L10 22l2-1.5L14 22l2-1.5L18 22V2H6z" />
+      <path d="M9 7h6M9 11h6" />
+    </>
+  ),
+  profit: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
+  margin: (
+    <>
+      <circle cx="7" cy="7" r="2.5" />
+      <circle cx="17" cy="17" r="2.5" />
+      <path d="M18 6 6 18" />
+    </>
+  ),
+  net: (
+    <>
+      <rect x="2.5" y="6" width="19" height="13" rx="2" />
+      <path d="M2.5 10h19M16 14.5h3" />
+    </>
+  ),
+};
+
+function KpiIcon({ name }: { name: string }) {
+  return (
+    <span className="kpi-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {KPI_ICON_PATHS[name]}
+      </svg>
+    </span>
+  );
+}
+
+function DeltaPill({ current, previous }: { current: number; previous: number | null | undefined }) {
+  if (previous === null || previous === undefined || previous <= 0) return null;
+  const change = (current - previous) / previous;
+  if (!Number.isFinite(change)) return null;
+  const up = change >= 0;
+  return (
+    <span className={`delta-pill ${up ? "up" : "down"}`}>
+      {up ? "↑" : "↓"} {Math.abs(change * 100).toFixed(1)}% vs. período anterior
+    </span>
+  );
+}
+
 export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
   const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[] | null>(null);
+  const [products, setProducts] = useState<ProductRow[] | null>(null);
   const [period, setPeriod] = useState<Period>("mes");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
@@ -144,6 +214,10 @@ export default function HomePage() {
     fetch("/api/orders?groupBy=order").then((r) => {
       if (r.status === 401) { setNoAccount(true); return; }
       r.json().then(setOrders);
+    });
+    fetch(`/api/products?from=${from}&to=${to}`).then((r) => {
+      if (r.status === 401) { setNoAccount(true); return; }
+      r.json().then(setProducts);
     });
   }
 
@@ -201,12 +275,33 @@ export default function HomePage() {
 
       <h2 className="section-title">Tienda</h2>
       <div className="kpi-grid">
-        <div className="kpi-card"><div className="label">Órdenes</div><div className="value"><KpiValue>{summary?.orders ?? "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Facturación</div><div className="value"><KpiValue>{summary ? fmt(summary.grossSales) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Ticket promedio</div><div className="value"><KpiValue>{summary ? fmt(summary.aov) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Ganancia neta</div><div className="value"><KpiValue>{summary ? fmt(summary.netProfit) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Margen neto</div><div className="value"><KpiValue>{summary ? pct(summary.profitPct) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Facturación neta</div><div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div></div>
+        <div className="kpi-card">
+          <div className="kpi-card-head"><KpiIcon name="orders" /><span className="label">Órdenes</span></div>
+          <div className="value"><KpiValue>{summary?.orders ?? "-"}</KpiValue></div>
+          {summary && <DeltaPill current={summary.orders} previous={summary.previous?.orders} />}
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head"><KpiIcon name="gross" /><span className="label">Facturación</span></div>
+          <div className="value"><KpiValue>{summary ? fmt(summary.grossSales) : "-"}</KpiValue></div>
+          {summary && <DeltaPill current={summary.grossSales} previous={summary.previous?.grossSales} />}
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head"><KpiIcon name="aov" /><span className="label">Ticket promedio</span></div>
+          <div className="value"><KpiValue>{summary ? fmt(summary.aov) : "-"}</KpiValue></div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head"><KpiIcon name="profit" /><span className="label">Ganancia neta</span></div>
+          <div className="value"><KpiValue>{summary ? fmt(summary.netProfit) : "-"}</KpiValue></div>
+          {summary && <DeltaPill current={summary.netProfit} previous={summary.previous?.netProfit} />}
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head"><KpiIcon name="margin" /><span className="label">Margen neto</span></div>
+          <div className="value"><KpiValue>{summary ? pct(summary.profitPct) : "-"}</KpiValue></div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head"><KpiIcon name="net" /><span className="label">Facturación neta</span></div>
+          <div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div>
+        </div>
       </div>
 
       <details className="explain-box">
@@ -274,6 +369,49 @@ export default function HomePage() {
           </details>
         </>
       )}
+
+      <h2 className="section-title">Top productos por ganancia</h2>
+      {products === null ? (
+        <p className="empty-state">Cargando productos…</p>
+      ) : (() => {
+        const top = [...products].filter((p) => p.unitsSold > 0).sort((a, b) => b.totalProfit - a.totalProfit).slice(0, 5);
+        return top.length === 0 ? (
+          <div className="empty-state">Todavía no hay ventas en este período.</div>
+        ) : (
+          <div className="table-wrap" style={{ marginBottom: "var(--space-3)" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Producto</th>
+                  <th className="num">Unidades vendidas</th>
+                  <th className="num">Margen %</th>
+                  <th className="num">Ganancia neta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {top.map((p, i) => (
+                  <tr key={p.id}>
+                    <td><span className="rank-badge">{i + 1}</span></td>
+                    <td>{p.title}</td>
+                    <td className="num">{p.unitsSold}</td>
+                    <td className="num">{p.marginPct === null ? "-" : pct(p.marginPct)}</td>
+                    <td className="num" style={{ color: p.totalProfit >= 0 ? "var(--positive)" : "var(--negative)" }}>{fmt(p.totalProfit)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
+      <details className="explain-box">
+        <summary>¿Qué muestra esta tabla?</summary>
+        <p>
+          Tus 5 productos con más ganancia neta real en el período elegido (ya descontando comisión, envío,
+          publicidad, costo e impuestos) — no solo los más vendidos. Un producto puede vender mucho y dejar poca
+          plata, o vender poco y ser el más rentable: esta tabla te muestra cuál es cuál.
+        </p>
+      </details>
 
       {lastOrder && (
         <>
