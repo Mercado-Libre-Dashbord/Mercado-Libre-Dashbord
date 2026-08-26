@@ -307,7 +307,7 @@ tbody tr:hover { background: var(--surface-2); }
 }
 .period-custom label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-dim); gap: var(--space-1); }
 
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-3); }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-3); }
 .kpi-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -319,10 +319,14 @@ tbody tr:hover { background: var(--surface-2); }
 .kpi-card:hover { border-color: var(--accent); box-shadow: var(--shadow-md); }
 .kpi-card .label { color: var(--text-dim); font-size: 13px; }
 .kpi-card .value {
-  font-size: 22px;
+  /* Escala con el ancho disponible: un total histórico de 8 dígitos se salía
+     de la tarjeta a tamaño fijo. */
+  font-size: clamp(17px, 1.55vw, 22px);
   font-weight: 700;
   margin-top: var(--space-1);
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .kpi-card-head { display: flex; align-items: center; gap: var(--space-2); }
 /* La explicación de cada métrica vive en su propia tarjeta, detrás de un ⓘ,
@@ -391,7 +395,7 @@ tbody tr:hover { background: var(--surface-2); }
 .kpi-card.kpi-hero .delta-pill.up { background: rgba(255, 255, 255, 0.16); color: #8ee0b0; }
 .kpi-card.kpi-hero .delta-pill.down { background: rgba(255, 255, 255, 0.16); color: #f0a2a2; }
 .kpi-card.kpi-hero:hover { border-color: var(--accent-strong); }
-.kpi-card.kpi-hero .value { font-size: 26px; }
+.kpi-card.kpi-hero .value { font-size: clamp(19px, 1.85vw, 26px); }
 
 .chart-card {
   background: var(--surface);

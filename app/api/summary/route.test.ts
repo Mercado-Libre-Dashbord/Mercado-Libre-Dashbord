@@ -249,28 +249,5 @@ describe("GET /api/summary", () => {
     expect(body.grossSales).toBe(240000);
   });
 
-  it("groups revenue by product category", async () => {
-    const query = vi.fn().mockImplementation(async (sql: string) => {
-      if (sql.includes("information_schema.columns")) {
-        return { rows: [{ table_name: "products", column_name: "category_name" }] };
-      }
-      expect(sql).toContain("category_name");
-      expect(sql).toContain("o.status NOT IN ('cancelled', 'invalid')");
-      return { rows: [{ category: "Camping", revenue: 120000, netProfit: 40000, units: 6 }] };
-    });
-    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
 
-    const request = { nextUrl: { searchParams: new URLSearchParams("groupBy=category") } } as any;
-    const body = await (await GET(request)).json();
-
-    expect(body).toEqual([{ category: "Camping", revenue: 120000, netProfit: 40000, units: 6 }]);
-  });
-
-  it("returns no categories instead of failing when that migration is missing", async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [] });
-    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
-
-    const request = { nextUrl: { searchParams: new URLSearchParams("groupBy=category") } } as any;
-    expect(await (await GET(request)).json()).toEqual([]);
-  });
 });

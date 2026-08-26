@@ -129,31 +129,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(rows);
   }
 
-  if (groupBy === "category") {
-    const rows = await withScope({ accountId: account.id }, async (client) => {
-      // Sin la migración de categorías no hay nada que agrupar; se devuelve
-      // vacío y el gráfico muestra su empty state.
-      if (!(await hasColumn(client, "products", "category_name"))) return [];
-      const result = await client.query(
-        `SELECT COALESCE(NULLIF(p.category_name, ''), 'Sin categoría') as category,
-                COALESCE(SUM(oi.unit_price * oi.quantity), 0) as revenue,
-                COALESCE(SUM(oi.net_profit), 0) as "netProfit",
-                COALESCE(SUM(oi.quantity), 0) as units
-         FROM order_items oi
-         JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
-         JOIN products p ON p.account_id = oi.account_id AND p.id = oi.product_id
-         WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
-           AND ${revenueStatusFilter()}
-         GROUP BY category
-         HAVING COALESCE(SUM(oi.unit_price * oi.quantity), 0) > 0
-         ORDER BY revenue DESC`,
-        [account.id, from, to]
-      );
-      return result.rows;
-    });
-    return NextResponse.json(rows);
-  }
-
   if (groupBy === "trend") {
     const rows = await withScope({ accountId: account.id }, async (client) => {
       // Frecuencia de venta (unidades por día) en la mitad reciente del

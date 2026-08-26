@@ -10,7 +10,6 @@ import { NoAccountState } from "./NoAccountState";
 import { PeriodBar } from "./PeriodBar";
 import { Period, rangeForPeriod, toDateStr } from "@/lib/period";
 import { countsAsRevenue } from "@/lib/order-status";
-import { ivaBalance } from "@/lib/iva";
 
 interface PreviousTotals {
   orders: number;
@@ -49,13 +48,6 @@ interface DailyBreakdown {
   netProfit: number;
 }
 
-interface CategoryRow {
-  category: string;
-  revenue: number;
-  netProfit: number;
-  units: number;
-}
-
 interface BillingBucket {
   bucket: string;
   label: string;
@@ -67,20 +59,6 @@ interface Billing {
   buckets: BillingBucket[];
   total: number;
   charges?: number;
-}
-
-interface OrderLine {
-  id: number;
-  orderId: string;
-  productTitle: string;
-  unitPrice: number;
-  quantity: number;
-  mlCommission: number;
-  shippingCost: number;
-  adsCostAllocated: number;
-  costApplied: number | null;
-  taxApplied: number | null;
-  netProfit: number | null;
 }
 
 interface OrderSummaryRow {
@@ -116,32 +94,6 @@ function estadoBadgeClass(estado: string) {
   if (estado === "paid") return "badge-paid";
   if (estado === "cancelled") return "badge-cancelled";
   return "badge-other";
-}
-
-function WaterfallRow({
-  label,
-  value,
-  max,
-  tone,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  tone: "negative" | "positive";
-}) {
-  const width = max > 0 ? Math.min(100, (Math.abs(value) / max) * 100) : 0;
-  return (
-    <div className="waterfall-row">
-      <span>{label}</span>
-      <div className="waterfall-track">
-        <div className={`waterfall-fill ${tone}`} style={{ width: `${width}%` }} />
-      </div>
-      <span style={{ textAlign: "right", color: tone === "negative" ? "var(--negative)" : "var(--positive)" }}>
-        {tone === "negative" ? "-" : "+"}
-        {fmt(Math.abs(value))}
-      </span>
-    </div>
-  );
 }
 
 function KpiValue({ children }: { children: React.ReactNode }) {
@@ -223,79 +175,6 @@ function DeltaPill({ current, previous }: { current: number; previous: number | 
   );
 }
 
-const DONUT_RAMP = ["var(--ramp-1)", "var(--ramp-2)", "var(--ramp-3)", "var(--ramp-4)", "var(--ramp-5)", "var(--ramp-6)"];
-const DONUT_MAX_SLICES = 5;
-
-/**
- * Categorías más vendidas. Un donut es legible solo para parte-de-un-todo
- * "de un vistazo" y con pocas porciones, así que se muestran las 5 primeras
- * y el resto se pliega en "Otras" en vez de sumar colores. Los montos van en
- * la leyenda: comparar arcos parecidos a ojo no funciona, leer los números sí.
- */
-function CategoryDonut({ rows }: { rows: CategoryRow[] }) {
-  const sorted = [...rows].sort((a, b) => b.revenue - a.revenue);
-  const head = sorted.slice(0, DONUT_MAX_SLICES);
-  const tail = sorted.slice(DONUT_MAX_SLICES);
-  const data = tail.length > 0
-    ? [...head, { category: "Otras", revenue: tail.reduce((sum, r) => sum + r.revenue, 0), netProfit: 0, units: 0 }]
-    : head;
-  const total = data.reduce((sum, r) => sum + r.revenue, 0);
-
-  return (
-    <div className="chart-card">
-      <div className="chart-card-head">
-        <h3 className="chart-card-title">Categorías más vendidas</h3>
-      </div>
-      <div style={{ width: "100%", height: 190, position: "relative" }}>
-        <ResponsiveContainer>
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="revenue"
-              nameKey="category"
-              innerRadius="68%"
-              outerRadius="92%"
-              paddingAngle={2}
-              stroke="var(--surface)"
-              strokeWidth={2}
-              isAnimationActive={false}
-            >
-              {data.map((row, i) => (
-                <Cell key={row.category} fill={DONUT_RAMP[i % DONUT_RAMP.length]} />
-              ))}
-            </Pie>
-            <Tooltip
-              contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
-              formatter={(value: number, name: string) => [fmt(value), name]}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center", pointerEvents: "none",
-          }}
-        >
-          {/* El agujero del donut es angosto: 15px entra cómodo hasta cifras
-              de millones sin pisar el anillo. */}
-          <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</span>
-          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>facturado</span>
-        </div>
-      </div>
-      <ul className="donut-legend">
-        {data.map((row, i) => (
-          <li key={row.category}>
-            <span className="donut-swatch" style={{ background: DONUT_RAMP[i % DONUT_RAMP.length] }} />
-            <span className="donut-legend-name" title={row.category}>{row.category}</span>
-            <span className="donut-legend-value">{fmt(row.revenue)}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 const LAST_SALE_RAMP = [
   "var(--chart-commission)",
   "var(--chart-shipping)",
@@ -305,18 +184,44 @@ const LAST_SALE_RAMP = [
 ];
 
 /**
- * Cómo se repartió la facturación de la última venta. Es parte-de-un-todo con
- * pocas porciones —el caso en que una torta se lee de un vistazo— y va al lado
- * del desglose en barras, que es el que permite comparar montos parecidos.
+ * En qué se repartió la facturación del período. Es parte-de-un-todo con pocas
+ * porciones —el caso en que una torta se lee de un vistazo— y acompaña al
+ * desglose diario en barras, que es el que deja comparar montos parecidos.
+ *
+ * Ojo: mira el período elegido, no una venta suelta. Antes esto mostraba la
+ * última venta; puesto al lado de tarjetas que son todas del período, ese
+ * número desentonaba y se prestaba a leerlo como si fuera del total.
  */
-function LastSalePie({ slices, revenue }: { slices: { name: string; value: number }[]; revenue: number }) {
+function RevenueSplitPie({ daily }: { daily: DailyBreakdown[] }) {
+  const totals = daily.reduce(
+    (acc, d) => ({
+      commission: acc.commission + d.commission,
+      shipping: acc.shipping + d.shipping,
+      tax: acc.tax + d.tax,
+      iva: acc.iva + d.iva,
+      cost: acc.cost + d.cost,
+      netProfit: acc.netProfit + d.netProfit,
+      revenue: acc.revenue + d.revenue,
+    }),
+    { commission: 0, shipping: 0, tax: 0, iva: 0, cost: 0, netProfit: 0, revenue: 0 }
+  );
+
+  const slices = [
+    { name: "Comisión ML", value: totals.commission },
+    { name: "Envío", value: totals.shipping },
+    { name: "Costo de producto", value: totals.cost },
+    { name: "IVA", value: totals.iva },
+    { name: "Otros impuestos", value: totals.tax },
+    { name: "Ganancia neta", value: totals.netProfit },
+  ];
+  const revenue = totals.revenue;
   const visible = slices.filter((s) => s.value > 0);
   if (visible.length === 0) return null;
 
   return (
     <div className="chart-card" style={{ marginBottom: 0 }}>
       <div className="chart-card-head">
-        <h3 className="chart-card-title">Cómo se repartió</h3>
+        <h3 className="chart-card-title">En qué se fue tu facturación</h3>
       </div>
       <div style={{ width: "100%", height: 200, position: "relative" }}>
         <ResponsiveContainer>
@@ -482,12 +387,10 @@ function PerformanceChart({ daily }: { daily: DailyBreakdown[] }) {
 
 export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [lastOrder, setLastOrder] = useState<OrderLine | null>(null);
   const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[] | null>(null);
   const [products, setProducts] = useState<ProductRow[] | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
-  const [categories, setCategories] = useState<CategoryRow[] | null>(null);
   const [period, setPeriod] = useState<Period>("hoy");
   const [customFrom, setCustomFrom] = useState(toDateStr(new Date()));
   const [customTo, setCustomTo] = useState(toDateStr(new Date()));
@@ -517,11 +420,9 @@ export default function HomePage() {
     setLoadError("");
     safeFetch<Summary | null>(`/api/summary?from=${from}&to=${to}`, setSummary, null);
     safeFetch<DailyBreakdown[]>(`/api/summary?groupBy=day&from=${from}&to=${to}`, setDaily, []);
-    safeFetch<OrderLine[]>(`/api/orders?from=${from}&to=${to}`, (rows) => setLastOrder(rows[0] ?? null), []);
     safeFetch<OrderSummaryRow[]>(`/api/orders?groupBy=order&from=${from}&to=${to}`, setOrders, []);
     safeFetch<ProductRow[]>(`/api/products?from=${from}&to=${to}`, setProducts, []);
     safeFetch<Billing | null>(`/api/billing?from=${from}&to=${to}`, setBilling, null);
-    safeFetch<CategoryRow[]>(`/api/summary?groupBy=category&from=${from}&to=${to}`, setCategories, []);
   }
 
   useEffect(loadAll, [from, to]);
@@ -615,7 +516,7 @@ export default function HomePage() {
       )}
 
       <h2 className="section-title">Rendimiento</h2>
-      {daily === null || categories === null ? (
+      {daily === null ? (
         <p className="empty-state">Cargando gráficos…</p>
       ) : daily.length === 0 ? (
         <div className="empty-state">
@@ -627,16 +528,7 @@ export default function HomePage() {
           <PerformanceChart daily={daily} />
           <div className="chart-split-even">
             <TopProductsCard rows={products ?? []} />
-            {categories.length > 0 ? (
-              <CategoryDonut rows={categories} />
-            ) : (
-              <div className="chart-card">
-                <div className="chart-card-head"><h3 className="chart-card-title">Categorías más vendidas</h3></div>
-                <div className="empty-state" style={{ padding: "var(--space-5) var(--space-3)" }}>
-                  Todavía no hay categorías. Sincronizá y volvé a entrar para traerlas desde Mercado Libre.
-                </div>
-              </div>
-            )}
+            <RevenueSplitPie daily={daily} />
           </div>
         </>
       )}
@@ -811,66 +703,6 @@ export default function HomePage() {
         </p>
       </details>
 
-      {lastOrder && (
-        <>
-          <h2 className="section-title">Última venta · {lastOrder.productTitle}</h2>
-          <div className="chart-split">
-          <div className="waterfall-card" style={{ marginBottom: 0 }}>
-            <WaterfallRow
-              label="Facturación"
-              value={lastOrder.unitPrice * lastOrder.quantity}
-              max={lastOrder.unitPrice * lastOrder.quantity}
-              tone="positive"
-            />
-            <WaterfallRow label="Comisión ML" value={lastOrder.mlCommission} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
-            <WaterfallRow label="Envío" value={lastOrder.shippingCost} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
-            <WaterfallRow label="Publicidad" value={lastOrder.adsCostAllocated} max={lastOrder.unitPrice * lastOrder.quantity} tone="negative" />
-            <WaterfallRow
-              label="Costo"
-              value={(lastOrder.costApplied ?? 0) * lastOrder.quantity}
-              max={lastOrder.unitPrice * lastOrder.quantity}
-              tone="negative"
-            />
-            <WaterfallRow
-              label="Otros impuestos"
-              value={(lastOrder.taxApplied ?? 0) * lastOrder.quantity}
-              max={lastOrder.unitPrice * lastOrder.quantity}
-              tone="negative"
-            />
-            <WaterfallRow
-              label="IVA"
-              value={ivaBalance({
-                grossRevenue: lastOrder.unitPrice * lastOrder.quantity,
-                mlCharges: lastOrder.mlCommission + lastOrder.shippingCost + lastOrder.adsCostAllocated,
-                productCost: (lastOrder.costApplied ?? 0) * lastOrder.quantity,
-              })}
-              max={lastOrder.unitPrice * lastOrder.quantity}
-              tone="negative"
-            />
-            <WaterfallRow label="Ganancia neta" value={lastOrder.netProfit ?? 0} max={lastOrder.unitPrice * lastOrder.quantity} tone="positive" />
-          </div>
-          <LastSalePie
-            revenue={lastOrder.unitPrice * lastOrder.quantity}
-            slices={[
-              { name: "Comisión ML", value: lastOrder.mlCommission },
-              { name: "Envío", value: lastOrder.shippingCost },
-              { name: "Publicidad", value: lastOrder.adsCostAllocated },
-              { name: "Costo", value: (lastOrder.costApplied ?? 0) * lastOrder.quantity },
-              { name: "Otros impuestos", value: (lastOrder.taxApplied ?? 0) * lastOrder.quantity },
-              {
-                name: "IVA",
-                value: ivaBalance({
-                  grossRevenue: lastOrder.unitPrice * lastOrder.quantity,
-                  mlCharges: lastOrder.mlCommission + lastOrder.shippingCost + lastOrder.adsCostAllocated,
-                  productCost: (lastOrder.costApplied ?? 0) * lastOrder.quantity,
-                }),
-              },
-              { name: "Ganancia neta", value: lastOrder.netProfit ?? 0 },
-            ]}
-          />
-          </div>
-        </>
-      )}
 
       <h2 className="section-title">Últimas órdenes</h2>
       {orders && orders.length === 0 ? (
