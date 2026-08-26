@@ -53,6 +53,9 @@ CREATE TABLE IF NOT EXISTS accounts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS other_tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tax_condition TEXT NOT NULL DEFAULT 'responsable_inscripto';
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS point_of_sale INTEGER;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS cuit TEXT;
 
 CREATE TABLE IF NOT EXISTS products (
   account_id TEXT NOT NULL REFERENCES accounts(id),
@@ -154,6 +157,30 @@ CREATE TABLE IF NOT EXISTS billing_charges (
   PRIMARY KEY (account_id, detail_id)
 );
 
+-- Comprobantes electrónicos emitidos ante ARCA. Una venta, un comprobante:
+-- la clave primaria por (cuenta, orden) evita facturar dos veces lo mismo.
+CREATE TABLE IF NOT EXISTS invoices (
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  order_id TEXT NOT NULL,
+  invoice_type INTEGER NOT NULL,
+  doc_type INTEGER NOT NULL,
+  doc_number TEXT NOT NULL,
+  buyer_iva_condition INTEGER NOT NULL,
+  total DOUBLE PRECISION NOT NULL,
+  net DOUBLE PRECISION NOT NULL,
+  iva DOUBLE PRECISION NOT NULL,
+  invoice_date DATE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  point_of_sale INTEGER,
+  number INTEGER,
+  cae TEXT,
+  cae_expires_at DATE,
+  provider TEXT,
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (account_id, order_id)
+);
+
 CREATE TABLE IF NOT EXISTS auth_tokens (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id),
   access_token TEXT NOT NULL,
@@ -169,6 +196,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_account_date ON orders(account_id, date_cr
 CREATE INDEX IF NOT EXISTS idx_question_drafts_account_status ON question_drafts(account_id, status);
 CREATE INDEX IF NOT EXISTS idx_billing_charges_account_period ON billing_charges(account_id, period_key);
 CREATE INDEX IF NOT EXISTS idx_billing_charges_account_order ON billing_charges(account_id, order_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_account_status ON invoices(account_id, status);
 
 -- ── Row Level Security ───────────────────────────────────────────────────
 -- FORCE (not just ENABLE) matters: without FORCE, the table *owner* still
@@ -193,7 +221,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens', 'question_drafts', 'billing_charges']
+  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens', 'question_drafts', 'billing_charges', 'invoices']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
