@@ -1,7 +1,25 @@
 # Logo
 
-Poné acá el logo de MetricsField como `logo.png` (o `logo.svg` y cambiá la
-ruta en `app/NavBar.tsx`). Cuadrado, fondo transparente, idealmente 256×256.
+El sidebar busca el logo en esta carpeta, probando en orden:
+`logo.png` → `logo.svg` → `logo.webp` → `logo.jpg`.
+Si no encuentra ninguno, cae en el monograma original: no se rompe nada.
 
-Mientras el archivo no exista, el sidebar cae automáticamente en el monograma
-original: no se rompe nada, simplemente no se ve el logo.
+## Cómo subirlo desde el navegador (no hace falta instalar nada)
+
+1. Entrar a https://github.com/Mercado-Libre-Dashbord/Mercado-Libre-Dashbord
+2. Click en la carpeta `public`.
+3. Botón **Add file** (arriba a la derecha) → **Upload files**.
+4. Arrastrar el archivo del logo.
+5. **Importante**: el archivo tiene que llamarse `logo` + su extensión
+   (`logo.png`, `logo.svg`, `logo.webp` o `logo.jpg`). Si se llama distinto,
+   renombrarlo en la compu antes de arrastrarlo.
+6. Abajo, dejar seleccionado *Commit directly to the `main` branch* y click en
+   **Commit changes**.
+
+Vercel redeploya solo en 1–2 minutos y el logo aparece en el sidebar.
+
+## Formato recomendado
+
+Cuadrado, fondo transparente, 256×256 px (PNG o SVG). Se muestra a 32×32 con
+`object-fit: contain`, así que un logo rectangular también entra, solo que más
+chico.

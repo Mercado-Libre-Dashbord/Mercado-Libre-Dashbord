@@ -70,14 +70,17 @@ function NavIcon({ name }: { name: string }) {
 }
 
 /**
- * Marca del sidebar. Usa public/logo.png si está, y si no cae en el
- * monograma original — así la app nunca muestra una imagen rota mientras el
- * archivo del logo no esté subido al repo.
+ * Marca del sidebar. Prueba varios nombres de archivo dentro de public/ y recién
+ * después cae en el monograma original. Así el logo funciona sin importar con qué
+ * extensión se haya subido, y la app nunca muestra una imagen rota mientras el
+ * archivo no exista.
  */
-function BrandMark() {
-  const [logoFailed, setLogoFailed] = useState(false);
+const LOGO_CANDIDATES = ["/logo.png", "/logo.svg", "/logo.webp", "/logo.jpg"] as const;
 
-  if (logoFailed) {
+function BrandMark() {
+  const [attempt, setAttempt] = useState(0);
+
+  if (attempt >= LOGO_CANDIDATES.length) {
     return (
       <span className="sidebar-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
@@ -86,7 +89,17 @@ function BrandMark() {
       </span>
     );
   }
-  return <img className="sidebar-logo" src="/logo.png" alt="MetricsField" onError={() => setLogoFailed(true)} />;
+
+  const src = LOGO_CANDIDATES[attempt];
+  return (
+    <img
+      key={src}
+      className="sidebar-logo"
+      src={src}
+      alt="MetricsField"
+      onError={() => setAttempt((n) => n + 1)}
+    />
+  );
 }
 
 export function NavBar() {
