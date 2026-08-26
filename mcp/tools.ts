@@ -549,3 +549,61 @@ function firstDefined(...values: unknown[]): string | null {
   }
   return null;
 }
+
+// ── Cupones del vendedor ─────────────────────────────────────────────────
+
+export interface SellerCouponInput {
+  name: string;
+  /** Descuento en pesos. */
+  amount: number;
+  /** Compra mínima para poder usarlo. */
+  minPurchase: number;
+  /** Presupuesto total de la campaña: tope de lo que ML puede descontar. */
+  budget: number;
+  /** Días de vigencia desde hoy. */
+  durationDays: number;
+}
+
+export interface SellerCoupon {
+  id: string;
+  /** Código que el comprador ingresa al pagar. */
+  code: string | null;
+  status: string;
+}
+
+/**
+ * Crea un cupón oficial de Mercado Libre.
+ *
+ * Es la pieza que cierra el programa de fidelización: el premio no es un
+ * "punto" nuestro sino un descuento real, emitido y respetado por ML, que el
+ * comprador usa sin salir de la plataforma. Por eso el programa no puede ser
+ * interpretado como desvío de tráfico.
+ *
+ * El presupuesto es un tope duro: ML deja de aplicar el cupón cuando se agota,
+ * así que un error de configuración no puede vaciar la caja del vendedor.
+ */
+export async function createSellerCoupon(accountId: string, input: SellerCouponInput): Promise<SellerCoupon> {
+  const token = await getValidAccessToken(accountId);
+  const start = new Date();
+  const finish = new Date(start.getTime() + input.durationDays * 86400000);
+
+  const res = await mlFetch(`/seller-promotions/promotions`, token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      promotion_type: "SELLER_COUPON_CAMPAIGN",
+      name: input.name,
+      start_date: start.toISOString(),
+      finish_date: finish.toISOString(),
+      fixed_amount: input.amount,
+      min_purchase_amount: input.minPurchase,
+      budget: input.budget,
+    }),
+  });
+
+  return {
+    id: String(res.id ?? res.promotion_id ?? ""),
+    code: res.coupon_code ?? res.code ?? null,
+    status: res.status ?? "unknown",
+  };
+}

@@ -17,6 +17,7 @@ import {
   listCampaigns,
   setCampaignStatus,
   splitIntoWindows,
+  createSellerCoupon,
 } from "./tools";
 import { mlFetch, MlApiError } from "./ml-client";
 
@@ -444,5 +445,43 @@ describe("setCampaignStatus", () => {
       "token",
       expect.objectContaining({ method: "PUT", body: JSON.stringify({ status: "paused" }) })
     );
+  });
+});
+
+describe("createSellerCoupon", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("creates a real Mercado Libre coupon campaign", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ id: 55, coupon_code: "GRACIAS", status: "active" });
+
+    const coupon = await createSellerCoupon("acc1", {
+      name: "Programa de fidelidad",
+      amount: 2000,
+      minPurchase: 10000,
+      budget: 100000,
+      durationDays: 30,
+    });
+
+    expect(coupon).toEqual({ id: "55", code: "GRACIAS", status: "active" });
+
+    const [url, , init] = vi.mocked(mlFetch).mock.calls[0];
+    expect(url).toBe("/seller-promotions/promotions");
+    const body = JSON.parse((init as any).body);
+    expect(body.promotion_type).toBe("SELLER_COUPON_CAMPAIGN");
+    expect(body.fixed_amount).toBe(2000);
+    expect(body.min_purchase_amount).toBe(10000);
+    // El presupuesto es el tope duro: sin él un error de configuración podría
+    // descontar sin límite.
+    expect(body.budget).toBe(100000);
+  });
+
+  it("sets the campaign window from today for the requested days", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ id: 1 });
+
+    await createSellerCoupon("acc1", { name: "x", amount: 1, minPurchase: 2, budget: 3, durationDays: 30 });
+
+    const body = JSON.parse((vi.mocked(mlFetch).mock.calls[0][2] as any).body);
+    const days = (Date.parse(body.finish_date) - Date.parse(body.start_date)) / 86400000;
+    expect(days).toBeCloseTo(30, 1);
   });
 });

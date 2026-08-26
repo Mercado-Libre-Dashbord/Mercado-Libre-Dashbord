@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/consultas", label: "Consultas", icon: "question" },
   { href: "/campanas", label: "Campañas", icon: "megaphone" },
   { href: "/tendencias", label: "Tendencias", icon: "trend" },
+  { href: "/loyalty", label: "Fidelización", icon: "loyalty" },
   { href: "/configuracion", label: "Configuración", icon: "settings" },
 ] as const;
 
@@ -41,6 +42,11 @@ function NavIcon({ name }: { name: string }) {
         <circle cx="12" cy="12" r="9.2" />
         <path d="M9.2 9.3a2.8 2.8 0 1 1 4.2 2.4c-.9.6-1.4 1.1-1.4 2.1" />
         <circle cx="12" cy="17.2" r="0.1" fill="currentColor" />
+      </>
+    ),
+    loyalty: (
+      <>
+        <path d="M12 21s-7.5-4.7-9.4-9.2A5.2 5.2 0 0 1 12 6.6a5.2 5.2 0 0 1 9.4 5.2C19.5 16.3 12 21 12 21z" />
       </>
     ),
     settings: (

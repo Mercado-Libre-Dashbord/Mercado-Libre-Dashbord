@@ -197,6 +197,37 @@ CREATE TABLE IF NOT EXISTS channel_connections (
   PRIMARY KEY (account_id, channel)
 );
 
+-- Programa de fidelización: configuración, miembros y misiones cumplidas.
+CREATE TABLE IF NOT EXISTS loyalty_programs (
+  account_id TEXT PRIMARY KEY REFERENCES accounts(id),
+  active BOOLEAN NOT NULL DEFAULT false,
+  points JSONB NOT NULL DEFAULT '{}'::jsonb,
+  reward_threshold INTEGER NOT NULL DEFAULT 1500,
+  reward_amount DOUBLE PRECISION NOT NULL DEFAULT 2000,
+  reward_min_purchase DOUBLE PRECISION NOT NULL DEFAULT 10000,
+  reward_budget DOUBLE PRECISION NOT NULL DEFAULT 100000,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_members (
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  member_id TEXT NOT NULL,
+  email TEXT,
+  name TEXT,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reward_coupon_code TEXT,
+  reward_granted_at TIMESTAMPTZ,
+  PRIMARY KEY (account_id, member_id)
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_completions (
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  member_id TEXT NOT NULL,
+  mission TEXT NOT NULL,
+  completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (account_id, member_id, mission)
+);
+
 CREATE TABLE IF NOT EXISTS auth_tokens (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id),
   access_token TEXT NOT NULL,
@@ -239,7 +270,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens', 'question_drafts', 'billing_charges', 'invoices', 'channel_connections']
+  FOREACH t IN ARRAY ARRAY['products', 'product_costs', 'orders', 'order_items', 'ads_spend', 'auth_tokens', 'question_drafts', 'billing_charges', 'invoices', 'channel_connections', 'loyalty_programs', 'loyalty_members', 'loyalty_completions']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
