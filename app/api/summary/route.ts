@@ -3,6 +3,7 @@ import { withScope } from "@/db/client";
 import { hasColumn, missingMigrations } from "@/db/schema-capabilities";
 import { getCurrentUser, resolveCurrentAccount } from "@/lib/current-account";
 import { revenueStatusFilter } from "@/lib/order-status";
+import { getStoreVisits } from "@/mcp/tools";
 
 export const runtime = "nodejs";
 
@@ -211,6 +212,13 @@ export async function GET(request: NextRequest) {
 
     const refunds = await refundsFor(client, account.id, from, to);
 
+    // Las visitas salen de la API de ML en vivo, no de nuestra base: no hay
+    // histórico que guardar y el dato es del período que se está mirando.
+    const visits =
+      account.mlSellerId && from !== "1970-01-01"
+        ? await getStoreVisits(account.id, account.mlSellerId, from, to)
+        : null;
+
     const prevRange = previousRange(from, to);
     const previous = prevRange ? await totalsFor(client, account.id, prevRange.from, prevRange.to) : null;
 
@@ -240,6 +248,9 @@ export async function GET(request: NextRequest) {
       refundOrders: refunds.orders,
       refundAmount: refunds.amount,
       refundRate: orders + refunds.orders > 0 ? refunds.orders / (orders + refunds.orders) : 0,
+      visits,
+      // De cada 100 visitas, cuántas terminaron en venta.
+      conversionRate: visits && visits > 0 ? orders / visits : null,
       previous,
       pendingMigrations,
     };

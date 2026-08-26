@@ -2,11 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/db/client", () => ({ withScope: vi.fn() }));
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn(), getCurrentUser: vi.fn() }));
+// Las visitas salen de la API de ML en vivo; acá no interesan salvo en su
+// propio test, así que por defecto responden "sin dato".
+vi.mock("@/mcp/tools", () => ({ getStoreVisits: vi.fn().mockResolvedValue(null) }));
 
 import { GET } from "./route";
 import { withScope } from "@/db/client";
 import { resolveCurrentAccount, getCurrentUser } from "@/lib/current-account";
 import { resetColumnCache } from "@/db/schema-capabilities";
+import { getStoreVisits } from "@/mcp/tools";
 
 const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, createdAt: "2026-01-01" };
 
@@ -16,6 +20,7 @@ describe("GET /api/summary", () => {
     resetColumnCache();
     vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
     vi.mocked(getCurrentUser).mockResolvedValue({ email: "a@example.com", isAdmin: false });
+    vi.mocked(getStoreVisits).mockResolvedValue(null);
   });
 
   it("returns 401 when there is no active account", async () => {
@@ -249,5 +254,52 @@ describe("GET /api/summary", () => {
     expect(body.grossSales).toBe(240000);
   });
 
+  it("reports store visits and the conversion rate they imply", async () => {
+    vi.mocked(getStoreVisits).mockResolvedValue(2000);
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      if (sql.includes("NOT (o.status NOT IN")) return { rows: [{ orders: 0, amount: 0 }] };
+      return {
+        rows: [
+          {
+            orders: 40, grossSales: 100000, totalCommission: 0, totalShipping: 0, totalMercadoAds: 0,
+            totalCost: 0, netProfit: 0, itemsMissingCost: 0, ordersWithCost: 0,
+          },
+        ],
+      };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
 
+    const request = { nextUrl: { searchParams: new URLSearchParams("from=2026-08-01&to=2026-08-10") } } as any;
+    const body = await (await GET(request)).json();
+
+    expect(body.visits).toBe(2000);
+    expect(body.conversionRate).toBeCloseTo(40 / 2000);
+  });
+
+  it("keeps visits null — not zero — when Mercado Libre gives no data", async () => {
+    vi.mocked(getStoreVisits).mockResolvedValue(null);
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      if (sql.includes("NOT (o.status NOT IN")) return { rows: [{ orders: 0, amount: 0 }] };
+      return {
+        rows: [
+          {
+            orders: 5, grossSales: 1000, totalCommission: 0, totalShipping: 0, totalMercadoAds: 0,
+            totalCost: 0, netProfit: 0, itemsMissingCost: 0, ordersWithCost: 0,
+          },
+        ],
+      };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams("from=2026-08-01&to=2026-08-10") } } as any;
+    const body = await (await GET(request)).json();
+
+    // 0 visitas y "no sabemos" son distintos: con null no se muestra conversión.
+    expect(body.visits).toBeNull();
+    expect(body.conversionRate).toBeNull();
+  });
 });

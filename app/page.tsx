@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
+  XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell,
 } from "recharts";
 import { SyncButton } from "./SyncButton";
@@ -29,6 +29,9 @@ interface Summary {
   refundOrders: number;
   refundAmount: number;
   refundRate: number;
+  /** null = Mercado Libre no dio el dato; distinto de 0 visitas. */
+  visits: number | null;
+  conversionRate: number | null;
   totalIva: number;
   totalCommission: number;
   totalShipping: number;
@@ -136,6 +139,12 @@ const KPI_ICON_PATHS: Record<string, React.ReactNode> = {
       <path d="M3 3v5h5" />
     </>
   ),
+  visits: (
+    <>
+      <path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
 };
 
 /** El ⓘ de cada tarjeta con la explicación de esa métrica. */
@@ -184,13 +193,14 @@ const LAST_SALE_RAMP = [
 ];
 
 /**
- * En qué se repartió la facturación del período. Es parte-de-un-todo con pocas
- * porciones —el caso en que una torta se lee de un vistazo— y acompaña al
- * desglose diario en barras, que es el que deja comparar montos parecidos.
+ * En qué se repartió la facturación del período: parte-de-un-todo con pocas
+ * porciones, que es el caso en que una torta se lee de un vistazo. Los montos
+ * y porcentajes van en la leyenda, porque comparar arcos parecidos a ojo no
+ * funciona.
  *
- * Ojo: mira el período elegido, no una venta suelta. Antes esto mostraba la
- * última venta; puesto al lado de tarjetas que son todas del período, ese
- * número desentonaba y se prestaba a leerlo como si fuera del total.
+ * Reemplaza al gráfico de barras apiladas que estaba abajo: los dos mostraban
+ * la misma descomposición de la facturación, uno por día y otro agregado, y
+ * la evolución en el tiempo ya la cubre "Rendimiento de ventas".
  */
 function RevenueSplitPie({ daily }: { daily: DailyBreakdown[] }) {
   const totals = daily.reduce(
@@ -509,6 +519,27 @@ export default function HomePage() {
           <div className="kpi-card-head"><KpiIcon name="net" /><span className="label">Facturación neta</span><KpiInfo>Facturación − comisión de Mercado Libre − envío. No descuenta el costo del producto ni los impuestos.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div>
         </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head">
+            <KpiIcon name="visits" /><span className="label">Visitas</span>
+            <KpiInfo>
+              Cuánta gente entró a ver tus publicaciones en el período, según Mercado Libre. Debajo va la
+              conversión: de cada 100 visitas, cuántas terminaron en venta.
+            </KpiInfo>
+          </div>
+          <div className="value">
+            <KpiValue>
+              {summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}
+            </KpiValue>
+          </div>
+          {summary?.conversionRate != null && (
+            <div className="kpi-delta">
+              <span className="kpi-delta-caption">
+                {(summary.conversionRate * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}% de conversión
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {summary && summary.itemsMissingCost > 0 && (
@@ -533,66 +564,6 @@ export default function HomePage() {
         </>
       )}
 
-      <h2 className="section-title">De qué está hecha tu facturación</h2>
-      {daily === null ? (
-        <p className="empty-state">Cargando gráfico…</p>
-      ) : daily.length === 0 ? (
-        <div className="empty-state">
-          <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Sin ventas en este período.</p>
-          <p style={{ margin: "var(--space-2) 0 0" }}>Probá con un período más largo — &quot;Este mes&quot; o &quot;Este año&quot;.</p>
-        </div>
-      ) : (
-        <>
-          <div
-            style={{
-              width: "100%",
-              height: 320,
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-md)",
-              padding: 16,
-              marginBottom: "var(--space-3)",
-            }}
-          >
-            <ResponsiveContainer>
-              <BarChart data={daily}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="day" stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 12 }} />
-                <YAxis stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
-                  labelStyle={{ color: "var(--text-dim)" }}
-                  formatter={(value: number) => fmt(value)}
-                />
-                <Legend verticalAlign="bottom" wrapperStyle={{ fontSize: 13, color: "var(--text-dim)" }} />
-                {/* Orden fijo de colores (paleta validada con el validador de
-                    la skill dataviz en este mismo orden de adyacencia), y 2px
-                    de separación entre segmentos apilados. */}
-                <Bar dataKey="commission" name="Comisión ML" stackId="a" fill="var(--chart-commission)" stroke="var(--surface)" strokeWidth={2} />
-                <Bar dataKey="shipping" name="Envío" stackId="a" fill="var(--chart-shipping)" stroke="var(--surface)" strokeWidth={2} />
-                <Bar dataKey="tax" name="Otros impuestos" stackId="a" fill="var(--chart-tax)" stroke="var(--surface)" strokeWidth={2} />
-                <Bar dataKey="iva" name="IVA (saldo a AFIP)" stackId="a" fill="var(--chart-iva)" stroke="var(--surface)" strokeWidth={2} />
-                <Bar dataKey="cost" name="Costo de producto" stackId="a" fill="var(--chart-cost)" stroke="var(--surface)" strokeWidth={2} />
-                <Bar dataKey="netProfit" name="Ganancia neta" stackId="a" fill="var(--positive)" stroke="var(--surface)" strokeWidth={2} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <details className="explain-box">
-            <summary>¿Qué muestra este gráfico?</summary>
-            <p>
-              Cada barra es un día y muestra en qué se fue tu facturación: la comisión de Mercado Libre, el
-              envío, los impuestos que cargaste a mano por producto, el IVA que le queda a pagar a AFIP, el
-              costo del producto, y lo que sobra como ganancia neta real.
-            </p>
-            <p>
-              <strong>IVA</strong>: el precio publicado en Mercado Libre ya lo incluye. De cada $121 que cobrás,
-              $21 no son tuyos. Contra ese débito se descuenta el IVA que ya pagaste en la comisión, el envío,
-              la publicidad y el costo del producto — lo que sobra es lo que sale de tu bolsillo, calculado al
-              21% (Responsable Inscripto).
-            </p>
-          </details>
-        </>
-      )}
 
       {billing?.available && billing.buckets.length > 0 && (
         <>

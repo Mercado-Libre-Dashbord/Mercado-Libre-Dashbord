@@ -428,6 +428,36 @@ export async function updateProductPriceStock(
   });
 }
 
+/**
+ * Visitas a las publicaciones del vendedor en un rango de fechas.
+ *
+ * Devuelve null (y no 0) si Mercado Libre no da el dato: 0 visitas y "no
+ * sabemos" son cosas distintas, y mostrar 0 haría ver una conversión
+ * imposible.
+ */
+export async function getStoreVisits(
+  accountId: string,
+  sellerId: string,
+  dateFrom: string,
+  dateTo: string
+): Promise<number | null> {
+  const token = await getValidAccessToken(accountId);
+  // El endpoint espera timestamps completos con offset, no fechas sueltas.
+  const from = `${dateFrom}T00:00:00.000-00:00`;
+  const to = `${dateTo}T23:59:59.999-00:00`;
+  try {
+    const res = await mlFetch(
+      `/users/${sellerId}/items_visits?date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}`,
+      token
+    );
+    const total = Number(res?.total_visits);
+    return Number.isFinite(total) ? total : null;
+  } catch (err) {
+    console.warn("No se pudieron obtener las visitas:", (err as Error).message);
+    return null;
+  }
+}
+
 // ── API de facturación de Mercado Libre ──────────────────────────────────
 // Fuente de verdad de lo que ML EFECTIVAMENTE cobró (comisiones, envíos,
 // percepciones impositivas, Product Ads), a diferencia del resto de la app
