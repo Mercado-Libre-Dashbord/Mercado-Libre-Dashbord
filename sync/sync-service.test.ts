@@ -56,7 +56,7 @@ describe("runSync", () => {
       return runSync(client, account.id, "SELLER1", "2026-01-01T00:00:00Z");
     });
 
-    expect(result).toEqual({ productsSynced: 1, ordersSynced: 1, adsRowsSynced: 1 });
+    expect(result).toEqual({ productsSynced: 1, ordersSynced: 1, adsRowsSynced: 1, billingChargesSynced: 0 });
 
     const item = await withScope({ accountId: account.id }, async (client) => {
       const r = await client.query<{ net_profit: number; cost_applied: number }>(
@@ -65,7 +65,11 @@ describe("runSync", () => {
       );
       return r.rows[0];
     });
-    expect(Number(item.net_profit)).toBe(430); // 1000 - 130 - 90 - 50 - 300
+    // 1000 − 130 − 90 − 50 − 300 = 430 antes de impuestos, menos el IVA que
+    // esta venta le deja a pagar a ARCA: débito 21/121 de 1000, contra el
+    // crédito de la comisión, el envío, la publicidad y el costo. Da 430/1,21,
+    // que es la misma cuenta que calcular todo neto de IVA.
+    expect(Number(item.net_profit)).toBeCloseTo(430 / 1.21, 6);
     expect(Number(item.cost_applied)).toBe(300);
   });
 

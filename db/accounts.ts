@@ -87,9 +87,23 @@ export async function getAccountByLoyaltyKeyHash(db: QueryExecutor, keyHash: str
   return result.rows[0] ? mapRow(result.rows[0]) : null;
 }
 
-export async function setLoyaltyApiKeyHash(db: QueryExecutor, accountId: string, keyHash: string): Promise<void> {
-  await db.query(
-    `UPDATE accounts SET loyalty_api_key_hash = $1, loyalty_api_key_created_at = now() WHERE id = $2`,
+/**
+ * Guarda el hash de la credencial. Devuelve si efectivamente escribió.
+ *
+ * El dato importa: la política de RLS puede dejar el UPDATE en cero filas sin
+ * error si el scope no corresponde al dueño. Sin este chequeo, el vendedor se
+ * llevaba una clave que no quedó guardada en ningún lado y la app de la
+ * billetera recibía 401 para siempre, sin ninguna pista de por qué.
+ */
+export async function setLoyaltyApiKeyHash(
+  db: QueryExecutor,
+  accountId: string,
+  keyHash: string
+): Promise<boolean> {
+  const result = await db.query<{ id: string }>(
+    `UPDATE accounts SET loyalty_api_key_hash = $1, loyalty_api_key_created_at = now()
+      WHERE id = $2 RETURNING id`,
     [keyHash, accountId]
   );
+  return result.rows.length > 0;
 }

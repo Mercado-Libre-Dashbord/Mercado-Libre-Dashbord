@@ -118,3 +118,94 @@ describe("RLS account isolation (real Postgres, not mocked)", () => {
     expect(aView.items).toEqual([{ unit_price: 500 }]);
   });
 });
+
+/**
+ * La credencial de fidelización abre una tercera vía en la política de
+ * `accounts`: quien conoce el hash puede ver ESA cuenta. Es la única parte del
+ * sistema que se puede consultar sin sesión de usuario, así que conviene
+ * probar contra Postgres de verdad que no abre nada más de lo que dice.
+ */
+describe("credencial de fidelización contra RLS real", () => {
+  beforeAll(() => {
+    process.env.DATABASE_URL = TEST_DATABASE_URL;
+  });
+
+  afterAll(async () => {
+    const { closeDb } = await import("./client");
+    await closeDb();
+  });
+
+  it("con la credencial se ve su cuenta, sin sesión de usuario", async () => {
+    const { withScope } = await import("./client");
+    const { createAccount, getAccountByLoyaltyKeyHash, setLoyaltyApiKeyHash } = await import("./accounts");
+    const { generateApiKey, hashApiKey } = await import("@/lib/loyalty-auth");
+
+    const account = await withScope({ isAdmin: true }, (client) =>
+      createAccount(client, "Con credencial", `k.${nanoid(6)}@example.com`)
+    );
+
+    // El email va normalizado —createAccount lo pasa a minúsculas— porque es
+    // contra ese valor que compara la política de RLS.
+    const key = generateApiKey();
+    const wrote = await withScope({ accountId: account.id, userEmail: account.ownerEmail }, (client) =>
+      setLoyaltyApiKeyHash(client, account.id, hashApiKey(key))
+    );
+    expect(wrote).toBe(true);
+
+    // Sin isAdmin y sin userEmail: exactamente como llega la app de la
+    // billetera. Si la política estuviera mal, esto devolvería null.
+    const hash = hashApiKey(key);
+    const found = await withScope({ loyaltyKeyHash: hash }, (client) =>
+      getAccountByLoyaltyKeyHash(client, hash)
+    );
+
+    expect(found?.id).toBe(account.id);
+  });
+
+  it("una credencial equivocada no devuelve NINGUNA cuenta", async () => {
+    const { withScope } = await import("./client");
+    const { createAccount, getAccountByLoyaltyKeyHash, setLoyaltyApiKeyHash } = await import("./accounts");
+    const { generateApiKey, hashApiKey } = await import("@/lib/loyalty-auth");
+
+    const account = await withScope({ isAdmin: true }, (client) =>
+      createAccount(client, "Otra", `k2.${nanoid(6)}@example.com`)
+    );
+    await withScope({ accountId: account.id, userEmail: account.ownerEmail }, (client) =>
+      setLoyaltyApiKeyHash(client, account.id, hashApiKey(generateApiKey()))
+    );
+
+    const otroHash = hashApiKey(generateApiKey());
+    const found = await withScope({ loyaltyKeyHash: otroHash }, (client) =>
+      getAccountByLoyaltyKeyHash(client, otroHash)
+    );
+
+    expect(found).toBeNull();
+  });
+
+  it("la credencial NO deja leer datos de otras cuentas", async () => {
+    // El riesgo real de agregar una vía a la política: que sirva de llave
+    // maestra. Con la credencial puesta, una consulta sin WHERE tiene que
+    // seguir devolviendo una sola cuenta — la suya.
+    const { withScope } = await import("./client");
+    const { createAccount, setLoyaltyApiKeyHash } = await import("./accounts");
+    const { generateApiKey, hashApiKey } = await import("@/lib/loyalty-auth");
+
+    const accountA = await withScope({ isAdmin: true }, (client) =>
+      createAccount(client, "Con clave", `m1.${nanoid(6)}@example.com`)
+    );
+    await withScope({ isAdmin: true }, (client) => createAccount(client, "Ajena", `m2.${nanoid(6)}@example.com`));
+
+    const key = generateApiKey();
+    await withScope({ accountId: accountA.id, userEmail: accountA.ownerEmail }, (client) =>
+      setLoyaltyApiKeyHash(client, accountA.id, hashApiKey(key))
+    );
+
+    const rows = await withScope({ loyaltyKeyHash: hashApiKey(key) }, async (client) => {
+      const result = await client.query("SELECT id FROM accounts");
+      return result.rows as { id: string }[];
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(accountA.id);
+  });
+});
