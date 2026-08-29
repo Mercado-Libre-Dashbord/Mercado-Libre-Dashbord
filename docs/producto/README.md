@@ -11,6 +11,11 @@ marca cómo. Cuando algo es una decisión que todavía no tomamos, se marca
 `DECISIÓN PENDIENTE` en vez de inventar una respuesta. Si al leer algo no
 coincide con el código, es un bug del documento: corregilo en el mismo PR.
 
+> 📄 **La versión de una sola pieza**, en el mismo formato que el documento de
+> Loyalty, está en [`docs/RETAIL-PRODUCTO-COMPLETO.html`](../RETAIL-PRODUCTO-COMPLETO.html).
+> Es la que se comparte con alguien que se suma. Los archivos de esta carpeta
+> son el detalle por área.
+
 ## Índice
 
 | Documento | Para qué sirve | Quién lo necesita |

@@ -1,0 +1,1456 @@
+<title>MetricsField Retail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --ground: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef0f3;
+    --ink: #0e0f11;
+    --ink-2: #33373d;
+    --muted: #656b74;
+    --faint: #e2e5e9;
+    --rule: #cfd4da;
+
+    --niebla: #c8d8e8;
+    --niebla-ink: #2c4a6b;
+    --verde: #c8ddd0;
+    --verde-ink: #1f5c3f;
+    --ambar-bg: #f5ecd8;
+    --ambar-ink: #7a5a14;
+    --alerta-bg: #f6e2e2;
+    --alerta-ink: #8a3535;
+
+    --radius: 12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d0e10;
+      --surface: #16181b;
+      --surface-2: #1d2024;
+      --ink: #f2f3f5;
+      --ink-2: #c8ccd2;
+      --muted: #949aa3;
+      --faint: #262a2f;
+      --rule: #333941;
+
+      --niebla: #1e3550;
+      --niebla-ink: #a8c8e8;
+      --verde: #16332a;
+      --verde-ink: #7fd4a8;
+      --ambar-bg: #322914;
+      --ambar-ink: #e0bd72;
+      --alerta-bg: #331d1d;
+      --alerta-ink: #e8a0a0;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0d0e10;
+    --surface: #16181b;
+    --surface-2: #1d2024;
+    --ink: #f2f3f5;
+    --ink-2: #c8ccd2;
+    --muted: #949aa3;
+    --faint: #262a2f;
+    --rule: #333941;
+
+    --niebla: #1e3550;
+    --niebla-ink: #a8c8e8;
+    --verde: #16332a;
+    --verde-ink: #7fd4a8;
+    --ambar-bg: #322914;
+    --ambar-ink: #e0bd72;
+    --alerta-bg: #331d1d;
+    --alerta-ink: #e8a0a0;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, .display {
+    font-family: Montserrat, ui-sans-serif, system-ui, sans-serif;
+    text-wrap: balance;
+  }
+
+  code, .mono, .num {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  code {
+    background: var(--surface-2);
+    padding: 0.12em 0.36em;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+
+  /* ---------- nav ---------- */
+  .bar {
+    position: sticky; top: 0; z-index: 30;
+    background: color-mix(in srgb, var(--ground) 92%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--faint);
+  }
+  .bar-in {
+    max-width: 1120px; margin: 0 auto;
+    padding: 0.55rem 1.5rem;
+    display: flex; align-items: center; gap: 1.3rem;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .bar-in::-webkit-scrollbar { display: none; }
+  .mark {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-family: Montserrat, sans-serif; font-weight: 900;
+    font-size: 0.72rem; letter-spacing: 0.06em;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .mark svg { width: 19px; height: 19px; flex-shrink: 0; }
+  .bar nav { display: flex; gap: 1rem; }
+  .bar nav a {
+    color: var(--muted); text-decoration: none;
+    font-size: 0.76rem; white-space: nowrap;
+    padding: 0.2rem 0; border-bottom: 1.5px solid transparent;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .bar nav a:hover { color: var(--ink); border-bottom-color: var(--ink); }
+  .bar nav a:focus-visible { outline: 2px solid var(--niebla-ink); outline-offset: 3px; border-radius: 2px; }
+
+  main { max-width: 1120px; margin: 0 auto; padding: 0 1.5rem 6rem; }
+  .col { max-width: 70ch; }
+
+  /* ---------- masthead ---------- */
+  header.mast { padding: 3.4rem 0 2rem; border-bottom: 1px solid var(--rule); }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.66rem; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 1.1rem;
+  }
+  h1 {
+    font-size: clamp(2rem, 5vw, 3rem); line-height: 1.04;
+    letter-spacing: -0.035em; font-weight: 900;
+    margin: 0 0 1.1rem; max-width: 20ch;
+  }
+  .stand { font-size: 1.05rem; color: var(--ink-2); max-width: 62ch; margin: 0; }
+  .mast-meta {
+    display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem;
+    margin-top: 1.5rem; font-size: 0.74rem; color: var(--muted);
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  .thesis {
+    margin: 2rem 0 0; padding: 1.6rem 1.7rem;
+    background: var(--ink); color: var(--ground);
+    border-radius: var(--radius);
+  }
+  .thesis p { margin: 0; font-size: 1.12rem; line-height: 1.5; max-width: 56ch; font-weight: 500; }
+  .thesis strong { font-weight: 700; }
+  .thesis .sub {
+    margin-top: 0.9rem; font-size: 0.88rem;
+    color: color-mix(in srgb, var(--ground) 65%, transparent);
+    max-width: 62ch; font-weight: 400;
+  }
+
+  /* ---------- sections ---------- */
+  section { padding-top: 3.2rem; scroll-margin-top: 3.6rem; }
+  .s-head { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.4rem; }
+  .s-num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem; color: var(--muted); font-weight: 600;
+    padding-top: 0.35rem; flex-shrink: 0;
+  }
+  h2 {
+    font-size: clamp(1.35rem, 2.6vw, 1.72rem);
+    letter-spacing: -0.028em; font-weight: 800;
+    margin: 0; line-height: 1.18;
+  }
+  .s-sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 1.5rem 2.5rem; max-width: 62ch; }
+  h3 { font-size: 1.02rem; font-weight: 700; margin: 2.1rem 0 0.7rem; letter-spacing: -0.012em; }
+  p { margin: 0 0 1rem; }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.25rem; }
+  li { margin-bottom: 0.45rem; }
+  li::marker { color: var(--muted); }
+
+  /* ---------- chips ---------- */
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.62rem; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; padding: 0.18rem 0.5rem;
+    border-radius: 5px; white-space: nowrap;
+  }
+  .c-ok { background: var(--verde); color: var(--verde-ink); }
+  .c-wait { background: var(--ambar-bg); color: var(--ambar-ink); }
+  .c-no { background: var(--alerta-bg); color: var(--alerta-ink); }
+  .c-data { background: var(--niebla); color: var(--niebla-ink); }
+  .c-flat { background: var(--surface-2); color: var(--muted); }
+
+  /* ---------- tables ---------- */
+  .tw {
+    overflow-x: auto; margin: 1.1rem 0 1.5rem;
+    border: 1px solid var(--faint); border-radius: 10px; background: var(--surface);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; min-width: 560px; }
+  thead th {
+    text-align: left; font-family: "IBM Plex Mono", monospace;
+    font-size: 0.63rem; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+    padding: 0.72rem 1rem; border-bottom: 1px solid var(--rule);
+    background: var(--surface-2); white-space: nowrap;
+  }
+  td { padding: 0.72rem 1rem; border-bottom: 1px solid var(--faint); vertical-align: top; line-height: 1.5; }
+  tbody tr:last-child td { border-bottom: none; }
+  td strong { font-weight: 600; }
+  td.num, th.num { text-align: right; }
+
+  /* ---------- cards ---------- */
+  .cards { display: grid; gap: 0.7rem; margin: 1.1rem 0 1.5rem; }
+  .cards.two { grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .cards.two { grid-template-columns: 1fr 1fr; } }
+  .card {
+    background: var(--surface); border: 1px solid var(--faint);
+    border-radius: 10px; padding: 1.05rem 1.2rem;
+    border-left: 3px solid var(--rule);
+  }
+  .card.ok { border-left-color: var(--verde-ink); }
+  .card.wait { border-left-color: var(--ambar-ink); }
+  .card.no { border-left-color: var(--alerta-ink); }
+  .card.data { border-left-color: var(--niebla-ink); }
+  .card-h { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; margin-bottom: 0.35rem; }
+  .card-t { font-weight: 700; font-size: 0.95rem; letter-spacing: -0.012em; }
+  .card p { margin: 0; font-size: 0.88rem; color: var(--ink-2); line-height: 1.55; }
+  .card p + p { margin-top: 0.55rem; }
+
+  /* ---------- callout ---------- */
+  .callout {
+    border: 1px solid var(--rule); border-radius: 10px;
+    padding: 1.05rem 1.25rem; margin: 1.4rem 0; background: var(--surface);
+  }
+  .callout p { margin: 0; font-size: 0.89rem; line-height: 1.58; }
+  .callout p + p { margin-top: 0.6rem; }
+  .callout .eyebrow { margin-bottom: 0.45rem; }
+  .callout.warn { background: var(--ambar-bg); border-color: var(--ambar-ink); }
+  .callout.warn .eyebrow, .callout.warn p { color: var(--ambar-ink); }
+  .callout.info { background: var(--niebla); border-color: var(--niebla-ink); }
+  .callout.info .eyebrow, .callout.info p { color: var(--niebla-ink); }
+  .callout.bad { background: var(--alerta-bg); border-color: var(--alerta-ink); }
+  .callout.bad .eyebrow, .callout.bad p { color: var(--alerta-ink); }
+
+  /* ---------- flow ---------- */
+  .flow { margin: 1.2rem 0 1.5rem; display: grid; gap: 0; }
+  .step {
+    display: grid; grid-template-columns: auto 1fr; gap: 0 1rem;
+    padding: 0 0 1.15rem 0; position: relative;
+  }
+  .step:last-child { padding-bottom: 0; }
+  .step-n {
+    width: 27px; height: 27px; border-radius: 50%;
+    background: var(--ink); color: var(--ground);
+    display: grid; place-items: center;
+    font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; font-weight: 600;
+    flex-shrink: 0; z-index: 1;
+  }
+  .step:not(:last-child)::before {
+    content: ""; position: absolute; left: 13px; top: 27px; bottom: 0;
+    width: 1px; background: var(--rule);
+  }
+  .step-body { padding-top: 0.15rem; }
+  .step-t { font-weight: 700; font-size: 0.93rem; margin-bottom: 0.15rem; }
+  .step-d { font-size: 0.87rem; color: var(--ink-2); line-height: 1.5; }
+
+  /* ---------- contrast ---------- */
+  .contrast { display: grid; gap: 0.7rem; margin: 1.2rem 0 1.5rem; }
+  @media (min-width: 720px) { .contrast { grid-template-columns: 1fr 1fr; } }
+  .side { border-radius: 10px; padding: 1.15rem 1.3rem; border: 1px solid var(--faint); }
+  .side.antes { background: var(--surface-2); }
+  .side.despues { background: var(--surface); border-color: var(--niebla-ink); }
+  .side h4 {
+    margin: 0 0 0.75rem; font-family: Montserrat, sans-serif;
+    font-size: 0.8rem; font-weight: 800; letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .side.antes h4 { color: var(--muted); }
+  .side.despues h4 { color: var(--niebla-ink); }
+  .side ul { margin: 0; padding-left: 1.1rem; }
+  .side li { font-size: 0.87rem; color: var(--ink-2); margin-bottom: 0.4rem; }
+
+  /* ---------- ledger: el desglose de la ganancia ---------- */
+  .ledger {
+    margin: 1.3rem 0 1.5rem; background: var(--surface);
+    border: 1px solid var(--faint); border-radius: 10px;
+    overflow: hidden; max-width: 46rem;
+  }
+  .ledger-cap {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.63rem; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--muted); padding: 0.7rem 1.15rem;
+    background: var(--surface-2); border-bottom: 1px solid var(--rule);
+  }
+  .lrow {
+    display: grid; grid-template-columns: 1.2rem 1fr auto;
+    gap: 0 0.75rem; align-items: baseline;
+    padding: 0.5rem 1.15rem; border-bottom: 1px solid var(--faint);
+    font-size: 0.88rem;
+  }
+  .lrow:last-child { border-bottom: none; }
+  .lsign {
+    font-family: "IBM Plex Mono", monospace; font-weight: 600;
+    color: var(--muted); font-size: 0.9rem;
+  }
+  .lname { color: var(--ink-2); }
+  .lname small { display: block; color: var(--muted); font-size: 0.79rem; line-height: 1.4; }
+  .lsrc {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.68rem;
+    color: var(--muted); white-space: nowrap; text-align: right;
+  }
+  .lrow.base { background: var(--surface-2); }
+  .lrow.base .lname, .lrow.base .lsign { color: var(--ink); font-weight: 600; }
+  .lrow.total {
+    background: var(--ink); color: var(--ground);
+    border-bottom: none; padding-top: 0.7rem; padding-bottom: 0.7rem;
+  }
+  .lrow.total .lname { color: var(--ground); font-weight: 700; }
+  .lrow.total .lsign { color: color-mix(in srgb, var(--ground) 60%, transparent); }
+  .lrow.total .lsrc { color: color-mix(in srgb, var(--ground) 60%, transparent); }
+
+  /* ---------- kpi strip ---------- */
+  .kpis { display: grid; gap: 0.7rem; margin: 1.2rem 0 1.5rem; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 900px) { .kpis { grid-template-columns: repeat(4, 1fr); } }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--faint);
+    border-radius: 10px; padding: 0.95rem 1.05rem;
+  }
+  .kpi-l {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.63rem;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+  .kpi-v {
+    font-family: Montserrat, sans-serif; font-weight: 800;
+    font-size: 1.45rem; letter-spacing: -0.03em; line-height: 1;
+    font-variant-numeric: tabular-nums; margin-bottom: 0.35rem;
+  }
+  .kpi-d { font-size: 0.79rem; color: var(--ink-2); line-height: 1.45; }
+
+  hr.div { border: none; border-top: 1px solid var(--rule); margin: 3.4rem 0 0; }
+  footer {
+    margin-top: 3.2rem; padding-top: 1.4rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.78rem; color: var(--muted);
+  }
+  footer p { margin: 0 0 0.4rem; }
+  footer a { color: var(--muted); }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="bar">
+  <div class="bar-in">
+    <span class="mark">
+      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" aria-hidden="true">
+        <circle cx="50" cy="30" r="16"/><circle cx="72" cy="50" r="16"/><circle cx="50" cy="70" r="16"/><circle cx="28" cy="50" r="16"/>
+      </svg>
+      RETAIL
+    </span>
+    <nav aria-label="Secciones">
+      <a href="#dolor">El dolor</a>
+      <a href="#competencia">Competencia</a>
+      <a href="#ganamos">Dónde ganamos</a>
+      <a href="#flujo">El flujo</a>
+      <a href="#datos">Los datos</a>
+      <a href="#formula">La fórmula</a>
+      <a href="#panel">El panel</a>
+      <a href="#loyalty">Con Loyalty</a>
+      <a href="#negocio">Negocio</a>
+      <a href="#estado">Estado</a>
+      <a href="#gonogo">Go/no-go</a>
+      <a href="#codigo">Código</a>
+    </nav>
+  </div>
+</div>
+
+<main>
+
+  <header class="mast">
+    <p class="eyebrow">Documento de producto · fuente de verdad</p>
+    <h1>MetricsField Retail</h1>
+    <p class="stand">
+      Todo lo que el equipo necesita saber para terminar el desarrollo: qué es,
+      qué dolor resuelve, contra quién competimos, qué datos genera, cómo se
+      conecta con Loyalty y qué falta construir.
+    </p>
+    <div class="mast-meta">
+      <span>Agosto 2026</span>
+      <span>Estado: en producción, 1 cliente</span>
+      <span>retail.metricsfield.com</span>
+      <span>rama claude/vercel-build-pages-app-error-vjbctn</span>
+    </div>
+
+    <div class="thesis">
+      <p>
+        <strong>Mercado Libre le dice al vendedor cuánto facturó.
+        Nosotros le decimos cuánto ganó — y después lo ayudamos a que ese
+        comprador vuelva.</strong>
+      </p>
+      <p class="sub">
+        El panel de rentabilidad es el caballo de Troya: resuelve un dolor
+        urgente y entra rápido. La fidelización es el negocio: es lo único que
+        la competencia no está haciendo. Este documento es la fuente de verdad
+        de Retail; si algo lo contradice, vale este.
+      </p>
+    </div>
+  </header>
+
+  <!-- ══════════ 1 ══════════ -->
+  <section id="que-es">
+    <div class="s-head"><span class="s-num">01</span><h2>Qué es y para quién</h2></div>
+    <p class="s-sub">Un panel web que responde una sola pregunta con precisión: cuánta plata gana este negocio, y con qué producto.</p>
+
+    <p class="col">
+      El vendedor conecta su cuenta de Mercado Libre con un click, carga el
+      costo de sus productos una vez, y a partir de ahí el sistema sincroniza
+      solo: publicaciones, órdenes, envíos, publicidad, preguntas y la
+      facturación que le hace Mercado Libre. Con eso calcula la ganancia real
+      de cada venta y la agrega por período, por producto y por día.
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>Perfil</th><th>Volumen típico</th><th>Por qué nos necesita</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Vendedor de Mercado Libre</strong><br><span style="color:var(--muted);font-size:0.85em">Responsable Inscripto, Argentina</span></td>
+            <td>20 a 500 órdenes/mes · 10 a 300 publicaciones</td>
+            <td>Un error de margen le duele, pero no tiene contador que le arme reportes por SKU</td>
+            <td><span class="chip c-ok">En producción</span></td>
+          </tr>
+          <tr>
+            <td><strong>Vendedor multicanal</strong><br><span style="color:var(--muted);font-size:0.85em">ML + Tienda Nube + tienda propia</span></td>
+            <td>Igual, repartido entre canales</td>
+            <td>Hoy tiene la rentabilidad partida en tres lugares y ninguno le da el total</td>
+            <td><span class="chip c-wait">Adaptador escrito</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Quién <em>no</em> es nuestro cliente, todavía</h3>
+    <p class="col">
+      El <strong>Monotributista</strong>, porque el cálculo de IVA asume
+      Responsable Inscripto — es un supuesto explícito, no un olvido. Y el
+      <strong>vendedor enterprise con ERP propio</strong>, que ya tiene esto
+      resuelto adentro de su sistema y no va a migrar.
+    </p>
+  </section>
+
+  <!-- ══════════ 2 ══════════ -->
+  <section id="dolor">
+    <div class="s-head"><span class="s-num">02</span><h2>El dolor que resuelve</h2></div>
+    <p class="s-sub">"Vendo mucho, pero no sé si gano."</p>
+
+    <p class="col">
+      Mercado Libre le muestra al vendedor <strong>cuánto vendió</strong>. No le
+      muestra <strong>cuánto le quedó</strong>. Entre esos dos números hay seis
+      descuentos, y el vendedor no los ve juntos en ningún lado.
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Descuento</th><th>Dónde lo ve hoy</th></tr></thead>
+        <tbody>
+          <tr><td>Comisión de Mercado Libre</td><td>En cada orden, una por una</td></tr>
+          <tr><td>Costo de envío que paga él</td><td>En el detalle del envío, si lo busca</td></tr>
+          <tr><td>Publicidad (Mercado Ads)</td><td>En otro panel, agregado, sin atribuir a productos</td></tr>
+          <tr><td>Costo de la mercadería</td><td>En su cabeza o en una planilla</td></tr>
+          <tr><td><strong>IVA</strong> (débito menos crédito)</td><td><span style="color:var(--alerta-ink)">En ningún lado — aparece recién en la DDJJ</span></td></tr>
+          <tr><td>IIBB y otros impuestos</td><td><span style="color:var(--alerta-ink)">En ningún lado</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Los tres hallazgos con datos reales del primer cliente</h3>
+    <p class="col">
+      Esto no salió de un diseño ni de una hipótesis. Salió de conectar una
+      cuenta real y mirar los números. Los tres son el caso normal, no el borde.
+    </p>
+
+    <div class="cards">
+      <div class="card no">
+        <div class="card-h"><span class="card-t">El IVA no se estaba restando</span><span class="chip c-no">−17% de la facturación</span></div>
+        <p>El precio publicado en Mercado Libre <strong>ya incluye IVA</strong>: de cada $121 que cobra el vendedor, $21 son débito fiscal. La ganancia estaba inflada en aproximadamente el 17% de la facturación. Un producto con 20% de margen aparente tenía en realidad 3%.</p>
+      </div>
+      <div class="card no">
+        <div class="card-h"><span class="card-t">El costo de envío figuraba en $0</span></div>
+        <p>El objeto <code>shipping</code> de una orden <strong>solo trae un id</strong>, nunca el costo. Cualquier implementación que lea <code>order.shipping.cost</code> obtiene <code>undefined</code>, lo convierte en cero y reporta ganancia inflada. El costo real está en otro endpoint, en el arreglo <code>senders[]</code>.</p>
+      </div>
+      <div class="card no">
+        <div class="card-h"><span class="card-t">Las órdenes canceladas contaban como ventas</span></div>
+        <p>Una orden cancelada de <strong>$20.900</strong> estaba aportando <strong>$6.963 de "ganancia"</strong> que nunca existió. La API las devuelve con todas sus líneas y sus importes; si no se filtran, suman.</p>
+      </div>
+    </div>
+
+    <div class="contrast">
+      <div class="side antes">
+        <h4>Lo que sabe sin nosotros</h4>
+        <ul>
+          <li>Cuánto facturó este mes</li>
+          <li>Cuántas órdenes hizo</li>
+          <li>Cuál es su producto más vendido</li>
+          <li style="color:var(--muted)"><em>Y una planilla que actualiza los domingos, tarde y mal</em></li>
+        </ul>
+      </div>
+      <div class="side despues">
+        <h4>Lo que sabe con Retail</h4>
+        <ul>
+          <li>Cuánto ganó de verdad, después de los seis descuentos</li>
+          <li>Qué margen deja cada producto, uno por uno</li>
+          <li>Cuál vende mucho y deja poco — y cuál al revés</li>
+          <li>Qué producto está acelerando y cuál se está apagando</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>El dolor secundario, que es el que abre la puerta a Loyalty</h3>
+    <p class="col">
+      Aun calculando bien el margen, el vendedor sigue teniendo el mismo
+      problema de fondo: <strong>todas sus ventas son transacciones de una sola
+      vez</strong>. Mercado Libre es dueño de la relación con el comprador. No
+      le da el mail ni el teléfono, y cada venta nueva le cuesta lo mismo que la
+      primera: comisión completa más publicidad completa.
+    </p>
+  </section>
+
+  <!-- ══════════ 3 ══════════ -->
+  <section id="competencia">
+    <div class="s-head"><span class="s-num">03</span><h2>Contra quién competimos de verdad</h2></div>
+    <p class="s-sub">Investigación de agosto 2026. Esto corrige lo que creíamos hace un mes.</p>
+
+    <div class="callout bad">
+      <p class="eyebrow">Corrección que hay que asumir</p>
+      <p>
+        Veníamos diciendo que <strong>"nadie descuenta el IVA"</strong>. Es
+        falso, y hay que dejar de decirlo en las demos. Las calculadoras
+        gratuitas argentinas calculan IVA y percepciones, y hay un competidor
+        que lo hace sobre ventas reales. <strong>No estamos en un mercado
+        vacío.</strong>
+      </p>
+    </div>
+
+    <div class="cards two">
+      <div class="card no">
+        <div class="card-h"><span class="card-t">Real Trends</span><span class="chip c-no">líder local</span></div>
+        <p>Argentino. Partner Platinum de Mercado Libre. <strong>Más de 10.000 vendedores</strong> y 1.200 tiendas oficiales (Frávega, Adidas, Walmart, Simmons). Rentable desde los 8 meses de vida.</p>
+        <p>Suite operativa completa: preguntas y mensajes con IA, ventas, envíos, monitoreo de competencia, multi-cuenta, apps iOS/Android, y una tienda online propia gratis. <strong>Y sí muestra cuánta plata queda de cada venta</strong>, calculando el envío por código postal.</p>
+        <p><strong>Cómo cobra:</strong> escalones según las ventas de los últimos 30 días, ajuste automático mes a mes, cobro por Mercado Pago, precios sin IVA. 30 días de prueba sin tarjeta.</p>
+      </div>
+      <div class="card no">
+        <div class="card-h"><span class="card-t">ProfitOS</span><span class="chip c-no">nuestra propuesta, en México</span></div>
+        <p>Hace <strong>exactamente lo que hacemos nosotros</strong>: ganancia real por venta con comisión, IVA, envío y costo de mercadería desglosados en tiempo real. Además: inventario FIFO, reportes fiscales, publicidad integrada, multi-usuario.</p>
+        <p><strong>Cómo cobra:</strong> todas las funciones en todos los planes; lo que cambia es el volumen de órdenes y la cantidad de usuarios. 14 días de prueba sin tarjeta.</p>
+        <p>Es la validación más fuerte de que el problema existe y se puede cobrar por resolverlo. También es la prueba de que <strong>nuestro cálculo, solo, no es un foso</strong>.</p>
+      </div>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Quién</th><th>Qué es</th><th>Amenaza</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Nubimetrics</strong></td>
+            <td>Inteligencia de mercado (qué vender, qué hace la competencia). Fundada en 2013. Sin precios públicos, venta consultiva. 14 días de prueba.</td>
+            <td><span class="chip c-flat">Baja</span> Categoría distinta: investigación de mercado, no rentabilidad propia</td>
+          </tr>
+          <tr>
+            <td><strong>Snow Profit</strong></td>
+            <td>Rentabilidad y P&amp;L para Mercado Libre y Amazon. México y Argentina.</td>
+            <td><span class="chip c-wait">Media</span> Se acerca. Hay que seguirlo</td>
+          </tr>
+          <tr>
+            <td><strong>Calculadoras gratuitas</strong><br><span style="color:var(--muted);font-size:0.85em">Unidrop, DigitalSellers, Calcusite, SmartSelling, SpomBridge…</span></td>
+            <td>Simuladores de <em>una venta hipotética</em>. Sí calculan IVA y percepciones.</td>
+            <td><span class="chip c-wait">Ancla de precio</span> Bajas como producto, pero acostumbran al vendedor a que "esto es gratis"</td>
+          </tr>
+          <tr>
+            <td><strong>Astroselling, UpSeller, ERPs</strong></td>
+            <td>Conectores multicanal y gestión. ERPs de US$500 a 1.500/mes.</td>
+            <td><span class="chip c-flat">Baja</span> Otra categoría y otro presupuesto</td>
+          </tr>
+          <tr>
+            <td><strong>El panel nativo de Mercado Libre</strong></td>
+            <td>Métricas de negocio, gratis, ya instalado.</td>
+            <td><span class="chip c-wait">Estructural</span> Tienen todo menos el costo de la mercadería — que solo lo tiene el vendedor</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Lo que sí sostiene la evidencia</h3>
+    <p class="col">Es más chico que lo que decíamos, pero es cierto y es defendible:</p>
+    <ul class="col">
+      <li>Las calculadoras gratis calculan <strong>una venta hipotética</strong>, no las que ocurrieron. Nunca te dicen cuánto ganaste el mes pasado.</li>
+      <li>Nadie que hayamos encontrado <strong>excluye del resultado las líneas sin costo cargado</strong>. Todos muestran un número igual.</li>
+      <li>El competidor que hace lo mismo que nosotros <strong>es mexicano</strong>, y su fiscalidad es otra (IVA 16% + ISR).</li>
+    </ul>
+  </section>
+
+  <!-- ══════════ 4 ══════════ -->
+  <section id="ganamos">
+    <div class="s-head"><span class="s-num">04</span><h2>Dónde ganamos y dónde perdemos</h2></div>
+    <p class="s-sub">Ordenado por cuán defendible es, no por cuán lindo suena.</p>
+
+    <div class="cards">
+      <div class="card ok">
+        <div class="card-h"><span class="card-t">Fidelización dentro de Mercado Libre</span><span class="chip c-ok">el foso</span></div>
+        <p><strong>No encontramos ninguna herramienta de terceros que corra un programa de fidelización a nivel vendedor dentro de Mercado Libre.</strong> Es aire libre.</p>
+        <p>Y el terreno está preparado por la propia plataforma: Mercado Libre <strong>ya premia las opiniones</strong>, especialmente las que llevan foto, así que el comprador está educado en la mecánica. El <strong>canal de difusión</strong> deja que un vendedor les mande cupones exclusivos a sus seguidores — o sea que juntar seguidores tiene un uso nativo y concreto. Y el cupón se emite por la <strong>API oficial</strong>.</p>
+        <p>Nadie ocupa ese espacio, la plataforma lo habilita, y ya lo tenemos construido en fase 1.</p>
+      </div>
+      <div class="card ok">
+        <div class="card-h"><span class="card-t">Fiscalidad argentina de verdad</span><span class="chip c-ok">defendible</span></div>
+        <p>El competidor funcional directo es mexicano. Somos el único que combina IVA de Responsable Inscripto calculado como débito menos crédito sobre ventas reales, alícuota de IIBB configurable, y facturación ARCA en el roadmap.</p>
+        <p>La facturación electrónica es un <strong>cambio de categoría</strong>: pasamos de "herramienta que mira" a "herramienta que hace". Nadie se cambia de software que le emite las facturas. Eso es retención pura.</p>
+      </div>
+      <div class="card data">
+        <div class="card-h"><span class="card-t">La honestidad del número</span><span class="chip c-data">copiable, pero nadie lo hace</span></div>
+        <p>Excluir las líneas sin costo cargado, mostrar "Sin dato" en vez de cero, explicar cada fórmula con un ⓘ dentro de la app. Cualquiera puede copiarlo en un sprint — pero primero tiene que querer, y la mayoría prefiere mostrar un número lindo.</p>
+      </div>
+      <div class="card data">
+        <div class="card-h"><span class="card-t">Multicanal</span><span class="chip c-wait">en construcción</span></div>
+        <p>Mercado Libre + Tienda Nube + tienda propia en un solo número de rentabilidad. Real Trends tiene tienda propia; ProfitOS es solo ML. Cuando esté terminado nos pone en un lugar donde hoy no hay nadie exacto.</p>
+      </div>
+    </div>
+
+    <h3>Donde perdemos hoy, sin vueltas</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Ellos tienen</th><th>Nosotros</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Real Trends:</strong> 10.000+ vendedores, partner Platinum, apps móviles, monitoreo de competencia, IA para preguntas, multi-cuenta, tienda incluida</td><td>1 cliente, sin app móvil, sin multi-usuario</td></tr>
+          <tr><td><strong>ProfitOS:</strong> inventario FIFO, reportes fiscales, multi-usuario</td><td>Nada de eso</td></tr>
+          <tr><td><strong>Ambos:</strong> marca, casos, comunidad</td><td>Cero reputación pública</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout info">
+      <p class="eyebrow">Posicionamiento</p>
+      <p>
+        <strong>No competir de frente contra Real Trends.</strong> Ellos son una
+        suite operativa; nosotros somos rentabilidad + fidelización con
+        fiscalidad argentina profunda. Un vendedor puede tener las dos cosas, y
+        en el corto plazo es el escenario más probable.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════ 5 ══════════ -->
+  <section id="flujo">
+    <div class="s-head"><span class="s-num">05</span><h2>El flujo, paso a paso</h2></div>
+    <p class="s-sub">Del registro al primer número real. El único trabajo manual es el paso 4.</p>
+
+    <div class="flow">
+      <div class="step">
+        <div class="step-n">1</div>
+        <div class="step-body">
+          <div class="step-t">Entra con Google</div>
+          <div class="step-d">Sin usuario ni contraseña nuevos. El admin dio de alta la cuenta antes con el mail con el que va a entrar.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">2</div>
+        <div class="step-body">
+          <div class="step-t">Conecta Mercado Libre</div>
+          <div class="step-d">OAuth, una sola vez. Un banner en el Resumen lo invita a hacerlo si todavía no lo hizo. <strong>Acá arranca la prueba gratis de 30 días.</strong></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">3</div>
+        <div class="step-body">
+          <div class="step-t">Sincroniza</div>
+          <div class="step-d">Un solo botón trae publicaciones, órdenes, envíos, publicidad y la facturación de ML — toda la historia, no solo lo nuevo. Va mostrando "N de M órdenes…" porque un proceso largo sin señal de vida parece colgado.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">4</div>
+        <div class="step-body">
+          <div class="step-t">Carga los costos <span class="chip c-wait" style="margin-left:0.3rem">único trabajo manual</span></div>
+          <div class="step-d">En la pantalla Productos, uno por uno. Es el dato que nadie más tiene y el que enciende todo el producto: sin costo, ese producto no aporta a la ganancia neta en ningún lado.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">5</div>
+        <div class="step-body">
+          <div class="step-t">Ve el número</div>
+          <div class="step-d">Ganancia neta, margen, qué producto deja plata y cuál no. Es el momento "ah, mirá" — y casi siempre el número sorprende para abajo.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">6</div>
+        <div class="step-body">
+          <div class="step-t">Activa fidelización <span class="chip c-flat" style="margin-left:0.3rem">opcional</span></div>
+          <div class="step-d">Configura las misiones y el premio, y el programa empieza a convertir compradores en seguidores y opiniones. Ver <a href="#loyalty" style="color:inherit">sección 09</a>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <p class="eyebrow">Por qué la prueba gratis arranca en el paso 2 y no en el 1</p>
+      <p>
+        Igual que Real Trends. Así el reloj corre sobre alguien que ya hizo el
+        paso difícil, y la prueba misma hace el onboarding. Nuestro valor es
+        literalmente invisible hasta que la cuenta está conectada y los costos
+        cargados: <strong>la prueba no es marketing, es la demo</strong>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════ 6 ══════════ -->
+  <section id="datos">
+    <div class="s-head"><span class="s-num">06</span><h2>Qué datos vamos a obtener</h2></div>
+    <p class="s-sub">De dónde sale cada dato, y —tan importante— qué NO tenemos, para que nadie lo prometa en una demo.</p>
+
+    <h3>De la API de Mercado Libre</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Dato</th><th>Endpoint</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr><td>Publicaciones</td><td class="mono">/users/{id}/items/search + /items</td><td>Título, SKU, precio, stock, categoría, foto. De a 20 ids por llamada</td></tr>
+          <tr><td>Nombre de categoría</td><td class="mono">/categories/{id}</td><td><code>/items</code> solo devuelve el id. Cada categoría se resuelve una vez</td></tr>
+          <tr><td>Órdenes</td><td class="mono">/orders/search</td><td><strong>Paginado.</strong> Sin paginar, la sincronización histórica se cortaba en silencio a las 50</td></tr>
+          <tr><td>Detalle de orden</td><td class="mono">/orders/{id}</td><td>Líneas, precio, cantidad, comisión, estado</td></tr>
+          <tr><td><strong>Costo de envío</strong></td><td class="mono">/shipments/{id}/costs</td><td>Lo que paga el <strong>vendedor</strong> (<code>senders[]</code>). Header <code>x-format-new: true</code></td></tr>
+          <tr><td>Publicidad</td><td class="mono">…/product_ads/campaigns</td><td>Header <code>Api-Version: 2</code>. <strong>Máximo 90 días por consulta</strong>: los períodos largos se parten en ventanas</td></tr>
+          <tr><td>Preguntas</td><td class="mono">/questions/search</td><td>Solo las no respondidas</td></tr>
+          <tr><td>Visitas</td><td class="mono">/users/{id}/items_visits</td><td>Devuelve <code>null</code> si ML no tiene el dato — <strong>no cero</strong></td></tr>
+          <tr><td>Facturación de ML</td><td class="mono">/billing/integration/…</td><td>Todo lo que ML le cobró al vendedor, por concepto</td></tr>
+          <tr><td>Emitir cupón</td><td class="mono">POST /seller-promotions/promotions</td><td>Cupón oficial. Lo usa Fidelización</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Del vendedor, a mano</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Dato</th><th>Dónde se carga</th><th>Por qué no puede venir de la API</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Costo de cada producto</strong></td><td>Pantalla Productos</td><td>Nadie lo tiene salvo él. Es el dato que hace posible todo el producto — y nuestra defensa contra que Mercado Libre construya esto</td></tr>
+          <tr><td>Alícuota de otros impuestos</td><td>Configuración</td><td>Depende de la jurisdicción y la situación fiscal</td></tr>
+          <tr><td>Publicidad externa</td><td>Campañas</td><td>No hay integración por API con Meta, Google ni TikTok</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout warn">
+      <p class="eyebrow">Lo que NO tenemos — no prometerlo en una demo</p>
+      <p>
+        <strong>Atribución de publicidad por venta.</strong> Sabemos cuánto se
+        gastó por día y cuántas unidades se vendieron ese día. No sabemos qué
+        venta vino de qué anuncio. Por eso la publicidad externa entra a nivel
+        cuenta pero no se prorratea por producto.
+      </p>
+      <p>
+        <strong>Datos del comprador.</strong> Mercado Libre no da mail ni
+        teléfono. Es deliberado de su parte, y es exactamente el motivo por el
+        que Loyalty existe.
+      </p>
+      <p>
+        <strong>Costos operativos del vendedor</strong> (alquiler, sueldos,
+        packaging). La "ganancia neta" es ganancia por venta, no resultado del
+        negocio. Conviene ser explícitos con el cliente.
+      </p>
+      <p>
+        <strong>Devoluciones parciales.</strong> Hoy medimos devoluciones como
+        órdenes canceladas.
+      </p>
+    </div>
+
+    <h3>Lo que asumimos</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Asunción</th><th>Por qué</th><th>Cuándo revisarla</th></tr></thead>
+        <tbody>
+          <tr><td>El vendedor es <strong>Responsable Inscripto</strong>, IVA 21%</td><td>Es el caso del 100% de los clientes hoy. Un campo configurable sería una perilla más para equivocarse</td><td>El día que aparezca un Monotributista o exento</td></tr>
+          <tr><td>La mercadería se compra <strong>con factura A</strong></td><td>Es lo normal en un RI que compra a proveedores formales</td><td>Si aparece un cliente que compra sin factura, le estamos sobreestimando la ganancia</td></tr>
+          <tr><td>Ventas anteriores al primer costo cargado usan <strong>ese primer costo</strong></td><td>Para una venta vieja, la mejor estimación disponible es mejor que "sin dato"</td><td>Es la única estimación que nos permitimos, y es explícita</td></tr>
+          <tr><td>La publicidad diaria se reparte <strong>por unidad vendida ese día</strong></td><td>No hay datos de atribución</td><td>Si Mercado Ads algún día expone atribución por orden</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════ 7 ══════════ -->
+  <section id="formula">
+    <div class="s-head"><span class="s-num">07</span><h2>Cómo se calcula la ganancia</h2></div>
+    <p class="s-sub">Es el corazón del producto. Se calcula por línea de venta y se congela.</p>
+
+    <div class="ledger">
+      <div class="ledger-cap">Ganancia neta de una línea de venta</div>
+      <div class="lrow base">
+        <span class="lsign"></span>
+        <span class="lname">Precio unitario × cantidad</span>
+        <span class="lsrc">API de ML</span>
+      </div>
+      <div class="lrow">
+        <span class="lsign">−</span>
+        <span class="lname">Comisión de Mercado Libre</span>
+        <span class="lsrc">API de ML</span>
+      </div>
+      <div class="lrow">
+        <span class="lsign">−</span>
+        <span class="lname">Costo de envío
+          <small>Prorrateado entre las líneas si la orden tiene varios productos</small>
+        </span>
+        <span class="lsrc">/shipments/{id}/costs</span>
+      </div>
+      <div class="lrow">
+        <span class="lsign">−</span>
+        <span class="lname">Publicidad asignada
+          <small>(gasto del día ÷ unidades vendidas ese día) × unidades de esta línea</small>
+        </span>
+        <span class="lsrc">Mercado Ads</span>
+      </div>
+      <div class="lrow">
+        <span class="lsign">−</span>
+        <span class="lname">Costo del producto × cantidad
+          <small>Con historial: un costo cargado hoy no reescribe el margen de marzo</small>
+        </span>
+        <span class="lsrc">Carga el vendedor</span>
+      </div>
+      <div class="lrow">
+        <span class="lsign">−</span>
+        <span class="lname">Otros impuestos × cantidad
+          <small>IIBB, internos. Alícuota única de la cuenta</small>
+        </span>
+        <span class="lsrc">Configuración</span>
+      </div>
+      <div class="lrow">
+        <span class="lsign">−</span>
+        <span class="lname">IVA a pagar
+          <small>Débito fiscal − crédito fiscal (comisión, envío, publicidad, costo)</small>
+        </span>
+        <span class="lsrc">Calculado, 21%</span>
+      </div>
+      <div class="lrow total">
+        <span class="lsign">=</span>
+        <span class="lname">Ganancia neta</span>
+        <span class="lsrc">order_items.net_profit</span>
+      </div>
+    </div>
+
+    <h3>Las dos reglas que no se negocian</h3>
+    <div class="cards">
+      <div class="card ok">
+        <div class="card-h"><span class="card-t">Si falta el costo, el resultado es <code>null</code> — no cero</span></div>
+        <p>Esa línea no entra en ningún agregado de ganancia, y el panel avisa abajo de las tarjetas: <em>"N línea(s) de venta sin costo cargado, excluidas de Ganancia neta"</em>. <strong>Un número inventado que parece razonable es peor que un hueco visible</strong>, porque el hueco se arregla y el número inventado se cree.</p>
+      </div>
+      <div class="card ok">
+        <div class="card-h"><span class="card-t">Las canceladas nunca suman</span></div>
+        <p>Se excluyen de todos los agregados financieros. En la tabla de órdenes se muestran igual, tachadas y con "—" en la ganancia, porque el vendedor quiere verlas.</p>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <p class="eyebrow">Por qué el IVA se muestra como una línea aparte</p>
+      <p>
+        Restar el saldo de IVA es <strong>matemáticamente idéntico</strong> a
+        calcular toda la rentabilidad en valores netos. Se muestra como una
+        franja propia porque <em>"esto se te va en IVA"</em> se entiende, y
+        <em>"todos los números divididos por 1,21"</em> no.
+      </p>
+    </div>
+
+    <div class="callout">
+      <p class="eyebrow">Por qué los cálculos se congelan en la base</p>
+      <p>
+        Cada fila de <code>order_items</code> guarda comisión, envío,
+        publicidad, costo, impuestos, IVA y ganancia <strong>ya
+        resueltos</strong>. La rentabilidad de una venta de marzo tiene que
+        seguir siendo la misma en agosto, aunque el vendedor haya cambiado el
+        precio o el costo. Si se calculara al vuelo, el pasado cambiaría solo
+        cada vez que alguien toca una configuración.
+      </p>
+      <p>
+        Cuando la fórmula cambia, se sube <code>ORDER_SYNC_VERSION</code> y la
+        próxima sincronización repara los datos viejos. <strong>Si tocás cómo se
+        calcula algo, subí esa constante</strong> — es la única forma de que la
+        corrección llegue a lo ya sincronizado.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════ 8 ══════════ -->
+  <section id="panel">
+    <div class="s-head"><span class="s-num">08</span><h2>El panel del cliente</h2></div>
+    <p class="s-sub">Siete pantallas. El selector de período —hoy, semana, mes, trimestre, semestre, año, histórico— manda sobre todo lo que está abajo.</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Pantalla</th><th>Para qué entra el cliente</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Resumen</strong></td><td>Su tablero diario: 8 indicadores, 3 gráficos, top de productos y últimas órdenes</td></tr>
+          <tr><td><strong>Productos</strong></td><td>Cargar costos y ver el margen de cada publicación. También edita el precio, y se escribe en Mercado Libre</td></tr>
+          <tr><td><strong>Consultas</strong></td><td>Responder preguntas de compradores sin salir del panel</td></tr>
+          <tr><td><strong>Campañas</strong></td><td>Ver y pausar Mercado Ads, cargar publicidad externa</td></tr>
+          <tr><td><strong>Tendencias</strong></td><td>Qué productos aceleran y cuáles se apagan</td></tr>
+          <tr><td><strong>Fidelización</strong></td><td>Configurar misiones y premio</td></tr>
+          <tr><td><strong>Configuración</strong></td><td>Alícuota de otros impuestos</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Los ocho indicadores del Resumen</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Indicador</th><th>Fórmula</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Facturación</strong> <span class="chip c-flat">principal</span></td><td>Σ (precio × cantidad), antes de descontar nada</td></tr>
+          <tr><td>Órdenes</td><td>Órdenes con al menos una venta en el período</td></tr>
+          <tr><td>Devoluciones</td><td>Plata de órdenes canceladas. No resta de la facturación; se muestra aparte con su % sobre las ventas</td></tr>
+          <tr><td>Ticket promedio</td><td>Facturación ÷ Órdenes</td></tr>
+          <tr><td><strong>Ganancia neta</strong></td><td>La fórmula de la <a href="#formula" style="color:inherit">sección 07</a></td></tr>
+          <tr><td>Margen neto</td><td>Ganancia neta ÷ Facturación</td></tr>
+          <tr><td>Facturación neta</td><td>Facturación − comisión − envío. El "cuánto me depositan"</td></tr>
+          <tr><td>Visitas</td><td>Visitas a las publicaciones, con la tasa de conversión debajo. <strong>"Sin dato" si ML no responde, nunca cero</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="col">
+      Facturación, Órdenes y Ganancia neta muestran además una <strong>píldora de
+      variación</strong> contra el período anterior equivalente.
+    </p>
+
+    <h3>Decisiones de diseño que vale la pena conocer</h3>
+    <div class="cards">
+      <div class="card data">
+        <div class="card-h"><span class="card-t">Cada número explica cómo se calcula</span></div>
+        <p>Todas las tarjetas tienen un ícono <strong>ⓘ</strong> con la fórmula en castellano. El cliente tiene que poder auditarnos. Es además la única forma de que el soporte no escale con la cantidad de clientes.</p>
+      </div>
+      <div class="card data">
+        <div class="card-h"><span class="card-t">Más vendido ≠ más rentable</span></div>
+        <p>El top por unidades y el top por ganancia están <strong>uno al lado del otro a propósito</strong>: casi nunca son el mismo producto, y ahí es donde el cliente toma decisiones.</p>
+      </div>
+      <div class="card data">
+        <div class="card-h"><span class="card-t">Tendencias mide velocidad, no total</span></div>
+        <p>Compara la segunda mitad del período contra la primera en <strong>unidades por semana</strong>. Un producto que vendió 100 el mes pasado y 60 este está cayendo — pero por total acumulado del trimestre sigue pareciendo la estrella. La velocidad avisa antes.</p>
+      </div>
+      <div class="card data">
+        <div class="card-h"><span class="card-t">Nada se manda a ML sin confirmación</span></div>
+        <p>Las respuestas a consultas se sugieren con reglas por palabra clave —sin IA, sin costo, sin latencia— y no se envían solas. Si la regla no reconoce el patrón, deja el campo vacío.</p>
+      </div>
+      <div class="card data">
+        <div class="card-h"><span class="card-t">La conciliación con la factura de ML</span></div>
+        <p>Mostramos los cargos <strong>reales</strong> de la factura de Mercado Libre al lado de <strong>lo que nosotros calculamos</strong>. Es una herramienta de auditoría: si las dos columnas no cierran, nuestro cálculo tiene un problema. <strong>No entran en la ganancia neta</strong> — sumarlos los contaría dos veces.</p>
+      </div>
+      <div class="card data">
+        <div class="card-h"><span class="card-t">Los estados vacíos son parte del producto</span></div>
+        <p>Sin ML conectado → invitación a conectar. Sin ventas → "probá con un período más largo", sugiriendo cuál. Falta una migración → banner <strong>solo para el admin</strong> con el SQL exacto; el cliente nunca lo ve.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ 9 ══════════ -->
+  <section id="loyalty">
+    <div class="s-head"><span class="s-num">09</span><h2>Cómo se conecta con Loyalty</h2></div>
+    <p class="s-sub">Retail es la vertical digital de Loyalty. El motor de puntos ya está construido de este lado.</p>
+
+    <div class="callout info">
+      <p class="eyebrow">El mapa del ecosistema</p>
+      <p>
+        <strong>Reviews</strong> consigue que el cliente hable bien del comercio
+        en Google. <strong>Loyalty</strong> consigue que ese cliente vuelva y
+        que sepamos quién es. <strong>Retail</strong> es la única pata que sabe
+        <em>cuánta plata deja</em> cada una de esas ventas — y por eso es la que
+        puede probar que el programa de fidelización se paga solo.
+      </p>
+    </div>
+
+    <h3>Cómo encaja con la vertical digital de Loyalty</h3>
+    <p class="col">
+      El documento de Loyalty define dos puertas de entrada: el standee NFC en
+      el mostrador (comercio físico) y <strong>el QR impreso dentro del paquete
+      (tienda digital)</strong>. Esa segunda puerta es Mercado Libre, y su
+      backend es este proyecto.
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Pieza</th><th>Dónde vive</th><th>Estado</th></tr></thead>
+        <tbody>
+          <tr><td>QR impreso, landing, tarjeta en la wallet</td><td>Proyecto Loyalty</td><td><span class="chip c-flat">Diseñado</span></td></tr>
+          <tr><td>Catálogo de misiones y puntos</td><td><strong>Retail</strong> · <code>lib/loyalty.ts</code></td><td><span class="chip c-ok">Construido, 11 tests</span></td></tr>
+          <tr><td>Registro de miembros y misiones cumplidas</td><td><strong>Retail</strong> · <code>db/loyalty.ts</code></td><td><span class="chip c-ok">Construido</span></td></tr>
+          <tr><td>Emisión del cupón oficial de ML</td><td><strong>Retail</strong> · API de seller-promotions</td><td><span class="chip c-ok">Construido</span></td></tr>
+          <tr><td>Pantalla de configuración del vendedor</td><td><strong>Retail</strong> · <code>/loyalty</code></td><td><span class="chip c-ok">Construido</span></td></tr>
+          <tr><td>Medición del retorno del programa</td><td><strong>Retail</strong></td><td><span class="chip c-no">Falta</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout warn">
+      <p class="eyebrow">Dos cosas para reconciliar con el documento de Loyalty</p>
+      <p>
+        <strong>1. La vertical de Mercado Libre ya no es "solo diseñada".</strong>
+        El motor de puntos, las misiones y la emisión del cupón están
+        construidos y testeados en Retail.
+      </p>
+      <p>
+        <strong>2. El bloqueante que figura ahí ya está resuelto.</strong> El
+        documento de Loyalty dice que el dashboard de ML es "single-tenant con
+        base local" y que convertirlo en SaaS multi-cliente es un proyecto en sí
+        mismo. <strong>Ya está hecho</strong>: Retail es multi-cuenta, corre
+        sobre Postgres con aislamiento por RLS, tiene login con Google y panel
+        de admin, y está en producción con un cliente real. Ese ítem se puede
+        cerrar.
+      </p>
+    </div>
+
+    <h3>La regla que ordena todo el módulo</h3>
+    <div class="callout">
+      <p class="eyebrow">Nada saca al comprador de Mercado Libre</p>
+      <p>
+        Todas las misiones son acciones que ocurren dentro de la plataforma, y
+        el premio es un cupón oficial emitido por su propia API. No es una
+        preferencia estética: <strong>desviar tráfico fuera de la plataforma es
+        la causa más común de suspensión de cuentas</strong>, y una suspensión
+        le cuesta al cliente mucho más de lo que nos paga.
+      </p>
+      <p>
+        <strong>Está testeado:</strong> hay un test que falla si el texto de
+        cualquier misión llega a mencionar instagram, tiktok, facebook,
+        whatsapp, una web o un <code>http</code>. Si alguien rompe el principio,
+        el CI lo frena.
+      </p>
+    </div>
+
+    <h3>Las misiones</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Misión</th><th>Qué ve el comprador</th><th class="num">Puntos</th><th>Por qué está</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Seguir la tienda</strong></td><td>"Seguí nuestra tienda oficial en Mercado Libre"</td><td class="num mono">1000</td><td>La de mayor retorno: lo deja alcanzado por las notificaciones nativas y el canal de difusión</td></tr>
+          <tr><td><strong>Dejar una opinión</strong></td><td>"Contá qué te pareció el producto en Mis Compras"</td><td class="num mono">500</td><td>Genera el activo que mejora la conversión de la publicación para siempre</td></tr>
+          <tr><td><strong>Opinión con foto</strong></td><td>"Sumá una foto a tu opinión"</td><td class="num mono">300</td><td>Una opinión con foto pesa mucho más que una de texto</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout warn">
+      <p class="eyebrow">Regla legal que no se negocia</p>
+      <p>
+        <strong>Se premia el acto de opinar, nunca la calificación.</strong>
+        Condicionar puntos a una opinión positiva es manipulación de reseñas: lo
+        prohíbe Mercado Libre, es desleal con los otros compradores, y destruye
+        el valor de las opiniones para todos. Hay un test que falla si el texto
+        de esa misión llega a contener "positiv", "5 estrellas", "buena" o
+        "cinco". <strong>Es la misma familia de problema que el star-gate que ya
+        se eliminó de Reviews.</strong>
+      </p>
+    </div>
+
+    <h3>El premio</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Parámetro</th><th class="num">Default</th><th>Por qué</th></tr></thead>
+        <tbody>
+          <tr><td>Puntos necesarios</td><td class="num mono">1500</td><td>Alcanzable completando dos misiones. Un umbral inalcanzable desmotiva más que no tener programa</td></tr>
+          <tr><td>Monto del cupón</td><td class="num mono">$2.000</td><td>Cupón oficial de Mercado Libre, emitido por su API</td></tr>
+          <tr><td>Compra mínima</td><td class="num mono">$10.000</td><td>El cupón tiene que traer una venta, no regalar plata</td></tr>
+          <tr><td><strong>Presupuesto tope</strong></td><td class="num mono">$100.000</td><td><strong>Obligatorio.</strong> Es el freno: sin tope, un error de configuración vacía la caja del vendedor</td></tr>
+          <tr><td>Programa activo</td><td class="num mono">off</td><td>Nadie activa un programa de descuentos por accidente</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>La costura con la app de billetera</h3>
+    <p class="col">
+      La captación del comprador —QR, tarjeta, pantalla de misiones— vive en el
+      proyecto Loyalty. La integración es <strong>una sola ruta</strong>, ya
+      construida y testeada de este lado:
+    </p>
+
+    <div class="cards">
+      <div class="card data">
+        <div class="card-h"><span class="card-t">POST /api/loyalty/members</span><span class="chip c-ok">6 tests</span></div>
+        <p>Recibe <code>{ memberId, mission, email?, name? }</code>. Registra la misión, recalcula los puntos, y devuelve cuántos faltan para el premio. Al alcanzar el umbral emite el cupón y devuelve el código.</p>
+        <p><strong>Idempotente:</strong> repetir la misma misión no suma puntos dos veces. <strong>Un cupón por miembro:</strong> el chequeo de "ya se le otorgó" ocurre <em>antes</em> de llamar a Mercado Libre, así que un reintento por timeout no crea una campaña duplicada.</p>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <p class="eyebrow">El agujero conocido</p>
+      <p>
+        <strong>No podemos verificar que el comprador realmente siguió la tienda
+        o dejó la opinión.</strong> Mercado Libre no expone un endpoint para
+        consultarlo. Hoy es sistema de honor: la app de billetera dice que la
+        misión se cumplió y este proyecto le cree. Es el mismo compromiso que ya
+        tomó Loyalty con las misiones autodeclaradas, y el mismo que toma el
+        competidor directo.
+      </p>
+      <p>
+        La mitigación que ya está: <strong>el tope de presupuesto</strong>.
+        Aunque alguien abuse, el daño está acotado a un número que el vendedor
+        eligió.
+      </p>
+    </div>
+
+    <h3>Por qué el combo es más que la suma</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Fidelización genera…</th><th>…que Retail mide en</th></tr></thead>
+        <tbody>
+          <tr><td>Opiniones nuevas</td><td><strong>Visitas y conversión</strong> — una publicación con opiniones convierte más</td></tr>
+          <tr><td>Seguidores</td><td><strong>Ventas recurrentes</strong>, visibles en Tendencias como productos que aceleran</td></tr>
+          <tr><td>Cupones usados</td><td><strong>Ticket promedio</strong> y <strong>Ganancia neta</strong></td></tr>
+          <tr><td>Segunda compra</td><td><strong>Facturación</strong>, sin haber pagado publicidad nueva por ella</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col">
+      Y al revés: <strong>Retail es lo que le dice al vendedor si el programa
+      vale la pena.</strong> Sin la medición de rentabilidad, un programa de
+      descuentos es fe. Con ella, es una decisión.
+    </p>
+  </section>
+
+  <!-- ══════════ 10 ══════════ -->
+  <section id="negocio">
+    <div class="s-head"><span class="s-num">10</span><h2>Modelo de negocio</h2></div>
+    <p class="s-sub">Escalones por cantidad de órdenes. Decidido, con la investigación que lo respalda.</p>
+
+    <h3>Por qué volumen y no un precio fijo</h3>
+    <ul class="col">
+      <li>Un precio fijo <strong>espanta al vendedor chico y deja plata sobre la mesa con el grande</strong>. No hay un número que sirva para los dos.</li>
+      <li><strong>Los dos referentes que importan cobran así.</strong> Real Trends por ventas de los últimos 30 días; sellerboard —el equivalente de nuestro producto en Amazon, internacional— por órdenes mensuales, de US$19 a US$79. Cuando el líder local y el referente global convergen en la misma estructura sin conocerse, esa estructura es la correcta.</li>
+      <li>Nuestro costo real de servir también escala con las órdenes.</li>
+    </ul>
+
+    <div class="callout info">
+      <p class="eyebrow">Por qué por órdenes y no por facturación — la razón argentina</p>
+      <p>
+        Con inflación, la facturación de un vendedor sube todos los meses
+        <strong>sin que haya crecido nada</strong>. Si escalonáramos por
+        facturación, la inflación sola lo empujaría a un plan más caro y
+        sentiría —con razón— que le cobramos más por vender lo mismo.
+        <strong>La cantidad de órdenes es la única medida de volumen que la
+        inflación no distorsiona.</strong>
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Plan</th><th>Órdenes por mes</th><th class="num">Precio relativo</th><th>Para quién</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Base</strong></td><td>hasta 50</td><td class="num mono">1×</td><td>El que arranca, o el que vende pocas cosas caras</td></tr>
+          <tr><td><strong>Crece</strong></td><td>51 – 250</td><td class="num mono">2×</td><td>El grueso del mercado</td></tr>
+          <tr><td><strong>Escala</strong></td><td>251 – 1.000</td><td class="num mono">3×</td><td>Vendedor consolidado, probablemente con empleados</td></tr>
+          <tr><td><strong>Pro</strong></td><td>más de 1.000</td><td class="num mono">4×</td><td>Tienda oficial chica</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="col">
+      <li><strong>Todas las funciones en todos los planes.</strong> Lo único que cambia es el volumen. Evita la peor conversación de ventas: "pagame más para ver un número que ya calculé".</li>
+      <li><strong>El escalón se recalcula solo cada mes.</strong> Nada de llamar para cambiar de plan.</li>
+      <li><strong>Cobro por Mercado Pago</strong>, precios sin IVA (el cliente lo toma como crédito fiscal), <strong>descuento anual del 20%</strong>.</li>
+    </ul>
+
+    <div class="callout warn">
+      <p class="eyebrow">Lo único abierto: el número en pesos</p>
+      <p>
+        No se fija acá a propósito — cualquier cifra en pesos está vieja en tres
+        meses. El criterio, que sí vale siempre: <strong>el plan Base tiene que
+        costar menos que el margen que el vendedor recupera corrigiendo el
+        precio de UN solo producto.</strong> Si el panel le muestra que su
+        producto estrella deja 3% en vez de 20% y lo reajusta, eso solo paga el
+        año. Esa frase es, además, el argumento de venta.
+      </p>
+      <p>
+        <strong>Indexación:</strong> revisión manual trimestral con aviso. Atar
+        el precio al dólar es transparente pero psicológicamente caro — el
+        cliente lo lee como que le cobramos en dólares.
+      </p>
+    </div>
+
+    <h3>La prueba gratis: 30 días, sin tarjeta</h3>
+    <p class="col">
+      Los tres competidores relevantes la tienen sin tarjeta —Real Trends 30
+      días, ProfitOS 14, Nubimetrics 14—, y sellerboard un mes. Cobrar desde
+      cero nos pondría en desventaja sin ninguna contrapartida.
+      <strong>30 y no 14</strong> porque el vendedor tiene que cargar los costos
+      y después ver un ciclo completo: con 14 días, muchos llegan al final sin
+      haber terminado de cargar y se van sin haber visto nunca el producto
+      funcionando.
+    </p>
+    <p class="col">
+      Lo que <strong>no</strong> hacemos: plan gratis para siempre. En una
+      categoría con costo de soporte alto, es una forma lenta de morir.
+    </p>
+
+    <h3>Costos y canales</h3>
+    <p class="col">
+      <strong>Costo marginal por cliente: casi cero.</strong> No pagamos por
+      llamada a la API de Mercado Libre. Es bueno —el margen bruto es
+      altísimo— y también es una trampa, porque <strong>el costo real por
+      cliente es el soporte</strong>, y ese sí escala. La respuesta estructural
+      es que el producto explique sus cálculos dentro de la interfaz, no por
+      chat.
+    </p>
+    <p class="col">
+      <strong>El canal es el boca a boca entre vendedores</strong>, que están
+      agrupados y se recomiendan herramientas todo el tiempo. Real Trends creció
+      así. Dos canales adicionales a evaluar: el <strong>Centro de Partners de
+      Mercado Libre</strong> (donde están Real Trends y Nubimetrics, distribución
+      con el sello de la plataforma) y publicar una <strong>calculadora
+      gratuita</strong> que capture la búsqueda que hoy se llevan media docena
+      de sitios, y termine en <em>"esto es hipotético; conectá tu cuenta y te
+      calculo las reales"</em>.
+    </p>
+  </section>
+
+  <!-- ══════════ 11 ══════════ -->
+  <section id="estado">
+    <div class="s-head"><span class="s-num">11</span><h2>Estado real del desarrollo</h2></div>
+    <p class="s-sub">En producción con un cliente real. 173 tests pasan sin base de datos.</p>
+
+    <h3>Terminado y en producción</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Área</th><th>Estado</th></tr></thead>
+        <tbody>
+          <tr><td>Conexión OAuth con Mercado Libre</td><td><span class="chip c-ok">En producción</span></td></tr>
+          <tr><td>Sincronización de publicaciones, órdenes, envíos, publicidad y facturación</td><td><span class="chip c-ok">Por lotes y versionada</span></td></tr>
+          <tr><td>Cálculo de ganancia neta con los seis descuentos</td><td><span class="chip c-ok">Con tests</span></td></tr>
+          <tr><td>Panel de Resumen: 8 indicadores, 3 gráficos, tablas</td><td><span class="chip c-ok">Listo</span></td></tr>
+          <tr><td>Productos: costos con historial, margen, edición de precio en ML</td><td><span class="chip c-ok">Listo</span></td></tr>
+          <tr><td>Consultas, Campañas, Tendencias, Configuración</td><td><span class="chip c-ok">Listo</span></td></tr>
+          <tr><td>Fidelización fase 1: misiones, puntos, cupón oficial</td><td><span class="chip c-ok">Listo</span></td></tr>
+          <tr><td>Aislamiento por cuenta con RLS</td><td><span class="chip c-ok">Probado con 2 cuentas reales</span></td></tr>
+          <tr><td>Degradación cuando falta una migración</td><td><span class="chip c-ok">Listo</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout info">
+      <p class="eyebrow">Verificación</p>
+      <p>
+        <code>tsc --noEmit</code> limpio y <strong>173 tests pasan</strong> sin
+        base de datos. Otros 15 necesitan un Postgres real y fallan con
+        <code>ECONNREFUSED</code> si no está levantado — eso es esperado en
+        local, no un test roto.
+      </p>
+      <p>
+        Los 173 son el contrato de lo que ya funciona: <strong>si tu cambio los
+        rompe, el cambio está mal o el contrato cambió a propósito</strong> — y
+        en ese caso el test se actualiza en el mismo commit, explicando por qué.
+      </p>
+    </div>
+
+    <h3>Falta construir</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Qué</th><th>Estado</th><th>Bloqueante de</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Migración 008 + OAuth de Tienda Nube</strong><br><span style="color:var(--muted);font-size:0.85em">El adaptador está escrito y testeado; falta la conexión</span></td><td><span class="chip c-wait">Adaptador listo</span></td><td>El segundo canal, que es la mitad de la promesa</td></tr>
+          <tr><td><strong>Pantalla de miembros de fidelización</strong><br><span style="color:var(--muted);font-size:0.85em">Hoy el vendedor configura el programa a ciegas</span></td><td><span class="chip c-no">No empezado</span></td><td>Que se vea el módulo que nos diferencia</td></tr>
+          <tr><td><strong>Medición del retorno del programa</strong><br><span style="color:var(--muted);font-size:0.85em">Cuánta facturación vino de compradores con cupón</span></td><td><span class="chip c-no">No empezado</span></td><td>Justificar el precio entero</td></tr>
+          <tr><td><strong>Cobro</strong><br><span style="color:var(--muted);font-size:0.85em">Mercado Pago, escalones, prueba de 30 días</span></td><td><span class="chip c-no">No empezado</span></td><td>Facturar</td></tr>
+          <tr><td><strong>Autenticación de la API de Loyalty</strong><br><span style="color:var(--muted);font-size:0.85em">Cuando la billetera sea un servicio externo</span></td><td><span class="chip c-no">No empezado</span></td><td>Exponerla fuera de nuestra infraestructura</td></tr>
+          <tr><td><strong>Facturación ARCA</strong><br><span style="color:var(--muted);font-size:0.85em">El núcleo fiscal está escrito con 11 tests; falta la conexión con AFIP</span></td><td><span class="chip c-wait">En pausa</span></td><td>Cambiar de categoría</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Tareas que no son de código y bloquean</h3>
+    <div class="cards">
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">Correr la migración 008 en Supabase</span></div>
+        <p>No se auto-aplica. <strong>El SQL Editor corre todo lo pegado como una sola transacción</strong>: si una sentencia falla, se revierte todo en silencio. Por eso las migraciones van de a una y cada una termina con un <code>SELECT</code> de verificación.</p>
+      </div>
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">Subir el logo a <code>public/logo.png</code></span></div>
+        <p>Se sube desde la web de GitHub. El sidebar ya prueba cuatro extensiones y cae en el monograma si no encuentra ninguna. Instrucciones en <code>public/README-logo.md</code>.</p>
+      </div>
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">Registrarse como Partner de Tienda Nube</span></div>
+        <p>Crear la app, configurar el redirect, obtener App ID y Client Secret, definir el mail de contacto del <code>User-Agent</code>.</p>
+      </div>
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">Vercel Pro y Supabase Pro</span><span class="chip c-ok">decidido</span></div>
+        <p>El plan Hobby es para uso no comercial. Es requisito de lanzamiento, no un debate.</p>
+      </div>
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">Para ARCA: certificado digital y punto de venta</span></div>
+        <p>Más CUIT y condición fiscal. En pausa hasta que se decida la custodia de claves.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ 12 ══════════ -->
+  <section id="decisiones">
+    <div class="s-head"><span class="s-num">12</span><h2>Decisiones ya tomadas</h2></div>
+    <p class="s-sub">Para que nadie las re-litigue sin información nueva.</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Decisión</th><th>Por qué</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Escalones por cantidad de órdenes, no fijo ni por facturación</strong></td><td>Es la estructura del líder local y del referente global. Y las órdenes son la única medida de volumen que la inflación no distorsiona.</td></tr>
+          <tr><td><strong>Prueba gratis de 30 días, sin tarjeta</strong></td><td>Es el estándar de la categoría, y nuestro valor es invisible hasta que la cuenta está conectada. La prueba es la demo.</td></tr>
+          <tr><td><strong>Vercel Pro y Supabase Pro antes de facturar</strong></td><td>Hobby es para uso no comercial. Sin objeción de costo.</td></tr>
+          <tr><td><strong>Los cálculos se congelan en <code>order_items</code></strong></td><td>La rentabilidad de marzo tiene que seguir igual en agosto. Si se calculara al vuelo, el pasado cambiaría solo cuando alguien toca una configuración.</td></tr>
+          <tr><td><strong>Falta de dato se muestra como falta de dato</strong></td><td>Nunca cero, nunca estimación. Un número inventado que parece razonable es peor que un hueco visible.</td></tr>
+          <tr><td><strong>IVA estandarizado al 21%, sin configurar</strong></td><td>El 100% de los clientes hoy es Responsable Inscripto. Un campo configurable sería una perilla más para equivocarse, no una función.</td></tr>
+          <tr><td><strong>Otros impuestos a nivel cuenta, no por producto</strong></td><td>Antes eran una columna por producto: más trabajo de carga y más formas de equivocarse.</td></tr>
+          <tr><td><strong>Todo el programa de fidelización adentro de Mercado Libre</strong></td><td>Desviar tráfico afuera es la causa más común de suspensión. Hay tests que fallan si alguien rompe la regla.</td></tr>
+          <tr><td><strong>La app se conecta con un rol <code>app_user</code> sin privilegios</strong></td><td>El usuario <code>postgres</code> y la <code>service_role</code> de Supabase <strong>ignoran RLS por diseño</strong>. Con cualquiera de los dos, las políticas serían seguridad de utilería.</td></tr>
+          <tr><td><strong>Sin integración por API con Meta, Google y TikTok Ads</strong></td><td>Complejidad alta y, sin datos de atribución, el gasto igual no se puede prorratear por producto. La carga manual da el mismo valor.</td></tr>
+          <tr><td><strong>Respuestas a consultas por reglas, sin modelo de lenguaje</strong></td><td>Cubren la mayoría de las preguntas con cero costo y cero latencia. Revisable si aparecen preguntas que no cubren.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════ 13 ══════════ -->
+  <section id="pendiente">
+    <div class="s-head"><span class="s-num">13</span><h2>Lo que todavía falta definir</h2></div>
+    <p class="s-sub">Honestidad sobre los huecos abiertos.</p>
+
+    <div class="cards">
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">El número en pesos de los planes</span></div>
+        <p>La estructura está decidida; el nivel de precio no. El criterio está en la <a href="#negocio" style="color:inherit">sección 10</a>.</p>
+      </div>
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">¿Fidelización incluida o add-on?</span></div>
+        <p><strong>Recomendación: incluida.</strong> Es la diferenciación, y un módulo diferenciador que nadie prueba no diferencia nada. Puede volverse un plan superior cuando haya evidencia de que trae ventas — no antes.</p>
+      </div>
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">Custodia de certificados fiscales (ARCA)</span></div>
+        <p>Guardar el certificado de un tercero en un SaaS multi-cliente es una <strong>responsabilidad legal seria</strong>, no un problema de cifrado. Hay que decidir si la asumimos o delegamos en un proveedor habilitado <strong>antes</strong> de escribir código.</p>
+      </div>
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">La conciliación con la factura de ML</span></div>
+        <p>Los cargos reales se muestran al lado de nuestra estimación pero no entran en la ganancia. Cuando el cliente valide que cierran: ¿queda como auditoría, o reemplaza la estimación por orden? Lo real es más exacto pero llega con un mes de retraso.</p>
+      </div>
+      <div class="card wait">
+        <div class="card-h"><span class="card-t">Soporte para Monotributo</span></div>
+        <p>Hoy el IVA asume Responsable Inscripto. Es un campo en <code>accounts</code> el día que aparezca el primer cliente que lo necesite.</p>
+      </div>
+      <div class="card no">
+        <div class="card-h"><span class="card-t">Un segundo cliente que valide</span><span class="chip c-no">lo más importante</span></div>
+        <p>Tenemos uno, y es family and friends. La tarea más importante no es de desarrollo: <strong>conseguir un vendedor que no nos conozca y que diga "esto lo necesito"</strong>, y que después renueve pagando.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ 14 ══════════ -->
+  <section id="gonogo">
+    <div class="s-head"><span class="s-num">14</span><h2>Cómo sabemos si funcionó</h2></div>
+    <p class="s-sub">Pocas métricas y honestas. Si mentimos acá, nos mentimos a nosotros.</p>
+
+    <div class="kpis">
+      <div class="kpi">
+        <div class="kpi-l">Terminan de cargar costos</div>
+        <div class="kpi-v">&gt; 70%</div>
+        <div class="kpi-d">Es el único trabajo manual y el cuello de botella del valor. Si no cargan, el producto no existe para ellos.</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-l">Prueba → pago</div>
+        <div class="kpi-v" style="color:var(--muted)">a definir</div>
+        <div class="kpi-d">La medida de si el producto vale plata. Hay que fijar el target antes de abrir la prueba.</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-l">Bajas mensuales</div>
+        <div class="kpi-v">&lt; 5%</div>
+        <div class="kpi-d">En una herramienta de datos, irse es más fácil que quedarse.</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-l">Con fidelización activa</div>
+        <div class="kpi-v">&gt; 30%</div>
+        <div class="kpi-d">Si el diferenciador no se usa, no diferencia.</div>
+      </div>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Métrica</th><th>Target</th><th>Qué significa si no se cumple</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Cupones emitidos que terminan en compra</strong></td><td class="mono">medir primero</td><td>Los puntos no mueven la conducta. Problema de producto, igual que el retorno a 30 días en Loyalty.</td></tr>
+          <tr><td><strong>Números mal calculados reportados por clientes</strong></td><td class="mono">0</td><td>Nuestra promesa entera es la exactitud. <strong>Esta métrica sabotea todas las demás si no tiende a cero.</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout info">
+      <p class="eyebrow">Detalle de medición que importa</p>
+      <p>
+        Medir "terminan de cargar costos" <strong>por cantidad de
+        publicaciones</strong>, no solo por cuenta. Un vendedor con 20
+        publicaciones que carga 20 costos y uno con 300 que carga 20 se ven
+        igual en un promedio por cuenta, y son casos completamente distintos.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════ 15 ══════════ -->
+  <section id="codigo">
+    <div class="s-head"><span class="s-num">15</span><h2>Dónde está cada cosa en el código</h2></div>
+    <p class="s-sub">Repositorio <code>Mercado-Libre-Dashbord</code>. La regla de dependencias: <code>lib/</code> no importa nada de <code>db/</code>, <code>mcp/</code> ni <code>app/</code>.</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Necesito…</th><th>Está en</th></tr></thead>
+        <tbody>
+          <tr><td>La fórmula de la ganancia neta</td><td class="mono">sync/profitability.ts</td></tr>
+          <tr><td>El cálculo del IVA</td><td class="mono">lib/iva.ts</td></tr>
+          <tr><td>Qué estados no cuentan como venta</td><td class="mono">lib/order-status.ts</td></tr>
+          <tr><td>Los rangos de fecha del selector de período</td><td class="mono">lib/period.ts</td></tr>
+          <tr><td>Cliente de la API de Mercado Libre</td><td class="mono">mcp/tools.ts</td></tr>
+          <tr><td>Orquestación del sync y <code>ORDER_SYNC_VERSION</code></td><td class="mono">sync/sync-service.ts</td></tr>
+          <tr><td>Degradación cuando falta una migración</td><td class="mono">db/schema-capabilities.ts</td></tr>
+          <tr><td>Misiones, puntos y validación de fidelización</td><td class="mono">lib/loyalty.ts</td></tr>
+          <tr><td>La costura con la app de billetera</td><td class="mono">app/api/loyalty/members/route.ts</td></tr>
+          <tr><td>Núcleo fiscal de facturación (ARCA)</td><td class="mono">lib/invoicing.ts</td></tr>
+          <tr><td>Contrato multicanal y adaptador de Tienda Nube</td><td class="mono">channels/types.ts · channels/tiendanube.ts</td></tr>
+          <tr><td>Migraciones (correr a mano, en orden)</td><td class="mono">db/postgres/migrations/001…009</td></tr>
+          <tr><td>Aislamiento por cuenta, probado</td><td class="mono">db/rls-isolation.test.ts</td></tr>
+          <tr><td>El panel</td><td class="mono">app/page.tsx · app/globals.css</td></tr>
+          <tr><td><strong>La documentación de producto completa</strong></td><td class="mono">docs/producto/</td></tr>
+          <tr><td><strong>Este documento, en el repo</strong></td><td class="mono">docs/RETAIL-PRODUCTO-COMPLETO.html</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Convenciones</h3>
+    <ul class="col">
+      <li><strong>Todo el texto de cara al cliente en castellano rioplatense</strong>, en segunda persona ("cargá", "fijate"), sin jerga técnica. La app la usa un vendedor, no un contador ni un programador.</li>
+      <li><strong>Los comentarios explican el porqué, no el qué.</strong> Un comentario que dice lo que la línea ya dice es ruido; uno que dice por qué esa línea es rara vale oro.</li>
+      <li><strong>Gráficos monocromos</strong>, una serie protagonista en negro y el contexto en gris. Nada de arcoíris.</li>
+      <li><strong>Ningún número sin explicación</strong>: si agregás una tarjeta al panel, agregale su ⓘ con la fórmula.</li>
+    </ul>
+  </section>
+
+  <hr class="div">
+  <footer>
+    <p>MetricsField Retail · documento de producto · agosto 2026</p>
+    <p>Compañero de <em>MetricsField Loyalty</em>. Retail es la vertical digital: el motor de puntos y la emisión del cupón viven acá.</p>
+    <p>La versión versionada vive en <code>docs/RETAIL-PRODUCTO-COMPLETO.html</code>; el detalle por área, en <code>docs/producto/</code>.</p>
+    <p>Investigación de competencia: Real Trends, ProfitOS, Nubimetrics, Snow Profit, sellerboard y calculadoras gratuitas del mercado argentino — agosto 2026.</p>
+  </footer>
+
+</main>
