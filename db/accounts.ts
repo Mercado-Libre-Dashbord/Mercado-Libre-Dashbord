@@ -71,3 +71,25 @@ export async function setAccountMlSellerId(db: QueryExecutor, accountId: string,
 export async function setAccountOtherTaxRate(db: QueryExecutor, accountId: string, rate: number): Promise<void> {
   await db.query(`UPDATE accounts SET other_tax_rate = $1 WHERE id = $2`, [rate, accountId]);
 }
+
+/**
+ * La cuenta dueña de una credencial de fidelización.
+ *
+ * Se busca por el hash, nunca por la clave: es lo único que guardamos. La
+ * política de RLS deja ver exactamente esa fila (ver `accounts_select`), así
+ * que una clave equivocada no devuelve una cuenta ajena, devuelve nada.
+ */
+export async function getAccountByLoyaltyKeyHash(db: QueryExecutor, keyHash: string): Promise<Account | null> {
+  const result = await db.query<AccountRow>(
+    `SELECT * FROM accounts WHERE loyalty_api_key_hash = $1`,
+    [keyHash]
+  );
+  return result.rows[0] ? mapRow(result.rows[0]) : null;
+}
+
+export async function setLoyaltyApiKeyHash(db: QueryExecutor, accountId: string, keyHash: string): Promise<void> {
+  await db.query(
+    `UPDATE accounts SET loyalty_api_key_hash = $1, loyalty_api_key_created_at = now() WHERE id = $2`,
+    [keyHash, accountId]
+  );
+}

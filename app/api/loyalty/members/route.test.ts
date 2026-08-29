@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/db/client", () => ({ withScope: vi.fn() }));
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 vi.mock("@/mcp/tools", () => ({ createSellerCoupon: vi.fn() }));
+vi.mock("@/db/accounts", () => ({ getAccountByLoyaltyKeyHash: vi.fn() }));
 vi.mock("@/db/loyalty", () => ({
   getProgram: vi.fn(),
   completedMissions: vi.fn(),
@@ -19,11 +20,16 @@ import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { createSellerCoupon } from "@/mcp/tools";
 import { completedMissions, getGrantedReward, getProgram, grantReward, listMembers, missionTally } from "@/db/loyalty";
+import { getAccountByLoyaltyKeyHash } from "@/db/accounts";
+import { generateApiKey, hashApiKey } from "@/lib/loyalty-auth";
 import { resetColumnCache } from "@/db/schema-capabilities";
 import { DEFAULT_CONFIG } from "@/lib/loyalty";
 
 const account = { id: "acc1", name: "C", ownerEmail: "a@b.com", mlSellerId: "S1", otherTaxRate: 0, createdAt: "2026-01-01" };
-const req = (body: unknown) => ({ json: async () => body }) as any;
+// La ruta ahora mira el header Authorization para distinguir a la app de la
+// billetera del vendedor logueado, así que el request de prueba lo necesita.
+const req = (body: unknown, authorization: string | null = null) =>
+  ({ json: async () => body, headers: { get: (h: string) => (h.toLowerCase() === "authorization" ? authorization : null) } }) as any;
 const activeProgram = { ...DEFAULT_CONFIG, active: true, rewardBudget: 100000 };
 
 function scope() {
@@ -170,5 +176,52 @@ describe("GET /api/loyalty/members", () => {
 
     expect(res.status).toBe(503);
     expect((await res.json()).error).toContain("009-loyalty.sql");
+  });
+});
+
+describe("POST /api/loyalty/members con credencial de la billetera", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetColumnCache();
+    vi.mocked(getProgram).mockResolvedValue(activeProgram);
+    vi.mocked(completedMissions).mockResolvedValue(["seguir_tienda"]);
+    vi.mocked(getGrantedReward).mockResolvedValue(null);
+  });
+
+  it("acepta la credencial sin ninguna sesión de usuario", async () => {
+    // El comprador que escanea el QR no está logueado: si esto no funciona,
+    // el circuito no puede arrancar del lado de afuera.
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(null);
+    vi.mocked(getAccountByLoyaltyKeyHash).mockResolvedValue(account);
+    scope();
+
+    const key = generateApiKey();
+    const res = await POST(req({ memberId: "m1", mission: "seguir_tienda" }, `Bearer ${key}`));
+
+    expect(res.status).toBe(200);
+    // Se busca por el hash, nunca por la clave en claro.
+    expect(vi.mocked(getAccountByLoyaltyKeyHash)).toHaveBeenCalledWith(expect.anything(), hashApiKey(key));
+  });
+
+  it("responde 401 si la credencial no corresponde a ninguna cuenta", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(null);
+    vi.mocked(getAccountByLoyaltyKeyHash).mockResolvedValue(null);
+    scope();
+
+    const res = await POST(req({ memberId: "m1" }, `Bearer ${generateApiKey()}`));
+
+    expect(res.status).toBe(401);
+  });
+
+  it("no confunde un token ajeno con una credencial nuestra", async () => {
+    // Un Bearer que no es nuestro cae al camino de sesión, que sin usuario
+    // logueado es 401 — nunca a una búsqueda de cuenta con basura.
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(null);
+    scope();
+
+    const res = await POST(req({ memberId: "m1" }, "Bearer APP_USR_de_otra_cosa"));
+
+    expect(res.status).toBe(401);
+    expect(vi.mocked(getAccountByLoyaltyKeyHash)).not.toHaveBeenCalled();
   });
 });

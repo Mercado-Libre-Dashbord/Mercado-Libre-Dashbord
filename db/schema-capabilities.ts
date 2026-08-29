@@ -81,6 +81,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     column: "detail_id",
     ddl: "-- Falta la tabla billing_charges: corré db/postgres/migrations/002-iva-y-facturacion.sql",
   },
+  {
+    table: "accounts",
+    column: "loyalty_api_key_hash",
+    ddl: "-- Correr db/postgres/migrations/010-loyalty-api-key.sql (agrega columnas, función y política).",
+  }
 ];
 
 export async function missingMigrations(client: QueryExecutor): Promise<{ table: string; column: string; ddl: string }[]> {

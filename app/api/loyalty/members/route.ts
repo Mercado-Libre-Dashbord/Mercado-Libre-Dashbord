@@ -8,6 +8,9 @@ import {
 import { MISSION_BY_ID, hasEarnedReward, pointsToReward, totalPoints, type MissionId } from "@/lib/loyalty";
 import { createSellerCoupon } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
+import { getAccountByLoyaltyKeyHash } from "@/db/accounts";
+import { apiKeyFromHeader, hashApiKey } from "@/lib/loyalty-auth";
+import type { Account } from "@/db/accounts";
 
 export const runtime = "nodejs";
 
@@ -67,8 +70,27 @@ export async function GET() {
  * lleva la cuenta de puntos y, cuando alcanza el objetivo, se emite el cupón
  * oficial de Mercado Libre.
  */
+/**
+ * Quién está llamando: la app de la billetera con su credencial, o el
+ * vendedor logueado (útil para probar desde el panel sin credencial).
+ *
+ * El comprador que escanea el QR no tiene sesión, así que sin la credencial
+ * el circuito no puede arrancar del lado de afuera.
+ */
+async function resolveCaller(request: NextRequest): Promise<Account | null> {
+  const key = apiKeyFromHeader(request.headers.get("authorization"));
+  if (key) {
+    const hash = hashApiKey(key);
+    // El scope lleva el hash y nada más: la política de `accounts` deja ver
+    // solo la cuenta de esa clave, así que una clave inválida no devuelve
+    // una cuenta ajena — devuelve nada.
+    return withScope({ loyaltyKeyHash: hash }, (client) => getAccountByLoyaltyKeyHash(client, hash));
+  }
+  return resolveCurrentAccount();
+}
+
 export async function POST(request: NextRequest) {
-  const account = await resolveCurrentAccount();
+  const account = await resolveCaller(request);
   if (!account) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const body = await request.json().catch(() => ({}));

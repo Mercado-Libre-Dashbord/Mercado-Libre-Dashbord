@@ -39,6 +39,12 @@ CREATE OR REPLACE FUNCTION app_current_user_email() RETURNS text AS $$
   SELECT NULLIF(current_setting('app.current_user_email', true), '');
 $$ LANGUAGE sql STABLE;
 
+-- La app de fidelización no tiene sesión de usuario: se identifica con una
+-- clave por cuenta. Quien conoce su hash puede ver esa cuenta y ninguna otra.
+CREATE OR REPLACE FUNCTION app_current_loyalty_key_hash() RETURNS text AS $$
+  SELECT NULLIF(current_setting('app.loyalty_key_hash', true), '');
+$$ LANGUAGE sql STABLE;
+
 -- ── Tables ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY,
@@ -50,6 +56,9 @@ CREATE TABLE IF NOT EXISTS accounts (
   -- dependen de la jurisdicción del vendedor, no del artículo, y cargarlas
   -- producto por producto era trabajo repetido garantizado.
   other_tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+  -- Credencial de la app de fidelización. Se guarda el hash, nunca la clave.
+  loyalty_api_key_hash TEXT,
+  loyalty_api_key_created_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS other_tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0;
@@ -257,7 +266,11 @@ ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE accounts FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS accounts_select ON accounts;
 CREATE POLICY accounts_select ON accounts FOR SELECT
-  USING (app_is_admin() OR owner_email = app_current_user_email());
+  USING (
+    app_is_admin()
+    OR owner_email = app_current_user_email()
+    OR (loyalty_api_key_hash IS NOT NULL AND loyalty_api_key_hash = app_current_loyalty_key_hash())
+  );
 DROP POLICY IF EXISTS accounts_insert ON accounts;
 CREATE POLICY accounts_insert ON accounts FOR INSERT
   WITH CHECK (app_is_admin());
@@ -284,7 +297,7 @@ END
 $$;
 
 -- ── Grants ───────────────────────────────────────────────────────────────
-GRANT EXECUTE ON FUNCTION app_current_account_id(), app_is_admin(), app_current_user_email() TO app_user;
+GRANT EXECUTE ON FUNCTION app_current_account_id(), app_is_admin(), app_current_user_email(), app_current_loyalty_key_hash() TO app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;

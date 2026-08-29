@@ -63,6 +63,9 @@ export default function LoyaltyPage() {
   const [members, setMembers] = useState<Member[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [tally, setTally] = useState<{ mission: string; count: number }[]>([]);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [keyError, setKeyError] = useState("");
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     fetch("/api/loyalty").then(async (r) => {
@@ -97,6 +100,19 @@ export default function LoyaltyPage() {
     setProgram((p) => (p ? { ...p, [key]: value } : p));
     setSaved(false);
     setErrors([]);
+  }
+
+  async function generateKey() {
+    setGenerating(true);
+    setKeyError("");
+    try {
+      const res = await fetch("/api/loyalty/api-key", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { setKeyError(data.error ?? "No se pudo generar la credencial."); return; }
+      setApiKey(data.apiKey);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function save() {
@@ -368,6 +384,58 @@ export default function LoyaltyPage() {
                   <strong>El presupuesto es un tope duro</strong>: Mercado Libre deja de aplicar el cupón cuando se
                   agota, así que un error de configuración no puede vaciarte la caja.
                 </li>
+              </ul>
+            </details>
+          </div>
+
+          <h2 className="section-title">Conectar la app de fidelización</h2>
+          <div className="day-card" style={{ maxWidth: 720 }}>
+            <p className="field-hint" style={{ marginTop: 0 }}>
+              La app que capta al comprador —el QR, la landing, la tarjeta— vive afuera de este panel. Se conecta
+              con una credencial: generala acá y pasásela a quien la esté desarrollando.
+            </p>
+
+            {apiKey ? (
+              <div className="api-key-box">
+                <p className="api-key-label">Tu credencial. Copiala ahora: no se puede volver a ver.</p>
+                <div className="api-key-row">
+                  <code className="api-key-value">{apiKey}</code>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => navigator.clipboard?.writeText(apiKey)}
+                  >
+                    Copiar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button className="btn btn-primary" onClick={generateKey} disabled={generating}>
+                {generating ? "Generando…" : "Generar credencial"}
+              </button>
+            )}
+            {keyError && <p className="field-error" role="alert">{keyError}</p>}
+
+            <details className="explain-box" style={{ marginTop: "var(--space-4)", marginBottom: 0 }}>
+              <summary>Cómo se usa (para quien desarrolla la app)</summary>
+              <p>
+                Cada misión cumplida se avisa con un POST. La respuesta dice cuántos puntos lleva el comprador y,
+                cuando llega al objetivo, devuelve el código del cupón oficial de Mercado Libre.
+              </p>
+              <pre>{`POST https://retail.metricsfield.com/api/loyalty/members
+Authorization: Bearer <credencial>
+Content-Type: application/json
+
+{ "memberId": "id-del-comprador",
+  "mission": "seguir_tienda" | "dejar_opinion" | "opinion_con_foto",
+  "name": "opcional", "email": "opcional" }
+
+→ { "points": 1500, "pointsToReward": 0,
+    "rewardUnlocked": true, "couponCode": "ABC123" }`}</pre>
+              <ul>
+                <li>Repetir la misma misión <strong>no</strong> suma puntos dos veces.</li>
+                <li>El cupón se emite <strong>una sola vez por comprador</strong>, y el chequeo va antes de llamar a Mercado Libre: un reintento por timeout no crea una campaña duplicada.</li>
+                <li>Si el programa está apagado responde <code>409</code> y no hace nada.</li>
+                <li>Generar una credencial nueva <strong>invalida la anterior</strong> en el acto.</li>
               </ul>
             </details>
           </div>

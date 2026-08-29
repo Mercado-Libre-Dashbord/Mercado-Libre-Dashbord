@@ -21,6 +21,10 @@ export interface ScopeContext {
   accountId?: string | null;
   isAdmin?: boolean;
   userEmail?: string | null;
+  /** Hash de la credencial de fidelización, para el caso sin sesión de
+   * usuario: la app de la billetera se identifica con una clave por cuenta.
+   * Ver la política `accounts_select` en db/postgres/schema.sql. */
+  loyaltyKeyHash?: string | null;
 }
 
 /**
@@ -38,6 +42,7 @@ export async function withScope<T>(ctx: ScopeContext, fn: (client: PoolClient) =
     await client.query("SELECT set_config('app.current_account_id', $1, true)", [ctx.accountId ?? ""]);
     await client.query("SELECT set_config('app.is_admin', $1, true)", [ctx.isAdmin ? "true" : "false"]);
     await client.query("SELECT set_config('app.current_user_email', $1, true)", [ctx.userEmail ?? ""]);
+    await client.query("SELECT set_config('app.loyalty_key_hash', $1, true)", [ctx.loyaltyKeyHash ?? ""]);
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
