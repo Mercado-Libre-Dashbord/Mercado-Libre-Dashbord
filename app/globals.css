@@ -4,14 +4,22 @@
    and muted green/red kept separate for profit/loss so a black button never
    reads as a data value. */
 :root {
-  --bg: #f7f7f7;
+  /* Los neutros tienen una pizca de calidez en vez de ser gris puro. Un
+     #f7f7f7 exacto se lee como el gris que viene por defecto; medio grado
+     hacia el papel se lee como un gris elegido, y no toca la marca: sigue
+     siendo monocromo. */
+  --bg: #f6f6f4;
   --surface: #ffffff;
-  --surface-2: #eaeaea;
-  --border: #eaeaea;
-  --text: #1a1a1a;
-  /* Darker than a typical muted-foreground grey to clear WCAG AA 4.5:1 on
-     both white and --bg. */
-  --text-dim: #595959;
+  --surface-2: #efeeea;
+  /* Dos pesos de línea: el borde que define una tarjeta contra el fondo, y
+     el divisor interno entre filas, que tiene que desaparecer casi del todo.
+     Con un solo gris, las tablas se veían como una grilla de contabilidad. */
+  --border: #e5e4df;
+  --border-soft: #f0efeb;
+  --text: #141412;
+  /* Más oscuro que un muted-foreground típico para pasar WCAG AA 4.5:1 tanto
+     sobre blanco como sobre --bg. */
+  --text-dim: #57564f;
   --accent: #000000;
   --accent-strong: #000000;
   --accent-strong-hover: #1a1a1a;
@@ -46,9 +54,9 @@
   /* Azul Niebla — manual's secondary color for métricas/datos primarios. */
   --mist: #c8d8e8;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 7px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -57,8 +65,12 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* Dos capas, no una: una sombra de contacto muy corta que apoya la tarjeta
+     sobre el fondo, y una difusa que le da aire. Una sola sombra plana es lo
+     que hace que una interfaz se vea barata. */
+  --shadow-sm: 0 1px 1px rgba(20, 20, 18, 0.03), 0 1px 3px rgba(20, 20, 18, 0.04);
+  --shadow-md: 0 1px 2px rgba(20, 20, 18, 0.04), 0 10px 28px -6px rgba(20, 20, 18, 0.10);
+  --shadow-lift: 0 2px 4px rgba(20, 20, 18, 0.05), 0 16px 40px -12px rgba(20, 20, 18, 0.14);
 
   --duration-fast: 150ms;
   --duration-base: 200ms;
@@ -160,21 +172,42 @@ select:focus-visible,
   white-space: nowrap;
 }
 
-h1 { font-weight: 700; letter-spacing: -0.01em; }
+h1 {
+  font-weight: 700;
+  font-size: 27px;
+  letter-spacing: -0.025em;
+  margin: 0 0 var(--space-2);
+}
+
+/* La etiqueta de sección lleva una línea que se estira hasta el borde. Es lo
+   que separa un tablero de una pila de cajas: el ojo encuentra dónde empieza
+   cada bloque sin tener que leer. */
 h2.section-title {
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   color: var(--text-dim);
-  margin: var(--space-5) 0 var(--space-3);
+  margin: var(--space-6) 0 var(--space-3);
+}
+h2.section-title::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border);
 }
 
 /* Tables scroll horizontally inside their own box instead of pushing the page
    viewport wide on small screens. */
 .table-wrap {
   overflow-x: auto;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Tabla larga: en vez de estirar la página al infinito, scrollea dentro de su
@@ -220,15 +253,27 @@ h2.section-title {
    entre entera sin scroll horizontal. */
 .table-compact .cell-title { max-width: 15ch; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 560px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border-soft); }
 tbody tr:last-child td { border-bottom: none; }
-/* Headers wrap onto a second line instead of forcing every column wide enough
-   for their longest label (e.g. "Rentabilidad total") — that forced tables
-   with several columns past the viewport width just from header text. */
-th { color: var(--text-dim); font-weight: 600; font-size: 13px; white-space: normal; }
+/* Los encabezados envuelven en dos líneas en vez de obligar a cada columna a
+   ser tan ancha como su etiqueta más larga ("Rentabilidad total"), que sacaba
+   la tabla de la pantalla solo por el texto del header. */
+th {
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: normal;
+  background: var(--surface);
+  border-bottom-color: var(--border);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+td { font-size: 14px; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tbody tr { transition: background-color var(--duration-fast) var(--ease-out); }
-tbody tr:hover { background: var(--surface-2); }
+tbody tr:hover { background: var(--bg); }
 
 .empty-state {
   padding: var(--space-6) var(--space-4);
@@ -312,23 +357,49 @@ tbody tr:hover { background: var(--surface-2); }
 }
 .period-custom label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-dim); gap: var(--space-1); }
 
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-3); }
+/* Columnas explícitas y no auto-fit: con ocho tarjetas, auto-fit las acomodaba
+   de a cinco y dejaba tres huérfanas en la segunda fila. Cuatro columnas dan
+   dos filas parejas, que es lo que hace que se lea como una grilla y no como
+   una pila. */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+@media (max-width: 1180px) { .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 860px)  { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px)  { .kpi-grid { grid-template-columns: 1fr; } }
 .kpi-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: var(--space-4);
+  padding: var(--space-5) var(--space-4);
   box-shadow: var(--shadow-sm);
-  transition: border-color var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
 }
-.kpi-card:hover { border-color: var(--accent); box-shadow: var(--shadow-md); }
-.kpi-card .label { color: var(--text-dim); font-size: 13px; }
+/* Se levanta un pelo en vez de encenderse el borde. Un borde negro al pasar
+   el mouse grita; un milímetro de elevación se siente. */
+.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+@media (prefers-reduced-motion: reduce) {
+  .kpi-card, .kpi-card:hover { transform: none; transition: none; }
+}
+.kpi-card .label {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
 .kpi-card .value {
   /* Escala con el ancho disponible: un total histórico de 8 dígitos se salía
      de la tarjeta a tamaño fijo. */
-  font-size: clamp(17px, 1.55vw, 22px);
+  font-size: clamp(19px, 1.7vw, 25px);
   font-weight: 700;
-  margin-top: var(--space-1);
+  letter-spacing: -0.03em;
+  margin-top: var(--space-2);
   font-variant-numeric: tabular-nums;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -393,7 +464,12 @@ tbody tr:hover { background: var(--surface-2); }
   background: var(--accent-strong);
   border-color: var(--accent-strong);
   color: #fff;
+  box-shadow: var(--shadow-md);
 }
+.kpi-card.kpi-hero:hover { box-shadow: var(--shadow-lift); }
+/* La facturación es EL número de la pantalla: si se ve igual que los otros
+   siete, el tablero no tiene punto de entrada. */
+.kpi-card.kpi-hero .value { font-size: clamp(24px, 2.3vw, 33px); }
 .kpi-card.kpi-hero .label { color: rgba(255, 255, 255, 0.72); }
 .kpi-card.kpi-hero .kpi-icon { background: rgba(255, 255, 255, 0.14); color: #fff; }
 .kpi-card.kpi-hero .kpi-delta-caption { color: rgba(255, 255, 255, 0.6); }
@@ -405,13 +481,13 @@ tbody tr:hover { background: var(--surface-2); }
 .chart-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
   margin-bottom: var(--space-3);
   box-shadow: var(--shadow-sm);
 }
-.chart-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); flex-wrap: wrap; }
-.chart-card-title { font-size: 15px; font-weight: 700; margin: 0; }
+.chart-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); flex-wrap: wrap; }
+.chart-card-title { font-size: 15px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 
 /* Layout de dos columnas: gráfico principal + donut al costado, como en la
    referencia. Colapsa a una sola columna en pantallas angostas. */
@@ -846,3 +922,85 @@ input[type="text"], input[type="number"], input[type="date"], input[type="email"
 .kpi-card .value,
 table td.num,
 table th.num { font-variant-numeric: tabular-nums; }
+
+/* ── Esqueletos de carga ─────────────────────────────────────────────────────
+   Reemplazan el texto "Cargando…". Dos motivos, y ninguno es estético: la
+   página no salta cuando llegan los datos porque el hueco ya tiene el tamaño
+   final, y el que mira entiende qué está por aparecer. */
+.skel {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.65),
+    transparent
+  );
+  animation: skel-sweep 1.4s ease-in-out infinite;
+}
+@keyframes skel-sweep {
+  100% { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { animation: none; }
+}
+
+.skel-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5) var(--space-4);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.skel-chart {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────
+   La marca respira y el ítem activo se marca con una barra en el borde en vez
+   de un bloque negro completo: el bloque competía en peso con la tarjeta
+   principal del tablero, que es donde tiene que ir el ojo. */
+.sidebar-brand { padding-bottom: var(--space-2); }
+.sidebar-link {
+  position: relative;
+  border-radius: var(--radius-sm);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.sidebar-link.active {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+}
+.sidebar-link.active::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 17px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent-strong);
+}
+
+/* La caja de explicación deja de parecer un bloque de código y pasa a ser una
+   nota al pie: está para quien la busca, no para competir con los datos. */
+.explain-box { border-radius: var(--radius-md); }

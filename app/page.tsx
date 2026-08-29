@@ -400,6 +400,34 @@ function TopProductsCard({ rows }: { rows: ProductRow[] }) {
 }
 
 /**
+ * Huecos con la forma final del contenido mientras llegan los datos.
+ *
+ * No es decoración: reservan el alto real, así la página no salta cuando
+ * responde la API, y dicen qué está por aparecer sin escribir "Cargando…".
+ */
+function KpiSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <div className="kpi-grid" aria-hidden="true">
+      {Array.from({ length: count }, (_, i) => (
+        <div className="skel-card" key={i}>
+          <div className="skel" style={{ width: "45%", height: 11 }} />
+          <div className="skel" style={{ width: "70%", height: 26 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChartSkeleton({ height = 300 }: { height?: number }) {
+  return (
+    <div className="skel-chart" aria-hidden="true">
+      <div className="skel" style={{ width: 220, height: 14, marginBottom: 20 }} />
+      <div className="skel" style={{ width: "100%", height }} />
+    </div>
+  );
+}
+
+/**
  * Qué productos le faltan por costear, no solo cuántas líneas.
  *
  * El aviso anterior decía "N líneas de venta sin costo cargado" y nada más.
@@ -640,6 +668,9 @@ export default function HomePage() {
       />
 
       <h2 className="section-title">Tienda</h2>
+      {summary === null ? (
+        <KpiSkeleton />
+      ) : (
       <div className="kpi-grid">
         <div className="kpi-card kpi-hero">
           <div className="kpi-card-head"><KpiIcon name="gross" /><span className="label">Facturación</span><KpiInfo>Suma de precio × cantidad de todo lo vendido, antes de descontar nada. Las órdenes canceladas no cuentan.</KpiInfo></div>
@@ -701,6 +732,7 @@ export default function HomePage() {
           )}
         </div>
       </div>
+      )}
 
       {summary && summary.itemsMissingCost > 0 && (
         <MissingCostPanel
@@ -711,7 +743,13 @@ export default function HomePage() {
 
       <h2 className="section-title">Rendimiento</h2>
       {daily === null ? (
-        <p className="empty-state">Cargando gráficos…</p>
+        <>
+          <ChartSkeleton height={260} />
+          <div className="chart-split-even">
+            <ChartSkeleton height={220} />
+            <ChartSkeleton height={220} />
+          </div>
+        </>
       ) : daily.length === 0 ? (
         <div className="empty-state">
           <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Sin ventas en este período.</p>
