@@ -265,7 +265,16 @@ function productAdsBase(siteId: string, advertiserId: string) {
  * más de 90 días entre date_from y date_to. Por eso las campañas no cargaban:
  * se pedía un año entero de una.
  */
-const PRODUCT_ADS_MAX_DAYS = 90;
+/**
+ * Ventana de días por consulta a Product Ads.
+ *
+ * La API dice "no más de 90 días", pero rechazó un rango de 90 días contados
+ * de punta a punta (2020-01-01 a 2020-03-30): no queda claro si mide el
+ * intervalo o los días inclusive. En vez de afinar el borde a ciegas se deja
+ * margen — sobre un historial de seis años son tres pedidos más, y el
+ * problema desaparece del todo en vez de reaparecer en un año bisiesto.
+ */
+const PRODUCT_ADS_MAX_DAYS = 80;
 
 function dateStr(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -493,7 +502,10 @@ export interface MlBillingCharge {
 export async function listBillingPeriods(accountId: string): Promise<MlBillingPeriod[]> {
   const token = await getValidAccessToken(accountId);
   const res = await listOrEmpty(
-    () => mlFetch(`/billing/integration/monthly/periods?group=ML&offset=0&limit=12`, token),
+    // document_type es obligatorio: sin él ML responde 422 y la conciliación
+    // quedaba vacía en silencio. BILL son los cargos; CREDIT_NOTE, las notas
+    // de crédito, que no entran en esta vista.
+    () => mlFetch(`/billing/integration/monthly/periods?group=ML&document_type=BILL&offset=0&limit=12`, token),
     { results: [] }
   );
   const rows = res.results ?? res.periods ?? [];

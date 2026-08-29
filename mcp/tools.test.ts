@@ -18,6 +18,7 @@ import {
   setCampaignStatus,
   splitIntoWindows,
   createSellerCoupon,
+  listBillingPeriods,
 } from "./tools";
 import { mlFetch, MlApiError } from "./ml-client";
 
@@ -320,11 +321,12 @@ describe("splitIntoWindows", () => {
     expect(splitIntoWindows("2026-08-01", "2026-08-10")).toEqual([{ from: "2026-08-01", to: "2026-08-10" }]);
   });
 
-  it("never produces a window longer than the API's 90-day limit", () => {
+  it("nunca arma una ventana que roce el límite de la API", () => {
     const windows = splitIntoWindows("2020-01-01", "2026-08-25");
     for (const w of windows) {
       const days = (Date.parse(`${w.to}T00:00:00Z`) - Date.parse(`${w.from}T00:00:00Z`)) / 86400000;
-      expect(days).toBeLessThanOrEqual(89);
+      // Con margen: la API rechazó un rango de 90 días contados inclusive.
+      expect(days).toBeLessThanOrEqual(79);
     }
   });
 
@@ -378,7 +380,7 @@ describe("getAdsSpend", () => {
     expect(vi.mocked(mlFetch).mock.calls[1][2]).toEqual(expect.objectContaining({ headers: { "Api-Version": "2" } }));
   });
 
-  it("splits a long history into 90-day windows instead of getting a 400", async () => {
+  it("parte un historial largo en ventanas cortas en vez de comerse un 400", async () => {
     vi.mocked(mlFetch)
       .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
       .mockResolvedValue({ results: [] });
@@ -485,5 +487,36 @@ describe("createSellerCoupon", () => {
     const body = JSON.parse((vi.mocked(mlFetch).mock.calls[0][2] as any).body);
     const days = (Date.parse(body.finish_date) - Date.parse(body.start_date)) / 86400000;
     expect(days).toBeCloseTo(30, 1);
+  });
+});
+
+describe("listBillingPeriods", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("manda document_type, que la API exige", async () => {
+    // Sin este parámetro ML responde 422 y la conciliación con la factura
+    // quedaba vacía sin que nada lo dijera: el sync captura el error y sigue.
+    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [] });
+
+    await listBillingPeriods("acc1");
+
+    const url = vi.mocked(mlFetch).mock.calls[0][0] as string;
+    expect(url).toContain("document_type=BILL");
+    expect(url).toContain("group=ML");
+  });
+
+  it("mapea los períodos y descarta los que no traen clave", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({
+      results: [
+        { key: "2026-07-01", period: { date_from: "2026-07-01", date_to: "2026-07-31" }, amount: 1234.5 },
+        { period: { date_from: null, date_to: null }, amount: 0 },
+      ],
+    });
+
+    const periods = await listBillingPeriods("acc1");
+
+    expect(periods).toEqual([
+      { key: "2026-07-01", dateFrom: "2026-07-01", dateTo: "2026-07-31", amount: 1234.5 },
+    ]);
   });
 });
