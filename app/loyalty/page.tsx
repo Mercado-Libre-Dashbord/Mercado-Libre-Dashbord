@@ -3,11 +3,44 @@
 import { useEffect, useState } from "react";
 import { NoAccountState } from "../NoAccountState";
 
+const fmt = (n: number) =>
+  n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+
+const MISSION_LABEL: Record<string, string> = {
+  seguir_tienda: "Seguir la tienda",
+  dejar_opinion: "Dejar una opinión",
+  opinion_con_foto: "Opinión con foto",
+};
+
 interface Mission {
   id: string;
   label: string;
   description: string;
   defaultPoints: number;
+}
+
+interface Member {
+  memberId: string;
+  name: string | null;
+  email: string | null;
+  joinedAt: string;
+  missions: string[];
+  points: number;
+  pointsToReward: number;
+  couponCode: string | null;
+  grantedAt: string | null;
+}
+
+interface Stats {
+  members: number;
+  missionsCompleted: number;
+  couponsGranted: number;
+  committedDiscount: number;
+  potentialRevenue: number;
+  rewardBudget: number;
+  active: boolean;
 }
 
 interface Program {
@@ -27,6 +60,9 @@ export default function LoyaltyPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [noAccount, setNoAccount] = useState(false);
+  const [members, setMembers] = useState<Member[] | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [tally, setTally] = useState<{ mission: string; count: number }[]>([]);
 
   useEffect(() => {
     fetch("/api/loyalty").then(async (r) => {
@@ -35,6 +71,16 @@ export default function LoyaltyPage() {
       setMissions(data.missions ?? []);
       setAvailable(data.available !== false);
       setProgram(data.program);
+    });
+
+    // El detalle de miembros va aparte de la configuración: si el módulo
+    // todavía no tiene su migración, la pantalla de configuración igual sirve.
+    fetch("/api/loyalty/members").then(async (r) => {
+      if (!r.ok) { setMembers([]); return; }
+      const data = await r.json();
+      setMembers(data.members ?? []);
+      setStats(data.stats ?? null);
+      setTally(data.tally ?? []);
     });
   }, []);
 
@@ -94,6 +140,136 @@ export default function LoyaltyPage() {
         <p className="empty-state">Cargando…</p>
       ) : (
         <>
+          <h2 className="section-title">Cómo va el programa</h2>
+          {members === null ? (
+            <p className="empty-state">Cargando…</p>
+          ) : stats === null || stats.members === 0 ? (
+            <div className="empty-state">
+              <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Todavía no se sumó nadie.</p>
+              <p style={{ margin: "var(--space-2) 0 0" }}>
+                Los compradores entran escaneando el QR que ponés en el paquete. Apenas el primero se registre,
+                acá vas a ver quién es, qué misiones cumplió y cuántos puntos lleva.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="kpi-grid" style={{ marginBottom: "var(--space-3)" }}>
+                <div className="kpi-card">
+                  <div className="kpi-card-head"><span className="label">Miembros</span></div>
+                  <div className="value">{stats.members.toLocaleString("es-AR")}</div>
+                </div>
+                <div className="kpi-card">
+                  <div className="kpi-card-head"><span className="label">Misiones cumplidas</span></div>
+                  <div className="value">{stats.missionsCompleted.toLocaleString("es-AR")}</div>
+                </div>
+                <div className="kpi-card">
+                  <div className="kpi-card-head"><span className="label">Cupones emitidos</span></div>
+                  <div className="value">{stats.couponsGranted.toLocaleString("es-AR")}</div>
+                  <div className="kpi-delta">
+                    <span className="kpi-delta-caption">
+                      {fmt(stats.committedDiscount)} de descuento comprometido, sobre un tope de {fmt(stats.rewardBudget)}
+                    </span>
+                  </div>
+                </div>
+                <div className="kpi-card">
+                  <div className="kpi-card-head"><span className="label">Compra mínima asociada</span></div>
+                  <div className="value">{fmt(stats.potentialRevenue)}</div>
+                  <div className="kpi-delta">
+                    <span className="kpi-delta-caption">Si se usaran todos los cupones emitidos</span>
+                  </div>
+                </div>
+              </div>
+
+              {tally.length > 0 && (
+                <div className="chart-card" style={{ marginBottom: "var(--space-3)" }}>
+                  <div className="chart-card-head">
+                    <h3 className="chart-card-title">Qué misión funciona</h3>
+                  </div>
+                  <ul className="top-products">
+                    {tally.map((t) => {
+                      const peak = Math.max(...tally.map((x) => x.count), 1);
+                      return (
+                        <li className="top-product" key={t.mission}>
+                          <span className="top-product-main">
+                            <span className="top-product-name">{MISSION_LABEL[t.mission] ?? t.mission}</span>
+                            <span className="top-product-bar" aria-hidden="true">
+                              <span className="top-product-bar-fill" style={{ width: `${(t.count / peak) * 100}%` }} />
+                            </span>
+                          </span>
+                          <span className="top-product-side" style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
+                            {t.count}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              <div className="table-wrap table-scroll table-compact" style={{ marginBottom: "var(--space-3)" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Miembro</th>
+                      <th>Se sumó</th>
+                      <th>Misiones</th>
+                      <th className="num">Puntos</th>
+                      <th>Premio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((m) => (
+                      <tr key={m.memberId}>
+                        <td>
+                          <span style={{ fontWeight: 600 }}>{m.name || m.memberId}</span>
+                          {m.email && <span className="cell-sub">{m.email}</span>}
+                        </td>
+                        <td style={{ color: "var(--text-dim)" }}>{fmtDate(m.joinedAt)}</td>
+                        <td style={{ color: "var(--text-dim)" }}>
+                          {m.missions.length === 0
+                            ? "—"
+                            : m.missions.map((x) => MISSION_LABEL[x] ?? x).join(" · ")}
+                        </td>
+                        <td className="num">
+                          {m.points.toLocaleString("es-AR")}
+                          {!m.couponCode && m.pointsToReward > 0 && (
+                            <span className="cell-sub">faltan {m.pointsToReward.toLocaleString("es-AR")}</span>
+                          )}
+                        </td>
+                        <td>
+                          {m.couponCode ? (
+                            <span className="badge badge-paid">{m.couponCode}</span>
+                          ) : (
+                            <span style={{ color: "var(--text-dim)" }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <details className="explain-box" style={{ marginBottom: "var(--space-5)" }}>
+                <summary>Qué medimos acá y qué todavía no</summary>
+                <ul>
+                  <li>
+                    <strong>Descuento comprometido</strong> es lo que te costarían todos los cupones emitidos si se
+                    usaran. No es plata gastada: es el techo del riesgo, y el presupuesto lo frena.
+                  </li>
+                  <li>
+                    <strong>Compra mínima asociada</strong> es el piso de facturación que traerían esos cupones,
+                    porque cada uno exige una compra mínima para poder usarse.
+                  </li>
+                  <li>
+                    <strong>Lo que todavía no sabemos</strong> es cuáles de esos cupones se usaron de verdad.
+                    Mercado Libre no nos dice qué orden usó qué cupón, así que no podemos atribuir una venta
+                    puntual a un miembro. Estamos viendo cómo resolverlo.
+                  </li>
+                </ul>
+              </details>
+            </>
+          )}
+
           <h2 className="section-title">Misiones</h2>
           <div className="table-wrap" style={{ marginBottom: "var(--space-4)" }}>
             <table>

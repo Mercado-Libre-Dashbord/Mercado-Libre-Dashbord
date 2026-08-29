@@ -25,6 +25,11 @@
   --chart-tax: #1baf7a;
   --chart-cost: #eda100;
   --chart-iva: #8b5fd6;
+  /* Publicidad tenía el mismo verde que la ganancia neta. En un apilado donde
+     una franja es lo que ganás y la otra lo que gastás, dos verdes se leen
+     como la misma cosa. Frambuesa pasa las seis pruebas del validador contra
+     el resto de la paleta. */
+  --chart-ads: #c2426d;
   /* Rampa neutra para el donut de categorías: parte-de-un-todo en un solo
      tono, de oscuro a claro (el manual de marca pide monocromo primero).
      La identidad de cada porción la da la leyenda con nombre y monto, no el

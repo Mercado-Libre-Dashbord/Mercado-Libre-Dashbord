@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
-  LineChart, Line, PieChart, Pie, Cell,
+  LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
 } from "recharts";
 import { SyncButton } from "./SyncButton";
 import { NoAccountState } from "./NoAccountState";
@@ -49,6 +49,7 @@ interface DailyBreakdown {
   tax: number;
   iva: number;
   cost: number;
+  ads: number;
   netProfit: number;
 }
 
@@ -185,13 +186,6 @@ function DeltaPill({ current, previous }: { current: number; previous: number | 
   );
 }
 
-const LAST_SALE_RAMP = [
-  "var(--chart-commission)",
-  "var(--chart-shipping)",
-  "var(--chart-cost)",
-  "var(--chart-iva)",
-  "var(--chart-tax)",
-];
 
 /**
  * En qué se repartió la facturación del período: parte-de-un-todo con pocas
@@ -211,19 +205,25 @@ function RevenueSplitPie({ daily }: { daily: DailyBreakdown[] }) {
       tax: acc.tax + d.tax,
       iva: acc.iva + d.iva,
       cost: acc.cost + d.cost,
+      ads: acc.ads + d.ads,
       netProfit: acc.netProfit + d.netProfit,
       revenue: acc.revenue + d.revenue,
     }),
-    { commission: 0, shipping: 0, tax: 0, iva: 0, cost: 0, netProfit: 0, revenue: 0 }
+    { commission: 0, shipping: 0, tax: 0, iva: 0, cost: 0, ads: 0, netProfit: 0, revenue: 0 }
   );
 
+  // El color va pegado al concepto, no a la posición. Antes salía de un
+  // índice sobre la lista ya filtrada: a un vendedor sin "otros impuestos" se
+  // le corrían todos los colores de ahí para abajo, y el mismo concepto
+  // cambiaba de color entre dos cuentas.
   const slices = [
-    { name: "Comisión ML", value: totals.commission },
-    { name: "Envío", value: totals.shipping },
-    { name: "Costo de producto", value: totals.cost },
-    { name: "IVA", value: totals.iva },
-    { name: "Otros impuestos", value: totals.tax },
-    { name: "Ganancia neta", value: totals.netProfit },
+    { name: "Comisión ML", value: totals.commission, color: "var(--chart-commission)" },
+    { name: "Envío", value: totals.shipping, color: "var(--chart-shipping)" },
+    { name: "Costo de producto", value: totals.cost, color: "var(--chart-cost)" },
+    { name: "IVA", value: totals.iva, color: "var(--chart-iva)" },
+    { name: "Otros impuestos", value: totals.tax, color: "var(--chart-tax)" },
+    { name: "Publicidad", value: totals.ads, color: "var(--chart-ads)" },
+    { name: "Ganancia neta", value: totals.netProfit, color: "var(--positive)" },
   ];
   const revenue = totals.revenue;
   const visible = slices.filter((s) => s.value > 0);
@@ -251,7 +251,7 @@ function RevenueSplitPie({ daily }: { daily: DailyBreakdown[] }) {
               {visible.map((slice, i) => (
                 <Cell
                   key={slice.name}
-                  fill={slice.name === "Ganancia neta" ? "var(--positive)" : LAST_SALE_RAMP[i % LAST_SALE_RAMP.length]}
+                  fill={slice.color}
                 />
               ))}
             </Pie>
@@ -280,7 +280,7 @@ function RevenueSplitPie({ daily }: { daily: DailyBreakdown[] }) {
           <li key={slice.name}>
             <span
               className="donut-swatch"
-              style={{ background: slice.name === "Ganancia neta" ? "var(--positive)" : LAST_SALE_RAMP[i % LAST_SALE_RAMP.length] }}
+              style={{ background: slice.color }}
             />
             <span className="donut-legend-name">{slice.name}</span>
             <span className="donut-legend-value">
@@ -448,6 +448,71 @@ function StockBadge({ stock }: { stock: number }) {
       <span className="stock-dot" aria-hidden="true" />
       {label}
     </span>
+  );
+}
+
+/**
+ * En qué se repartió la facturación, día por día.
+ *
+ * La torta responde "en qué se fue la plata"; esto responde "y cuándo".
+ * Apilado y no líneas superpuestas porque las partes suman un todo: la altura
+ * total de cada día ES la facturación de ese día, y cada franja es su
+ * pedazo. Mismos colores que la torta a propósito — un color significa lo
+ * mismo en los dos gráficos.
+ *
+ * La ganancia neta va abajo, apoyada en el eje: es la franja que el vendedor
+ * mira, y la única que se lee sin tener que restar dos alturas.
+ */
+const STACK_SERIES = [
+  { key: "netProfit", name: "Ganancia neta", color: "var(--positive)" },
+  { key: "cost", name: "Costo de producto", color: "var(--chart-cost)" },
+  { key: "commission", name: "Comisión ML", color: "var(--chart-commission)" },
+  { key: "shipping", name: "Envío", color: "var(--chart-shipping)" },
+  { key: "iva", name: "IVA", color: "var(--chart-iva)" },
+  { key: "ads", name: "Publicidad", color: "var(--chart-ads)" },
+] as const;
+
+function RevenueStackedArea({ daily }: { daily: DailyBreakdown[] }) {
+  // "Otros impuestos" se suma a IVA en vez de ser su propia franja: casi
+  // siempre es cero y una franja de altura cero es ruido con leyenda.
+  const data = daily.map((d) => ({ ...d, iva: d.iva + d.tax }));
+  const hasTax = daily.some((d) => d.tax > 0);
+
+  return (
+    <div className="chart-card">
+      <div className="chart-card-head">
+        <h3 className="chart-card-title">Cómo se repartió la facturación, día a día</h3>
+        <span className="field-hint" style={{ margin: 0 }}>La altura de cada día es lo que facturaste</span>
+      </div>
+      <ResponsiveContainer width="100%" height={300}>
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+          <CartesianGrid stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="day" tick={{ fontSize: 11, fill: "var(--text-dim)" }} tickLine={false} axisLine={false} minTickGap={24} />
+          <YAxis tick={{ fontSize: 11, fill: "var(--text-dim)" }} tickLine={false} axisLine={false} width={78} tickFormatter={(v) => fmt(Number(v))} />
+          <Tooltip
+            formatter={(value: number, name: string) => [fmt(value), name]}
+            contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
+          />
+          <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="square" />
+          {STACK_SERIES.map((serie) => (
+            <Area
+              key={serie.key}
+              type="monotone"
+              dataKey={serie.key}
+              name={serie.key === "iva" && hasTax ? "IVA y otros impuestos" : serie.name}
+              stackId="facturacion"
+              fill={serie.color}
+              // El borde del color de la superficie deja 2px de aire entre
+              // franjas: sin eso, dos colores contiguos se leen como uno.
+              stroke="var(--surface)"
+              strokeWidth={2}
+              fillOpacity={1}
+              isAnimationActive={false}
+            />
+          ))}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -655,6 +720,7 @@ export default function HomePage() {
       ) : (
         <>
           <PerformanceChart daily={daily} />
+          <RevenueStackedArea daily={daily} />
           <div className="chart-split-even">
             <TopProductsCard rows={products ?? []} />
             <RevenueSplitPie daily={daily} />

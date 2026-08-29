@@ -116,6 +116,7 @@ export async function GET(request: NextRequest) {
                 COALESCE(SUM(oi.ml_commission), 0) as commission,
                 COALESCE(SUM(oi.shipping_cost), 0) as shipping,
                 COALESCE(SUM(oi.cost_applied * oi.quantity), 0) as cost,
+                COALESCE(SUM(oi.ads_cost_allocated), 0) as ads,
                 ${taxSum} as tax,
                 ${ivaSum} as iva,
                 COALESCE(SUM(oi.net_profit), 0) as "netProfit"

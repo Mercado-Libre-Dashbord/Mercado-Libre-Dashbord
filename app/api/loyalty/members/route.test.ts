@@ -10,13 +10,15 @@ vi.mock("@/db/loyalty", () => ({
   upsertMember: vi.fn(),
   getGrantedReward: vi.fn(),
   grantReward: vi.fn(),
+  listMembers: vi.fn(),
+  missionTally: vi.fn(),
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { createSellerCoupon } from "@/mcp/tools";
-import { completedMissions, getGrantedReward, getProgram, grantReward } from "@/db/loyalty";
+import { completedMissions, getGrantedReward, getProgram, grantReward, listMembers, missionTally } from "@/db/loyalty";
 import { resetColumnCache } from "@/db/schema-capabilities";
 import { DEFAULT_CONFIG } from "@/lib/loyalty";
 
@@ -95,5 +97,78 @@ describe("POST /api/loyalty/members", () => {
     expect(body.couponCode).toBe("YA-EMITIDO");
     // Reintentar el pedido no puede crear otra campaña en ML.
     expect(vi.mocked(createSellerCoupon)).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/loyalty/members", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetColumnCache();
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
+    vi.mocked(getProgram).mockResolvedValue(activeProgram);
+  });
+
+  function membersScope() {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) {
+        return { rows: [{ table_name: "loyalty_members", column_name: "member_id" }] };
+      }
+      return { rows: [] };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+  }
+
+  it("returns 401 with no active account", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(null);
+    expect((await GET()).status).toBe(401);
+  });
+
+  it("counts points per member and totals the program", async () => {
+    membersScope();
+    vi.mocked(listMembers).mockResolvedValue([
+      {
+        memberId: "m1", name: "Ana", email: null, joinedAt: "2026-08-01T00:00:00.000Z",
+        missions: ["seguir_tienda", "dejar_opinion"], couponCode: "ABC123", grantedAt: "2026-08-02T00:00:00.000Z",
+      },
+      {
+        memberId: "m2", name: null, email: null, joinedAt: "2026-08-03T00:00:00.000Z",
+        missions: ["seguir_tienda"], couponCode: null, grantedAt: null,
+      },
+    ]);
+    vi.mocked(missionTally).mockResolvedValue([
+      { mission: "seguir_tienda", count: 2 },
+      { mission: "dejar_opinion", count: 1 },
+    ]);
+
+    const body = await (await GET()).json();
+
+    expect(body.members[0]).toMatchObject({ memberId: "m1", points: 1500, pointsToReward: 0 });
+    expect(body.members[1]).toMatchObject({ memberId: "m2", points: 1000, pointsToReward: 500 });
+    expect(body.stats).toMatchObject({ members: 2, missionsCompleted: 3, couponsGranted: 1 });
+  });
+
+  it("reports the committed discount as a ceiling, not as money already spent", async () => {
+    membersScope();
+    vi.mocked(listMembers).mockResolvedValue([
+      { memberId: "m1", name: null, email: null, joinedAt: "2026-08-01T00:00:00.000Z", missions: [], couponCode: "A", grantedAt: null },
+      { memberId: "m2", name: null, email: null, joinedAt: "2026-08-01T00:00:00.000Z", missions: [], couponCode: "B", grantedAt: null },
+    ]);
+    vi.mocked(missionTally).mockResolvedValue([]);
+
+    const body = await (await GET()).json();
+
+    // 2 cupones x $2.000 de descuento, contra una compra mínima de $10.000.
+    expect(body.stats.committedDiscount).toBe(2 * activeProgram.rewardAmount);
+    expect(body.stats.potentialRevenue).toBe(2 * activeProgram.rewardMinPurchase);
+  });
+
+  it("says which migration is missing instead of failing with a 500", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const res = await GET();
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toContain("009-loyalty.sql");
   });
 });

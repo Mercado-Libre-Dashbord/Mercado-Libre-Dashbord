@@ -114,3 +114,64 @@ export async function grantReward(
     [accountId, memberId, couponCode]
   );
 }
+
+export interface MemberRow {
+  memberId: string;
+  name: string | null;
+  email: string | null;
+  joinedAt: string;
+  missions: MissionId[];
+  couponCode: string | null;
+  grantedAt: string | null;
+}
+
+/**
+ * Todos los miembros con sus misiones, en una sola consulta.
+ *
+ * Se agrega con array_agg en vez de pedir las misiones socio por socio: la
+ * pantalla los muestra a todos juntos y una consulta por fila se degrada mal
+ * apenas el programa funciona.
+ */
+export async function listMembers(db: QueryExecutor, accountId: string, limit = 200): Promise<MemberRow[]> {
+  const result = await db.query<{
+    member_id: string; name: string | null; email: string | null;
+    joined_at: string | Date; missions: string[] | null;
+    reward_coupon_code: string | null; reward_granted_at: string | Date | null;
+  }>(
+    `SELECT m.member_id, m.name, m.email, m.joined_at, m.reward_coupon_code, m.reward_granted_at,
+            array_remove(array_agg(c.mission), NULL) as missions
+       FROM loyalty_members m
+       LEFT JOIN loyalty_completions c
+         ON c.account_id = m.account_id AND c.member_id = m.member_id
+      WHERE m.account_id = $1
+      GROUP BY m.member_id, m.name, m.email, m.joined_at, m.reward_coupon_code, m.reward_granted_at
+      ORDER BY m.joined_at DESC
+      LIMIT $2`,
+    [accountId, limit]
+  );
+
+  return result.rows.map((r) => ({
+    memberId: r.member_id,
+    name: r.name,
+    email: r.email,
+    joinedAt: new Date(r.joined_at).toISOString(),
+    missions: (r.missions ?? []) as MissionId[],
+    couponCode: r.reward_coupon_code,
+    grantedAt: r.reward_granted_at ? new Date(r.reward_granted_at).toISOString() : null,
+  }));
+}
+
+export interface MissionTally {
+  mission: MissionId;
+  count: number;
+}
+
+/** Cuántas veces se cumplió cada misión. Dice qué incentivo funciona. */
+export async function missionTally(db: QueryExecutor, accountId: string): Promise<MissionTally[]> {
+  const result = await db.query<{ mission: string; count: string }>(
+    `SELECT mission, COUNT(*)::int as count FROM loyalty_completions
+      WHERE account_id = $1 GROUP BY mission ORDER BY COUNT(*) DESC`,
+    [accountId]
+  );
+  return result.rows.map((r) => ({ mission: r.mission as MissionId, count: Number(r.count) }));
+}
