@@ -167,7 +167,9 @@ describe("getOrderDetail", () => {
       order_items: [{ item: { id: "MLA1" }, unit_price: 500, quantity: 2, sale_fee: 65 }],
     });
     const order = await getOrderDetail("acc1", "999");
-    expect(order.items).toEqual([{ productId: "MLA1", unitPrice: 500, quantity: 2, mlCommission: 65, shippingCost: 0 }]);
+    // Sin título en la respuesta de ML, el id es el fallback: preferimos un
+    // nombre feo antes que una ficha de producto sin nombre.
+    expect(order.items).toEqual([{ productId: "MLA1", productTitle: "MLA1", unitPrice: 500, quantity: 2, mlCommission: 65, shippingCost: 0 }]);
     // Sin shipment no se pide /shipments/.../costs.
     expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(1);
   });

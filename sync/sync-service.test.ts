@@ -38,7 +38,7 @@ describe("runSync", () => {
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 1000,
-      items: [{ productId: "MLA1", unitPrice: 1000, quantity: 1, mlCommission: 130, shippingCost: 90 }],
+      items: [{ productId: "MLA1", productTitle: "Producto de prueba", unitPrice: 1000, quantity: 1, mlCommission: 130, shippingCost: 90 }],
     });
     vi.mocked(getAdsSpend).mockResolvedValueOnce([{ productId: "MLA1", date: "2026-01-10", amount: 50 }]);
 
@@ -78,7 +78,7 @@ describe("runSync", () => {
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 500,
-      items: [{ productId: "MLA2", unitPrice: 500, quantity: 1, mlCommission: 65, shippingCost: 90 }],
+      items: [{ productId: "MLA2", productTitle: "Producto de prueba", unitPrice: 500, quantity: 1, mlCommission: 65, shippingCost: 90 }],
     });
     vi.mocked(getAdsSpend).mockResolvedValueOnce([]);
 
@@ -107,7 +107,7 @@ describe("runSync", () => {
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 500,
-      items: [{ productId: "MLA3", unitPrice: 500, quantity: 1, mlCommission: 65, shippingCost: 90 }],
+      items: [{ productId: "MLA3", productTitle: "Producto de prueba", unitPrice: 500, quantity: 1, mlCommission: 65, shippingCost: 90 }],
     });
     vi.mocked(getAdsSpend).mockResolvedValue([]);
 
@@ -138,7 +138,7 @@ describe("runSync", () => {
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 100,
-      items: [{ productId: "MLA4", unitPrice: 100, quantity: 1, mlCommission: 13, shippingCost: 20 }],
+      items: [{ productId: "MLA4", productTitle: "Producto de prueba", unitPrice: 100, quantity: 1, mlCommission: 13, shippingCost: 20 }],
     });
     vi.mocked(getAdsSpend).mockRejectedValueOnce(new Error("Ads API no disponible"));
 

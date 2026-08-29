@@ -3,6 +3,7 @@ import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { revenueStatusFilter } from "@/lib/order-status";
+import { recalculateProduct } from "@/sync/sync-service";
 
 export const runtime = "nodejs";
 
@@ -71,11 +72,21 @@ export async function PATCH(request: NextRequest) {
 
   // Los impuestos ya no se guardan por producto: son una alícuota de la cuenta
   // (ver /api/account/settings). La columna `tax` queda con su default en 0.
-  await withScope({ accountId: account.id }, (client) =>
-    client.query(
+  const itemsUpdated = await withScope({ accountId: account.id }, async (client) => {
+    await client.query(
       `INSERT INTO product_costs (account_id, product_id, cost, valid_from) VALUES ($1, $2, $3, $4)`,
       [account.id, productId, cost, new Date().toISOString()]
-    )
-  );
-  return NextResponse.json({ ok: true });
+    );
+
+    // Y se aplica ya mismo a las ventas de ese producto. Antes el costo se
+    // guardaba y nada más: había que correr un "Sincronizar" completo —que
+    // recorre todo el historial contra la API de ML— para que el número del
+    // panel cambiara. Mientras tanto el vendedor veía "N líneas sin costo
+    // cargado" para productos que acababa de completar, y parecía que la
+    // carga no había tomado.
+    const hasIva = await hasColumn(client, "order_items", "iva_applied");
+    return recalculateProduct(client, account.id, productId, hasIva, account.otherTaxRate);
+  });
+
+  return NextResponse.json({ ok: true, itemsUpdated });
 }

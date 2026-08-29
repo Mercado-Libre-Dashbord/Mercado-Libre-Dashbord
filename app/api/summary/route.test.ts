@@ -118,6 +118,8 @@ describe("GET /api/summary", () => {
           ],
         };
       }
+      // El detalle de qué productos no tienen costo no es un total.
+      if (sql.includes("GROUP BY oi.product_id")) return { rows: [] };
       // Totales del período anterior (2026-07-22..2026-07-31, mismos 10 días).
       totalsCalls += 1;
       return { rows: [{ orders: 2, grossSales: 2000, netProfit: 1000 }] };
@@ -139,6 +141,9 @@ describe("GET /api/summary", () => {
       // La query de reembolsos invierte el filtro a propósito; no es un agregado.
       if (sql.includes("NOT (o.status NOT IN")) return { rows: [{ orders: 0, amount: 0 }] };
       seen.push(sql);
+      // El detalle de costos faltantes también filtra canceladas, y por eso
+      // entra en la lista de arriba — pero devuelve filas de otra forma.
+      if (sql.includes("GROUP BY oi.product_id")) return { rows: [] };
       return {
         rows: [
           {
@@ -153,8 +158,9 @@ describe("GET /api/summary", () => {
     const request = { nextUrl: { searchParams: new URLSearchParams("from=2026-08-01&to=2026-08-10") } } as any;
     await GET(request);
 
-    // Totales del período y del período anterior: ambos deben filtrar.
-    expect(seen).toHaveLength(2);
+    // Totales del período, del período anterior, y el detalle de productos sin
+    // costo: los tres tienen que dejar afuera las canceladas.
+    expect(seen).toHaveLength(3);
     for (const sql of seen) expect(sql).toContain("o.status NOT IN ('cancelled', 'invalid')");
   });
 

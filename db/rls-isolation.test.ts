@@ -87,7 +87,7 @@ describe("RLS account isolation (real Postgres, not mocked)", () => {
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 500,
-      items: [{ productId: "MLA9", unitPrice: 500, quantity: 1, mlCommission: 50, shippingCost: 20 }],
+      items: [{ productId: "MLA9", productTitle: "Producto de prueba", unitPrice: 500, quantity: 1, mlCommission: 50, shippingCost: 20 }],
     });
     vi.mocked(getAdsSpend).mockResolvedValueOnce([]);
     await withScope({ accountId: accountA.id }, (client) => runSync(client, accountA.id, "SELLER-A", "2020-01-01T00:00:00Z"));
@@ -101,7 +101,7 @@ describe("RLS account isolation (real Postgres, not mocked)", () => {
       dateCreated: "2026-01-10T12:00:00Z",
       status: "paid",
       buyerTotal: 900,
-      items: [{ productId: "MLA9", unitPrice: 900, quantity: 1, mlCommission: 90, shippingCost: 30 }],
+      items: [{ productId: "MLA9", productTitle: "Producto de prueba", unitPrice: 900, quantity: 1, mlCommission: 90, shippingCost: 30 }],
     });
     vi.mocked(getAdsSpend).mockResolvedValueOnce([]);
     await withScope({ accountId: accountB.id }, (client) => runSync(client, accountB.id, "SELLER-B", "2020-01-01T00:00:00Z"));

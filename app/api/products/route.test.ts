@@ -46,13 +46,50 @@ describe("PATCH /api/products", () => {
 
     const res = await PATCH(request);
 
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toMatchObject({ ok: true });
     expect(query).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO product_costs"), [
       "acc1",
       "MLA1",
       350,
       expect.any(String),
     ]);
+  });
+
+  it("applies the cost to that product's existing sales right away", async () => {
+    // El bug que arregla: cargar un costo insertaba la fila y nada más. El
+    // panel seguía contando esas líneas como "sin costo cargado" hasta que
+    // alguien corriera un Sincronizar completo, así que parecía que la carga
+    // no había tomado.
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) {
+        return { rows: [{ table_name: "order_items", column_name: "iva_applied" }] };
+      }
+      if (sql.includes("FROM product_costs")) {
+        return { rows: [{ cost: 350, tax: 0, validfrom: "2026-01-01T00:00:00Z" }] };
+      }
+      if (sql.includes("FROM order_items oi JOIN orders o")) {
+        return {
+          rows: [
+            {
+              id: 7, productid: "MLA1", quantity: 2, datecreated: "2026-02-01T00:00:00Z",
+              unitprice: 1000, mlcommission: 130, shippingcost: 0, adscostallocated: 0,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+    const request = { json: async () => ({ productId: "MLA1", cost: 350 }) } as any;
+
+    const res = await PATCH(request);
+
+    expect(await res.json()).toEqual({ ok: true, itemsUpdated: 1 });
+    // La venta vieja queda con el costo recién cargado y su ganancia rehecha.
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE order_items SET cost_applied"),
+      expect.arrayContaining([350, 7])
+    );
   });
 
   it("ignores a per-product tax: taxes are an account-level rate now", async () => {

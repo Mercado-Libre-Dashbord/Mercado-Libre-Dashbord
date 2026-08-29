@@ -93,6 +93,20 @@ export async function syncOrders(
     await db.query(`DELETE FROM order_items WHERE account_id = $1 AND order_id = $2`, [accountId, order.id]);
 
     for (const item of order.items) {
+      // Un producto que se vendió pero ya no está publicado no vuelve en
+      // /users/{id}/items, así que no tiene fila en `products` y por lo tanto
+      // no aparece en la pantalla Productos: el vendedor no tiene dónde
+      // cargarle el costo y esas ventas quedan para siempre fuera de la
+      // ganancia neta, sin explicación. Se crea una ficha mínima con el
+      // título que quedó en la venta. DO NOTHING: si el producto sí está en
+      // el catálogo, manda el dato real que trajo syncProducts.
+      await db.query(
+        `INSERT INTO products (account_id, id, title, current_price, stock, updated_at)
+         VALUES ($1, $2, $3, $4, 0, $5)
+         ON CONFLICT (account_id, id) DO NOTHING`,
+        [accountId, item.productId, item.productTitle || item.productId, item.unitPrice, order.dateCreated]
+      );
+
       const costsResult = await db.query<{ cost: number; tax: number; validfrom: string | Date }>(
         `SELECT cost, tax, valid_from as validFrom FROM product_costs WHERE account_id = $1 AND product_id = $2`,
         [accountId, item.productId]
@@ -160,6 +174,69 @@ export async function syncAds(
     console.error("No se pudo sincronizar publicidad, se continúa sin ese dato:", (err as Error).message);
     return 0;
   }
+}
+
+/**
+ * Rehace los números de las ventas de UN producto.
+ *
+ * Existe porque cargar un costo no puede depender de que después alguien
+ * apriete "Sincronizar": el recálculo completo recorre todo el historial
+ * contra la API de ML y solo corre al final del último lote, así que hasta
+ * entonces el panel seguía diciendo "N líneas sin costo cargado" para un
+ * producto que el vendedor acababa de completar. Acá no hace falta la API —
+ * el costo cambia, no la venta— así que es una sola pasada por la base.
+ *
+ * La publicidad asignada no se toca: no depende del costo.
+ */
+export async function recalculateProduct(
+  db: QueryExecutor,
+  accountId: string,
+  productId: string,
+  hasIva: boolean,
+  otherTaxRate = 0
+): Promise<number> {
+  const costsResult = await db.query<{ cost: number; tax: number; validfrom: string | Date }>(
+    `SELECT cost, tax, valid_from as validFrom FROM product_costs WHERE account_id = $1 AND product_id = $2`,
+    [accountId, productId]
+  );
+  const costs = costsResult.rows.map((r) => ({
+    cost: Number(r.cost),
+    tax: Number(r.tax),
+    validFrom: new Date(r.validfrom).toISOString(),
+  }));
+
+  const itemsResult = await db.query<OrderItemRow & { adscostallocated: number }>(
+    `SELECT oi.id, oi.product_id as productId, oi.quantity, o.date_created as dateCreated,
+            oi.unit_price as unitPrice, oi.ml_commission as mlCommission,
+            oi.shipping_cost as shippingCost, oi.ads_cost_allocated as adsCostAllocated
+     FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
+     WHERE oi.account_id = $1 AND oi.product_id = $2`,
+    [accountId, productId]
+  );
+
+  for (const it of itemsResult.rows) {
+    const entry = getCostEntryAtDate(costs, new Date(it.datecreated).toISOString());
+    const profitInput = {
+      unitPrice: Number(it.unitprice),
+      quantity: Number(it.quantity),
+      mlCommission: Number(it.mlcommission),
+      shippingCost: Number(it.shippingcost),
+      adsCostAllocated: Number(it.adscostallocated ?? 0),
+      costApplied: entry?.cost ?? null,
+      taxApplied: Number(it.unitprice) * otherTaxRate,
+    };
+    await db.query(
+      `UPDATE order_items SET cost_applied = $1, tax_applied = $2, net_profit = $3${hasIva ? ", iva_applied = $5" : ""} WHERE id = $4`,
+      [
+        entry?.cost ?? null,
+        profitInput.taxApplied,
+        calculateNetProfit(profitInput),
+        it.id,
+        ...(hasIva ? [calculateIva(profitInput)] : []),
+      ]
+    );
+  }
+  return itemsResult.rows.length;
 }
 
 export async function recalculate(db: QueryExecutor, accountId: string, hasIva: boolean, otherTaxRate = 0): Promise<void> {

@@ -99,6 +99,13 @@ async function attachCategoryNames(products: MlProduct[], token: string): Promis
 
 export interface MlOrderItem {
   productId: string;
+  /**
+   * Título tal como quedó registrado en la venta. Es la única forma de saber
+   * cómo se llamaba un producto que ya no está publicado: `/users/{id}/items`
+   * no lo devuelve más, así que sin esto una venta vieja queda huérfana y el
+   * vendedor no tiene dónde cargarle el costo.
+   */
+  productTitle: string;
   unitPrice: number;
   quantity: number;
   mlCommission: number;
@@ -179,6 +186,7 @@ export async function getOrderDetail(accountId: string, orderId: string): Promis
       const share = orderRevenue > 0 ? lineRevenue / orderRevenue : 1 / (items.length || 1);
       return {
         productId: oi.item.id,
+        productTitle: String(oi.item.title ?? oi.item.id),
         unitPrice: oi.unit_price,
         quantity: oi.quantity,
         mlCommission: oi.sale_fee ?? 0,

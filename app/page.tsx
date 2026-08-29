@@ -26,6 +26,7 @@ interface Summary {
   profitPct: number;
   netRevenue: number;
   itemsMissingCost: number;
+  productsMissingCost: { productId: string; title: string; units: number }[];
   refundOrders: number;
   refundAmount: number;
   refundRate: number;
@@ -293,52 +294,146 @@ function RevenueSplitPie({ daily }: { daily: DailyBreakdown[] }) {
 }
 
 /**
- * Los 5 productos que más unidades vendieron en el período.
+ * Los 5 productos que encabezan el período, en dos lecturas.
  *
- * "Más vendido" y "más rentable" no son lo mismo — por eso cada fila muestra
- * también la ganancia que dejó: un producto puede encabezar esta lista y
- * estar dando pérdida.
+ * "Más vendido" y "más rentable" casi nunca son el mismo producto, y ver las
+ * dos listas es donde el vendedor toma decisiones. Antes eran dos bloques
+ * separados —esta tarjeta y una tabla más abajo— que repetían las mismas
+ * columnas; ahora es un solo lugar con un interruptor, así no hay que
+ * comparar entre dos partes distintas de la página.
+ *
+ * La barra detrás de cada fila codifica la magnitud relativa al primero: el
+ * orden se lee sin tener que comparar números.
  */
+type TopMode = "vendidos" | "rentables";
+
 function TopProductsCard({ rows }: { rows: ProductRow[] }) {
-  const top = [...rows].filter((p) => p.unitsSold > 0).sort((a, b) => b.unitsSold - a.unitsSold).slice(0, 5);
+  const [mode, setMode] = useState<TopMode>("vendidos");
+
+  const sold = rows.filter((p) => p.unitsSold > 0);
+  const top =
+    mode === "vendidos"
+      ? [...sold].sort((a, b) => b.unitsSold - a.unitsSold).slice(0, 5)
+      : [...sold].sort((a, b) => b.totalProfit - a.totalProfit).slice(0, 5);
+
+  // La escala arranca en el máximo del modo activo: la barra es proporción
+  // dentro de este top, no contra toda la cuenta.
+  const peak = Math.max(
+    ...top.map((p) => (mode === "vendidos" ? p.unitsSold : Math.max(p.totalProfit, 0))),
+    1
+  );
 
   return (
     <div className="chart-card">
       <div className="chart-card-head">
-        <h3 className="chart-card-title">Productos más vendidos</h3>
-        <a className="field-hint" style={{ margin: 0 }} href="/productos">Ver todos</a>
+        <h3 className="chart-card-title">Top productos</h3>
+        <div className="seg" role="group" aria-label="Ordenar el top">
+          <button
+            type="button"
+            className={`seg-btn${mode === "vendidos" ? " active" : ""}`}
+            aria-pressed={mode === "vendidos"}
+            onClick={() => setMode("vendidos")}
+          >
+            Más vendidos
+          </button>
+          <button
+            type="button"
+            className={`seg-btn${mode === "rentables" ? " active" : ""}`}
+            aria-pressed={mode === "rentables"}
+            onClick={() => setMode("rentables")}
+          >
+            Más rentables
+          </button>
+        </div>
       </div>
+
       {top.length === 0 ? (
         <div className="empty-state" style={{ padding: "var(--space-5) var(--space-3)" }}>
           Sin ventas en este período.
         </div>
       ) : (
-        <ul className="top-products">
-          {top.map((p) => (
-            <li className="top-product" key={p.id}>
-              {p.thumbnail ? (
-                // <img> y no next/image: son URLs de mlstatic que cambian por
-                // cuenta, y no vale configurar dominios remotos para un thumb.
-                <img className="top-product-img" src={p.thumbnail} alt="" loading="lazy" />
-              ) : (
-                <span className="top-product-img" aria-hidden="true" />
-              )}
-              <span className="top-product-main">
-                <span className="top-product-name" title={p.title}>{p.title}</span>
-                <span className="top-product-meta">
-                  {p.unitsSold} vendidas ·{" "}
-                  <span style={{ color: p.totalProfit >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 }}>
-                    {fmt(p.totalProfit)}
+        <>
+          <ol className="top-products">
+            {top.map((p, i) => {
+              const value = mode === "vendidos" ? p.unitsSold : p.totalProfit;
+              const width = Math.max(2, (Math.max(value, 0) / peak) * 100);
+              return (
+                <li className="top-product" key={p.id}>
+                  <span className="top-rank" aria-hidden="true">{i + 1}</span>
+                  {p.thumbnail ? (
+                    // <img> y no next/image: son URLs de mlstatic que cambian por
+                    // cuenta, y no vale configurar dominios remotos para un thumb.
+                    <img className="top-product-img" src={p.thumbnail} alt="" loading="lazy" />
+                  ) : (
+                    <span className="top-product-img" aria-hidden="true" />
+                  )}
+                  <span className="top-product-main">
+                    <span className="top-product-name" title={p.title}>{p.title}</span>
+                    <span className="top-product-bar" aria-hidden="true">
+                      <span className="top-product-bar-fill" style={{ width: `${width}%` }} />
+                    </span>
+                    <span className="top-product-meta">
+                      {p.unitsSold} vendidas ·{" "}
+                      <span style={{ color: p.totalProfit >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 }}>
+                        {fmt(p.totalProfit)}
+                      </span>
+                      {p.marginPct !== null && <> · {pct(p.marginPct)} de margen</>}
+                    </span>
                   </span>
-                </span>
-              </span>
-              <span className="top-product-side">
-                <StockBadge stock={p.stock} />
-              </span>
+                  <span className="top-product-side">
+                    <StockBadge stock={p.stock} />
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          <p className="chart-card-foot">
+            {mode === "vendidos"
+              ? "Ordenado por unidades. Fijate la ganancia: el que más vende no siempre es el que más deja."
+              : "Ordenado por ganancia neta real, ya descontando comisión, envío, publicidad, costo e impuestos."}{" "}
+            <a href="/productos">Ver todos</a>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Qué productos le faltan por costear, no solo cuántas líneas.
+ *
+ * El aviso anterior decía "N líneas de venta sin costo cargado" y nada más.
+ * Como el que más aparece acá suele ser una publicación que ya no está
+ * activa, el vendedor cargaba todo lo que veía en la lista y el número no se
+ * movía: parecía que la carga no tomaba.
+ */
+function MissingCostPanel({
+  items,
+  products,
+}: {
+  items: number;
+  products: { productId: string; title: string; units: number }[];
+}) {
+  return (
+    <div className="missing-cost-panel" role="status">
+      <p className="missing-cost-head">
+        <strong>{items} línea(s) de venta sin costo cargado.</strong> Sus ventas quedan fuera de la ganancia
+        neta — no se estima un valor.
+      </p>
+      {products.length > 0 && (
+        <ul className="missing-cost-list">
+          {products.map((p) => (
+            <li key={p.productId}>
+              <span className="missing-cost-title" title={p.title}>{p.title}</span>
+              <span className="missing-cost-units">{p.units} u.</span>
             </li>
           ))}
         </ul>
       )}
+      <p className="missing-cost-foot">
+        <a className="btn btn-secondary btn-sm" href="/productos">Cargar costos</a>
+        <span>Si alguno ya no está publicado, igual aparece en Productos para que puedas costearlo.</span>
+      </p>
     </div>
   );
 }
@@ -543,7 +638,10 @@ export default function HomePage() {
       </div>
 
       {summary && summary.itemsMissingCost > 0 && (
-        <p className="missing-cost">{summary.itemsMissingCost} línea(s) de venta sin costo cargado, excluidas de Ganancia neta</p>
+        <MissingCostPanel
+          items={summary.itemsMissingCost}
+          products={summary.productsMissingCost ?? []}
+        />
       )}
 
       <h2 className="section-title">Rendimiento</h2>
@@ -618,62 +716,6 @@ export default function HomePage() {
           </details>
         </>
       )}
-
-      <h2 className="section-title">Top productos por ganancia</h2>
-      {products === null ? (
-        <p className="empty-state">Cargando productos…</p>
-      ) : (() => {
-        const top = [...products].filter((p) => p.unitsSold > 0).sort((a, b) => b.totalProfit - a.totalProfit).slice(0, 5);
-        return top.length === 0 ? (
-          <div className="empty-state">
-            <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Sin ventas en este período.</p>
-            <p style={{ margin: "var(--space-2) 0 0" }}>Probá con un período más largo para ver tus productos más rentables.</p>
-          </div>
-        ) : (
-          <div className="table-wrap table-scroll" style={{ marginBottom: "var(--space-3)" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Producto</th>
-                  <th className="num">Unidades vendidas</th>
-                  <th className="num">Margen %</th>
-                  <th className="num">Ganancia neta</th>
-                </tr>
-              </thead>
-              <tbody>
-                {top.map((p, i) => (
-                  <tr key={p.id}>
-                    <td><span className="rank-badge">{i + 1}</span></td>
-                    <td>
-                      <span className="cell-product">
-                        {p.thumbnail ? (
-                          <img className="cell-thumb" src={p.thumbnail} alt="" loading="lazy" />
-                        ) : (
-                          <span className="cell-thumb" aria-hidden="true" />
-                        )}
-                        <span className="cell-title" title={p.title}>{p.title}</span>
-                      </span>
-                    </td>
-                    <td className="num">{p.unitsSold}</td>
-                    <td className="num">{p.marginPct === null ? "-" : pct(p.marginPct)}</td>
-                    <td className="num" style={{ color: p.totalProfit >= 0 ? "var(--positive)" : "var(--negative)" }}>{fmt(p.totalProfit)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
-      })()}
-      <details className="explain-box">
-        <summary>¿Qué muestra esta tabla?</summary>
-        <p>
-          Tus 5 productos con más ganancia neta real en el período elegido (ya descontando comisión, envío,
-          publicidad, costo e impuestos) — no solo los más vendidos. Un producto puede vender mucho y dejar poca
-          plata, o vender poco y ser el más rentable: esta tabla te muestra cuál es cuál.
-        </p>
-      </details>
-
 
       <h2 className="section-title">Últimas órdenes</h2>
       {orders && orders.length === 0 ? (
