@@ -15,6 +15,7 @@ coincide con el código, es un bug del documento: corregilo en el mismo PR.
 
 | Documento | Para qué sirve | Quién lo necesita |
 |---|---|---|
+| **[00 · Masterplan](00-masterplan.md)** | **Empezá acá.** La estrategia agrupada: competencia, posicionamiento, precio, dónde ganamos y en qué orden construimos | **Todos** |
 | [01 · Producto y dolor](01-producto.md) | Qué es MetricsField Retail, para quién, qué dolor resuelve y por qué el cliente pagaría | Todos |
 | [02 · Modelo de negocio](02-modelo-de-negocio.md) | Cómo se monetiza, unit economics, costos de infraestructura, go-to-market | Todos |
 | [03 · Datos](03-datos.md) | Qué datos traemos, de dónde, con qué frecuencia, y qué NO tenemos | Producto y desarrollo |
@@ -40,16 +41,22 @@ quedó. Hoy lo resuelve con una planilla que actualiza a mano, tarde y mal, o
 directamente no lo resuelve y descubre a fin de mes que su producto estrella
 vendía a pérdida.
 
-**Por qué somos distintos.** Tres cosas que la competencia no hace juntas:
-1. **La ganancia neta es honesta**: descontamos el IVA (nadie lo hace) y el
-   costo de envío real que paga el vendedor (no el que figura en la orden), y
-   cuando falta un dato lo decimos en vez de inventar un número.
-2. **Fidelización nativa**: premiamos acciones que ocurren *dentro* de Mercado
-   Libre —seguir la tienda, dejar una opinión— con un cupón oficial emitido por
-   la API de Mercado Libre. No sacamos al comprador de la plataforma, que es lo
-   que hace que no sea sancionable.
-3. **Multicanal desde el diseño**: la misma cuenta va a unir Mercado Libre,
-   Tienda Nube y tienda propia en un solo número de rentabilidad.
+**Por qué somos distintos.** El cálculo de rentabilidad **ya tiene competencia**
+(Real Trends en Argentina, ProfitOS en México). Lo que nos diferencia:
+1. **Fidelización nativa** — y acá no encontramos a nadie haciéndolo. Premiamos
+   acciones que ocurren *dentro* de Mercado Libre —seguir la tienda, dejar una
+   opinión— con un cupón oficial emitido por la API de Mercado Libre. No
+   sacamos al comprador de la plataforma, que es lo que hace que no sea
+   sancionable. **Este es el foso.**
+2. **Fiscalidad argentina de verdad**: IVA de Responsable Inscripto sobre ventas
+   reales, IIBB configurable y facturación ARCA en el roadmap. El competidor
+   funcional más parecido es mexicano.
+3. **Honestidad del número**: cuando falta un dato lo decimos en vez de
+   inventarlo. Nadie más excluye del resultado las ventas sin costo cargado.
+4. **Multicanal desde el diseño**: Mercado Libre, Tienda Nube y tienda propia en
+   un solo número de rentabilidad.
+
+El análisis completo de la competencia está en el [masterplan](00-masterplan.md).
 
 **En qué estado está.** El núcleo de rentabilidad está en producción con un
 cliente real (`retail.metricsfield.com`). Fidelización fase 1 está construida y
@@ -57,7 +64,7 @@ esperando la app de billetera. Facturación (ARCA) tiene el núcleo fiscal
 probado pero no está conectada a AFIP. Tienda Nube tiene el adaptador escrito
 pero no el OAuth. Detalle completo en [07 · Estado y roadmap](07-estado-y-roadmap.md).
 
-**Cómo aportar.** Elegí un ítem de la tabla de [07](07-estado-y-roadmap.md),
+**Cómo aportar.** Leé el [masterplan](00-masterplan.md), elegí un ítem de la tabla de [07](07-estado-y-roadmap.md),
 leé el documento que corresponda a esa área, y trabajá contra los tests: hoy
 hay 173 tests que corren sin base de datos (`npx vitest run`) y son el contrato
 de lo que ya funciona.

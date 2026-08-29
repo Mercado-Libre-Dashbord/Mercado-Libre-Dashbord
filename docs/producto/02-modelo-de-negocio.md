@@ -1,9 +1,13 @@
 # 02 · Modelo de negocio
 
-> Buena parte de este documento son **decisiones que todavía no tomamos**. Están
-> marcadas como `DECISIÓN PENDIENTE` con las opciones y el criterio para
-> elegir. No completes un hueco de estos por tu cuenta en el código: traelo a la
-> conversación primero, porque casi todos tienen consecuencias de producto.
+> **Las decisiones de precio ya están tomadas y viven en el
+> [masterplan](00-masterplan.md#4-cómo-cobramos)**, con la investigación de
+> competencia que las sustenta. Este documento explica la forma del negocio y
+> los costos.
+>
+> Lo único que queda abierto es **el número en pesos** de los planes, y el
+> criterio para fijarlo está más abajo. No lo completes por tu cuenta en el
+> código: traelo a la conversación primero.
 
 ## Forma del negocio
 
@@ -36,31 +40,31 @@ no.
 
 ## Cómo vamos a cobrar
 
-`DECISIÓN PENDIENTE — precio y estructura.`
+**Decidido: escalones por cantidad de órdenes mensuales, con 30 días de prueba
+gratis sin tarjeta.** El razonamiento completo, la investigación de competencia
+que lo respalda y la estructura de planes están en el
+[masterplan · Cómo cobramos](00-masterplan.md#4-cómo-cobramos).
 
-El eje del que hay que elegir no es el precio, es **la variable que lo escala**.
-Las tres opciones reales, con su consecuencia:
+El resumen de por qué:
 
-| Estructura | A favor | En contra |
-|---|---|---|
-| **Precio fijo por cuenta** (ej. un plan único mensual) | Simplísimo de explicar y de facturar. El cliente sabe exactamente qué paga. | Un vendedor chico y uno grande pagan lo mismo; dejamos plata arriba de la mesa con los grandes y espantamos a los chicos. |
-| **Por volumen de facturación sincronizada** (escalones) | Se alinea con el valor: el que más factura es al que más le rinde saber su margen. Crece con el cliente. | Le mostramos al cliente que sabemos cuánto factura y le cobramos por eso; genera resistencia. Requiere escalones bien elegidos o el salto duele. |
-| **Por cantidad de publicaciones activas** | Correlaciona con el trabajo real que hace el sistema (sincronización, costos a cargar) y no se siente invasivo. | Correlaciona peor con el valor percibido: 500 publicaciones que no venden no valen más que 20 que sí. |
+- **Volumen y no fijo**, porque un precio fijo espanta al vendedor chico y deja
+  plata sobre la mesa con el grande. Los dos referentes que importan cobran así:
+  Real Trends (el líder argentino) por ventas de los últimos 30 días, y
+  sellerboard (el equivalente en Amazon) por órdenes mensuales.
+- **Por órdenes y no por facturación**, porque con inflación la facturación sube
+  sola y escalonar por ahí empuja al cliente a un plan más caro sin que haya
+  crecido. La cantidad de órdenes es la única medida de volumen que la inflación
+  no distorsiona.
+- **Prueba gratis de 30 días sin tarjeta**, porque es el estándar de la
+  categoría (Real Trends 30 días, ProfitOS 14, Nubimetrics 14) y porque nuestro
+  valor es invisible hasta que la cuenta está conectada y los costos cargados:
+  la prueba no es marketing, es la demo.
+- **Todas las funciones en todos los planes.** Lo único que cambia es el
+  volumen.
 
-**Recomendación para discutir:** escalones por facturación mensual
-sincronizada, con un plan de entrada barato que cubra al vendedor chico. Es lo
-que mejor alinea precio con valor, y el dato ya lo tenemos calculado — no hay
-que medir nada nuevo.
-
-`DECISIÓN PENDIENTE — el módulo de fidelización, ¿va incluido o es un add-on?`
-Argumento para incluirlo: es la diferenciación, y si se paga aparte casi nadie
-lo prueba. Argumento para cobrarlo aparte: tiene un costo variable real (los
-cupones los paga el vendedor, pero la emisión y el soporte los damos nosotros) y
-es el módulo con más valor percibido.
-
-`DECISIÓN PENDIENTE — facturación electrónica (ARCA), ¿es parte del plan o un
-plan superior?` Ver [07 · Roadmap](07-estado-y-roadmap.md#facturación-arca);
-tiene un costo de responsabilidad legal que conviene reflejar en el precio.
+Lo que queda por definir es el número en pesos del escalón de entrada, con este
+criterio: **tiene que costar menos que el margen que el vendedor recupera
+corrigiendo el precio de un solo producto.**
 
 ## Costos: qué nos cuesta atender un cliente
 
@@ -87,8 +91,9 @@ Infraestructura actual:
 > segundos, que es la razón por la que la sincronización está partida en lotes
 > de 50 órdenes (ver [06 · Arquitectura](06-arquitectura.md#sincronización)).
 
-`DECISIÓN PENDIENTE — cuándo migramos a Vercel Pro y Supabase Pro.` La respuesta
-por defecto es "el día antes de emitir la primera factura".
+**Decidido:** migramos a Vercel Pro y Supabase Pro **antes de emitir la primera
+factura**. No hay objeción de costo; es un requisito de lanzamiento, no un
+debate.
 
 ## Go-to-market
 
@@ -102,9 +107,15 @@ vende es: *"conectá tu cuenta y en cinco minutos te digo cuánto ganás de verd
 con tu producto más vendido — te apuesto a que es menos de lo que pensás"*.
 Funciona porque es cierta y porque es verificable en el momento.
 
-`DECISIÓN PENDIENTE — ¿hay prueba gratis, y de cuánto?` La opción fuerte es un
-período de prueba que incluya la sincronización histórica completa: el valor se
-ve recién cuando el vendedor tiene tres meses de datos cargados.
+**Decidido: prueba gratis de 30 días, sin tarjeta, que arranca al conectar
+Mercado Libre** (no al registrarse) e incluye la sincronización histórica
+completa. El valor se ve recién cuando el vendedor tiene meses de datos
+cargados. Detalle en el [masterplan](00-masterplan.md#decisión-sí-a-la-prueba-gratis-30-días-sin-tarjeta).
+
+Dos canales adicionales a evaluar, ambos analizados en el masterplan: el
+**Centro de Partners de Mercado Libre** (donde están Real Trends y Nubimetrics)
+y publicar una **calculadora gratuita** que capture la búsqueda que hoy se
+llevan media docena de sitios.
 
 ## Riesgos del modelo
 

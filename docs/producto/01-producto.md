@@ -35,9 +35,11 @@ el vendedor no ve juntos en ningún lado:
 
 El resultado observable, que vimos con datos reales del primer cliente:
 
-- **El IVA no se estaba restando en ningún cálculo**, propio ni de la
-  competencia. La ganancia estaba inflada en aproximadamente el 17% de la
-  facturación. Un producto con 20% de margen aparente tenía en realidad 3%.
+- **El IVA no se estaba restando en nuestro cálculo.** La ganancia estaba
+  inflada en aproximadamente el 17% de la facturación: un producto con 20% de
+  margen aparente tenía en realidad 3%. (Las calculadoras gratuitas del mercado
+  sí calculan IVA, pero sobre una venta hipotética, no sobre las ventas que
+  realmente ocurrieron.)
 - **El costo de envío figuraba en $0** porque la orden de Mercado Libre no lo
   trae: hay que ir a buscarlo al endpoint del envío. Cualquier cálculo que lea
   la orden y nada más está mintiendo.
@@ -116,6 +118,10 @@ venta sin pagarle más a nadie.
 
 ## Por qué el cliente nos elegiría
 
+> El análisis completo de competencia —quiénes son, qué cobran y dónde ganamos y
+> perdemos— está en el [masterplan](00-masterplan.md#2-contra-quién-competimos-de-verdad).
+> Lo que sigue es el resumen.
+
 **Contra la planilla:** no hay carga manual, el dato llega solo, y los tres
 errores que la planilla siempre tiene (IVA, envío real, órdenes canceladas)
 están resueltos.
@@ -124,16 +130,26 @@ están resueltos.
 hipotética. Nosotros calculamos las ventas que realmente ocurrieron, con el
 costo real, e informamos el resultado agregado.
 
+**Contra Real Trends** (el líder argentino, 10.000+ vendedores): es una suite
+operativa —preguntas, mensajes, envíos, competencia— que además muestra cuánto
+queda de cada venta. Nosotros somos rentabilidad **y fidelización**, con
+fiscalidad argentina más profunda. No hay que competir de frente: un vendedor
+puede tener las dos cosas, y en el corto plazo es lo más probable.
+
+**Contra ProfitOS** (México): hace lo mismo que nosotros y lo hace bien. Su
+fiscalidad es mexicana (IVA 16% + ISR) y no tiene fidelización. Es la prueba de
+que el problema existe y de que se puede cobrar por resolverlo.
+
 **Contra las herramientas de gestión más grandes:** son ERPs. Requieren migrar
 el negocio entero, cuestan órdenes de magnitud más, y su reporte de rentabilidad
 es una pestaña más. Nosotros hacemos una sola cosa y la hacemos bien, y se
 conecta en cinco minutos.
 
-**La diferenciación defendible a mediano plazo es la fidelización.** El cálculo
-de rentabilidad es replicable por cualquiera con acceso a la misma API. El
-circuito de puntos → reseñas → seguidores → cupón oficial, hecho de una forma
-que no viola las políticas de Mercado Libre, es donde se construye el foso.
-Detalle en [05](05-fidelizacion-y-reviews.md).
+**La diferenciación defendible es la fidelización.** El cálculo de rentabilidad
+es replicable —de hecho, ya está replicado. El circuito de puntos → reseñas →
+seguidores → cupón oficial, hecho de una forma que no viola las políticas de
+Mercado Libre, **no lo encontramos en ninguna herramienta de terceros**. Ahí se
+construye el foso. Detalle en [05](05-fidelizacion-y-reviews.md).
 
 ## Principios de producto
 

@@ -108,10 +108,14 @@ reemplazar la estimación por orden con el cargo real (más exacto, pero llega c
 un mes de retraso).
 
 ### Antes de cobrarle a alguien
-- **Migrar a Vercel Pro.** El plan Hobby es para uso no comercial. Ver
-  [02 · Modelo de negocio](02-modelo-de-negocio.md#costos-qué-nos-cuesta-atender-un-cliente).
-- Definir precio y estructura de planes.
-- Revisar el plan de Supabase.
+- **Migrar a Vercel Pro y Supabase Pro.** *Decidido, sin objeción de costo.* El
+  plan Hobby es para uso no comercial, así que es requisito de lanzamiento.
+- **Implementar el cobro**: integración con Mercado Pago, lógica de escalones
+  por cantidad de órdenes mensuales y prueba de 30 días que arranca al conectar
+  Mercado Libre. Estructura decidida en el
+  [masterplan](00-masterplan.md#4-cómo-cobramos).
+- **Fijar el número en pesos** del escalón de entrada — lo único que queda
+  abierto del modelo de precios.
 
 ## Ideas evaluadas y descartadas (por ahora)
 
@@ -135,8 +139,11 @@ Por orden de impacto, hoy:
    depender de una sola API.
 2. **Pantalla de miembros de fidelización.** El módulo diferenciador está a
    ciegas para el vendedor.
-3. **Lo necesario para cobrar** (Vercel Pro, precio, planes).
-4. **ARCA**, cuando se levante la pausa.
+3. **Lo necesario para cobrar**: Vercel Pro, Supabase Pro, Mercado Pago,
+   escalones y prueba de 30 días.
+4. **Medir el retorno del programa de fidelización** — cuánta facturación vino
+   de compradores con cupón. Sin ese número, la fidelización es fe.
+5. **ARCA**, cuando se levante la pausa.
 
-Antes de empezar, leé el documento del área y corré `npx vitest run` para
-partir de una base verde.
+Antes de empezar, leé el [masterplan](00-masterplan.md) y el documento del área,
+y corré `npx vitest run` para partir de una base verde.
