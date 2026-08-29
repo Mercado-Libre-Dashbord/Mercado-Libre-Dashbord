@@ -63,7 +63,7 @@ export async function GET() {
       },
       comoLeerlo: {
         conEnvioEnCero:
-          "Si es igual a lineasDeVenta, ninguna orden tiene el envío traído de la API. Apretá 'Recalcular historial' en Resumen: un sync normal no vuelve a leer las ventas viejas.",
+          "Si es igual a lineasDeVenta, ninguna orden tiene el envío traído de la API. Apretá 'Sincronizar' en Resumen: recorre toda la historia y repara las órdenes que quedaron en una versión vieja del cálculo.",
         conIvaCalculado:
           "null = falta correr db/postgres/migrations/002-iva-y-facturacion.sql. 0 = la migración está pero todavía no recalculaste el historial.",
         cargosDeFacturacion:

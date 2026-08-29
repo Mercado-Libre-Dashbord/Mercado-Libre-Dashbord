@@ -1,8 +1,18 @@
-# Dashboard de Rentabilidad ML
+# MetricsField Retail
 
-App multi-cuenta (Next.js) que sincroniza productos, órdenes y publicidad desde
-Mercado Libre a través de un servidor MCP embebido, y calcula la rentabilidad
-real de cada cuenta usando el costo final que su dueño carga por producto.
+App multi-cuenta (Next.js) que sincroniza productos, órdenes, envíos y
+publicidad desde Mercado Libre, y calcula la rentabilidad **real** de cada
+cuenta: descuenta comisión, envío, publicidad, costo de mercadería, IVA y otros
+impuestos. Encima de esa base corre un módulo de fidelización que convierte
+compradores en seguidores y opiniones dentro de Mercado Libre.
+
+> 📘 **¿Buscás entender el producto y no cómo instalarlo?**
+> La documentación de producto está en **[`docs/producto/`](docs/producto/)**:
+> qué construimos y por qué, modelo de negocio, qué datos obtenemos, el panel
+> pantalla por pantalla, fidelización y reviews, arquitectura, y el estado del
+> roadmap. Empezá por [el índice](docs/producto/README.md).
+>
+> Este README cubre solo el **setup técnico**.
 
 Cada cliente entra con su cuenta de Google y ve solo su propia cuenta de
 Mercado Libre; el/los email(s) en `ADMIN_EMAILS` pueden ver y crear cualquier
@@ -51,13 +61,18 @@ cuenta (ver "Seguridad" más abajo).
    ```sql
    ALTER ROLE app_user WITH PASSWORD 'una-contraseña-larga-y-random';
    ```
-4. En **Project Settings → Database → Connection string**, copiá la del
+4. Corré las migraciones de `db/postgres/migrations/` en orden (`001` … `009`),
+   una por una. **Importante:** el SQL Editor de Supabase corre todo lo pegado
+   como una sola transacción, así que si una sentencia falla se revierte todo
+   en silencio — por eso van de a una. Cada archivo termina con un `SELECT` de
+   verificación que dice cuántas filas tiene que devolver.
+5. En **Project Settings → Database → Connection string**, copiá la del
    **Transaction pooler** (puerto 6543) y reemplazá el usuario/contraseña por
    los de `app_user`:
    ```
    postgres://app_user:TU_PASSWORD@aws-0-<region>.pooler.supabase.com:6543/postgres
    ```
-5. Usá esa URL como `DATABASE_URL` (local y en Vercel).
+6. Usá esa URL como `DATABASE_URL` (local y en Vercel).
 
 ### ¿Por qué un rol `app_user` en vez de conectarse directo?
 
@@ -102,7 +117,7 @@ datos). Necesita una base local: ver `db/postgres/schema.sql` y crear un rol
 
 El gasto de Mercado Ads se sincroniza solo con el botón "Sincronizar". El gasto
 de Meta, Google Ads y TikTok se carga a mano desde la sección "Cargar publicidad
-externa" en el Resumen (no hay integración por API con esas plataformas — ver
+externa" en **Campañas** (no hay integración por API con esas plataformas — ver
 la adenda del spec para el porqué). Ese gasto entra en Ad Spend/MER/ROAS/CPA a
 nivel cuenta, pero no se prorratea por producto porque no tenemos forma de saber
 qué venta vino de qué canal sin datos de atribución.

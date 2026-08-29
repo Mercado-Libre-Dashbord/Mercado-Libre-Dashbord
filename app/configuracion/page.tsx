@@ -89,7 +89,7 @@ export default function ConfiguracionPage() {
           </button>
           {saved && (
             <span role="status" aria-live="polite" className="success-text">
-              Guardado. Apretá &quot;Recalcular historial&quot; en Resumen para aplicarlo a las ventas ya sincronizadas.
+              Guardado. Apretá &quot;Sincronizar&quot; en Resumen para aplicarlo a las ventas ya sincronizadas.
             </span>
           )}
         </div>
