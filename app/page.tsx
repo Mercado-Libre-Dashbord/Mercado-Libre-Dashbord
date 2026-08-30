@@ -26,7 +26,7 @@ interface Summary {
   profitPct: number;
   netRevenue: number;
   itemsMissingCost: number;
-  productsMissingCost: { productId: string; title: string; units: number }[];
+  productsMissingCost: { productId: string; title: string; thumbnail: string | null; units: number }[];
   refundOrders: number;
   refundAmount: number;
   refundRate: number;
@@ -440,7 +440,7 @@ function MissingCostPanel({
   products,
 }: {
   items: number;
-  products: { productId: string; title: string; units: number }[];
+  products: { productId: string; title: string; thumbnail: string | null; units: number }[];
 }) {
   return (
     <div className="missing-cost-panel" role="status">
@@ -452,7 +452,20 @@ function MissingCostPanel({
         <ul className="missing-cost-list">
           {products.map((p) => (
             <li key={p.productId}>
-              <span className="missing-cost-title" title={p.title}>{p.title}</span>
+              <span className="cell-product" style={{ minWidth: 0 }}>
+                {p.thumbnail ? (
+                  <img className="cell-thumb" src={p.thumbnail} alt="" loading="lazy" />
+                ) : (
+                  <span className="cell-thumb" aria-hidden="true" />
+                )}
+                <span style={{ minWidth: 0 }}>
+                  <span className="missing-cost-title" title={p.title}>{p.title}</span>
+                  {/* El id abajo del nombre: es lo que hay que buscar en
+                      Productos, y si el nombre no se pudo resolver es lo
+                      único que identifica la publicación. */}
+                  <span className="cell-sub">{p.productId}</span>
+                </span>
+              </span>
               <span className="missing-cost-units">{p.units} u.</span>
             </li>
           ))}

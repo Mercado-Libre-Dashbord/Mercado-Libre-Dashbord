@@ -68,6 +68,56 @@ export async function listProducts(accountId: string, sellerId: string): Promise
 }
 
 /**
+ * Trae publicaciones puntuales por id, sin pasar por el listado del vendedor.
+ *
+ * Existe por los productos que se vendieron y ya no aparecen en
+ * `/users/{id}/items/search` —dados de baja, en revisión, borrados—. Esos no
+ * tienen ficha en el catálogo, así que en el panel salían como "MLA2293610632"
+ * y sin foto, y no había forma de reconocerlos para cargarles el costo.
+ *
+ * Tolera que un id no exista: devuelve lo que Mercado Libre sí conteste, en
+ * vez de tirar toda la tanda por uno.
+ */
+export async function getProductsByIds(accountId: string, ids: string[]): Promise<MlProduct[]> {
+  if (ids.length === 0) return [];
+  const token = await getValidAccessToken(accountId);
+
+  const ML_ITEMS_BATCH_SIZE = 20;
+  const products: MlProduct[] = [];
+  for (let i = 0; i < ids.length; i += ML_ITEMS_BATCH_SIZE) {
+    const batch = ids.slice(i, i + ML_ITEMS_BATCH_SIZE);
+    let details: any[];
+    try {
+      details = await mlFetch(`/items?ids=${batch.join(",")}`, token);
+    } catch (err) {
+      console.warn(`No se pudieron traer las publicaciones ${batch.join(",")}:`, (err as Error).message);
+      continue;
+    }
+    for (const entry of details ?? []) {
+      // /items?ids= devuelve un code por id: los que fallaron vienen con 404
+      // y sin body. Se saltean en silencio, no son un error de la tanda.
+      if (entry?.code && entry.code !== 200) continue;
+      const body = entry?.body;
+      if (!body?.id) continue;
+      products.push({
+        id: body.id,
+        title: body.title,
+        sku: body.seller_custom_field ?? null,
+        price: body.price ?? 0,
+        stock: body.available_quantity ?? 0,
+        permalink: body.permalink,
+        categoryId: body.category_id ?? null,
+        categoryName: null,
+        thumbnail: body.secure_thumbnail ?? body.thumbnail ?? null,
+      });
+    }
+  }
+
+  await attachCategoryNames(products, token);
+  return products;
+}
+
+/**
  * Resuelve el nombre de cada categoría. `/items` solo devuelve el id
  * (ej. "MLA1234"), que no le dice nada a nadie en un gráfico.
  *

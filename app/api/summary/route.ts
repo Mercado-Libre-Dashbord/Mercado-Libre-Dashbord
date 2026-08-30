@@ -218,21 +218,25 @@ export async function GET(request: NextRequest) {
     // cargó todos y no tiene forma de saber cuál falta. Casi siempre son
     // publicaciones que ya no están activas, así que ni siquiera las estaba
     // viendo en la lista.
+    const missingThumb = (await hasColumn(client, "products", "thumbnail")) ? "p.thumbnail" : "NULL::text";
     const missingCostResult = await client.query(
       `SELECT oi.product_id as "productId",
               COALESCE(p.title, oi.product_id) as title,
+              ${missingThumb} as thumbnail,
               COALESCE(SUM(oi.quantity), 0)::int as units
          FROM order_items oi
          JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
          LEFT JOIN products p ON p.account_id = oi.account_id AND p.id = oi.product_id
         WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
           AND ${revenueStatusFilter()} AND oi.cost_applied IS NULL
-        GROUP BY oi.product_id, p.title
+        GROUP BY oi.product_id, p.title, ${missingThumb}
         ORDER BY SUM(oi.quantity) DESC
         LIMIT 8`,
       [account.id, from, to]
     );
-    const productsMissingCost = missingCostResult.rows as { productId: string; title: string; units: number }[];
+    const productsMissingCost = missingCostResult.rows as {
+      productId: string; title: string; thumbnail: string | null; units: number;
+    }[];
 
     // Las visitas salen de la API de ML en vivo, no de nuestra base: no hay
     // histórico que guardar y el dato es del período que se está mirando.

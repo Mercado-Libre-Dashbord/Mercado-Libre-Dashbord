@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
-import { syncProducts, syncOrders, syncAds, syncBillingCharges, recalculate, pendingOrderIds } from "@/sync/sync-service";
+import { syncProducts, syncOrders, syncAds, syncBillingCharges, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
 import { listOrdersPage } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
@@ -59,6 +59,10 @@ export async function POST(request: NextRequest) {
       let billingChargesSynced = 0;
       if (done) {
         adsRowsSynced = await syncAds(client, account.id, sellerId, HISTORY_START);
+        // Antes del recálculo: le da nombre y foto a las publicaciones dadas
+        // de baja que se vendieron, así aparecen en Productos y se les puede
+        // cargar el costo.
+        await backfillMissingProducts(client, account.id, sellerId);
         await recalculate(client, account.id, hasIva, account.otherTaxRate);
         billingChargesSynced = await syncBillingCharges(client, account.id);
       }

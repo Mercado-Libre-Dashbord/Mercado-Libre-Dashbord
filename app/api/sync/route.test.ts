@@ -7,6 +7,7 @@ vi.mock("@/sync/sync-service", () => ({
   syncAds: vi.fn().mockResolvedValue(0),
   syncBillingCharges: vi.fn().mockResolvedValue(0),
   recalculate: vi.fn(),
+  backfillMissingProducts: vi.fn().mockResolvedValue(0),
   pendingOrderIds: vi.fn(async (_db: unknown, _acc: string, ids: string[]) => ids),
 }));
 vi.mock("@/mcp/tools", () => ({ listOrdersPage: vi.fn() }));
@@ -14,7 +15,7 @@ vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 
 import { POST } from "./route";
 import { withScope } from "@/db/client";
-import { syncOrders, syncProducts, recalculate, pendingOrderIds } from "@/sync/sync-service";
+import { syncOrders, syncProducts, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
 import { listOrdersPage } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
@@ -86,6 +87,9 @@ describe("POST /api/sync", () => {
     const body = await (await POST(req({ offset: 5 }))).json();
 
     expect(body.done).toBe(true);
+    // Le da nombre y foto a las publicaciones dadas de baja antes de recalcular:
+    // si no corre, esas ventas siguen mostrándose como un id suelto.
+    expect(vi.mocked(backfillMissingProducts)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(recalculate)).toHaveBeenCalled();
   });
 

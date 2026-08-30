@@ -6,6 +6,7 @@ vi.mock("@/mcp/tools", () => ({
   listOrders: vi.fn(),
   getOrderDetail: vi.fn(),
   getAdsSpend: vi.fn(),
+  getProductsByIds: vi.fn().mockResolvedValue([]),
 }));
 
 const TEST_DATABASE_URL =

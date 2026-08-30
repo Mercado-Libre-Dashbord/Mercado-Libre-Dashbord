@@ -1,5 +1,5 @@
 import type { QueryExecutor } from "@/db/client";
-import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges } from "@/mcp/tools";
+import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds } from "@/mcp/tools";
 import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit, calculateIva } from "./profitability";
 import { hasColumn } from "@/db/schema-capabilities";
 
@@ -188,6 +188,59 @@ export async function syncAds(
  *
  * La publicidad asignada no se toca: no depende del costo.
  */
+/**
+ * Le da ficha a los productos que se vendieron y no están en el catálogo.
+ *
+ * `/users/{id}/items/search` no devuelve las publicaciones dadas de baja, en
+ * revisión o borradas, así que sus ventas quedaban apuntando a un product_id
+ * sin fila en `products`. En el panel se veían como "MLA2293610632", sin
+ * nombre ni foto, y el vendedor no tenía cómo reconocerlas para costearlas.
+ *
+ * Se piden esas publicaciones de a una por id —Mercado Libre sí las devuelve
+ * por `/items`, aunque no las liste— y se guardan. Si alguna ya no existe ni
+ * ahí, queda una ficha mínima con el id como nombre: sin fila en `products`
+ * no hay dónde cargar el costo, y eso es peor que un nombre feo.
+ */
+export async function backfillMissingProducts(
+  db: QueryExecutor,
+  accountId: string,
+  sellerId: string
+): Promise<number> {
+  const missing = await db.query<{ product_id: string }>(
+    `SELECT DISTINCT oi.product_id
+       FROM order_items oi
+       LEFT JOIN products p ON p.account_id = oi.account_id AND p.id = oi.product_id
+      WHERE oi.account_id = $1 AND p.id IS NULL`,
+    [accountId]
+  );
+  const ids = missing.rows.map((r) => r.product_id);
+  if (ids.length === 0) return 0;
+
+  const hasCategory = await hasColumn(db, "products", "category_id");
+  const hasThumbnail = await hasColumn(db, "products", "thumbnail");
+  const now = new Date().toISOString();
+
+  let saved = 0;
+  const fetched = await getProductsByIds(accountId, ids);
+  const byId = new Map(fetched.map((p) => [p.id, p]));
+
+  for (const id of ids) {
+    const p = byId.get(id);
+    await db.query(
+      `INSERT INTO products (account_id, id, title, sku, current_price, stock, permalink, updated_at${hasCategory ? ", category_id, category_name" : ""}${hasThumbnail ? ", thumbnail" : ""})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8${hasCategory ? ", $9, $10" : ""}${hasThumbnail ? `, $${hasCategory ? 11 : 9}` : ""})
+       ON CONFLICT (account_id, id) DO NOTHING`,
+      [
+        accountId, id, p?.title ?? id, p?.sku ?? null, p?.price ?? 0, p?.stock ?? 0, p?.permalink ?? null, now,
+        ...(hasCategory ? [p?.categoryId ?? null, p?.categoryName ?? null] : []),
+        ...(hasThumbnail ? [p?.thumbnail ?? null] : []),
+      ]
+    );
+    saved += 1;
+  }
+  return saved;
+}
+
 export async function recalculateProduct(
   db: QueryExecutor,
   accountId: string,
@@ -256,6 +309,7 @@ export async function runSync(
   const orderIds = await listOrders(accountId, sellerId, sinceIso);
   const ordersSynced = await syncOrders(db, accountId, orderIds, hasIva, otherTaxRate);
   const adsRowsSynced = await syncAds(db, accountId, sellerId, sinceIso);
+  await backfillMissingProducts(db, accountId, sellerId);
   await recalculate(db, accountId, hasIva, otherTaxRate);
   const billingChargesSynced = await syncBillingCharges(db, accountId);
 

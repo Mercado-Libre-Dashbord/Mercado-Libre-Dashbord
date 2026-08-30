@@ -19,6 +19,7 @@ import {
   splitIntoWindows,
   createSellerCoupon,
   listBillingPeriods,
+  getProductsByIds,
 } from "./tools";
 import { mlFetch, MlApiError } from "./ml-client";
 
@@ -518,5 +519,62 @@ describe("listBillingPeriods", () => {
     expect(periods).toEqual([
       { key: "2026-07-01", dateFrom: "2026-07-01", dateTo: "2026-07-31", amount: 1234.5 },
     ]);
+  });
+});
+
+describe("getProductsByIds", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("trae publicaciones que ya no aparecen en el listado del vendedor", async () => {
+    // Es el caso que rompía el panel: un producto vendido y dado de baja no
+    // vuelve en /users/{id}/items/search, pero /items sí lo devuelve.
+    vi.mocked(mlFetch).mockResolvedValueOnce([
+      {
+        code: 200,
+        body: {
+          id: "MLA2293610632", title: "Luz De Emergencia", seller_custom_field: "SKU9",
+          price: 12000, available_quantity: 0, permalink: "https://ml/p",
+          category_id: "MLA1", secure_thumbnail: "https://https-thumb",
+        },
+      },
+    ]);
+    vi.mocked(mlFetch).mockResolvedValueOnce({ id: "MLA1", name: "Iluminación" });
+
+    const products = await getProductsByIds("acc1", ["MLA2293610632"]);
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      id: "MLA2293610632",
+      title: "Luz De Emergencia",
+      thumbnail: "https://https-thumb",
+      categoryName: "Iluminación",
+    });
+  });
+
+  it("saltea los ids que ML no reconoce en vez de perder toda la tanda", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce([
+      { code: 404, body: {} },
+      { code: 200, body: { id: "MLA2", title: "Existe", price: 10, available_quantity: 1, permalink: "u" } },
+    ]);
+
+    const products = await getProductsByIds("acc1", ["MLA1", "MLA2"]);
+
+    expect(products.map((p) => p.id)).toEqual(["MLA2"]);
+  });
+
+  it("no llama a la API cuando no hay ids que pedir", async () => {
+    expect(await getProductsByIds("acc1", [])).toEqual([]);
+    expect(vi.mocked(mlFetch)).not.toHaveBeenCalled();
+  });
+
+  it("pide de a 20, que es el máximo que acepta /items", async () => {
+    const ids = Array.from({ length: 45 }, (_, i) => `MLA${i}`);
+    vi.mocked(mlFetch).mockResolvedValue([]);
+
+    await getProductsByIds("acc1", ids);
+
+    const itemCalls = vi.mocked(mlFetch).mock.calls.filter((c) => String(c[0]).startsWith("/items?ids="));
+    expect(itemCalls).toHaveLength(3);
+    expect(String(itemCalls[0][0]).split(",")).toHaveLength(20);
   });
 });
