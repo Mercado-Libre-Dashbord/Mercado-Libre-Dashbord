@@ -20,6 +20,8 @@ import {
   createSellerCoupon,
   listBillingPeriods,
   getProductsByIds,
+  clampToAdsWindow,
+  ADS_LOOKBACK_DAYS,
 } from "./tools";
 import { mlFetch, MlApiError } from "./ml-client";
 
@@ -348,12 +350,17 @@ describe("splitIntoWindows", () => {
   });
 });
 
+/** Fecha de hace N días, en el formato que usa la API. */
+function haceDias(n: number): string {
+  return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+}
+
 describe("getAdsSpend", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns an empty array when the account has no Product Ads advertiser", async () => {
     vi.mocked(mlFetch).mockResolvedValueOnce({ advertisers: [] });
-    expect(await getAdsSpend("acc1", "123", "2026-01-01", "2026-01-31")).toEqual([]);
+    expect(await getAdsSpend("acc1", "123", haceDias(30), haceDias(1))).toEqual([]);
     expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(1);
   });
 
@@ -362,7 +369,7 @@ describe("getAdsSpend", () => {
       .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
       .mockRejectedValueOnce(new MlApiError(404, "advertiser_campaigns_not_found"));
 
-    expect(await getAdsSpend("acc1", "123", "2026-01-01", "2026-01-31")).toEqual([]);
+    expect(await getAdsSpend("acc1", "123", haceDias(30), haceDias(1))).toEqual([]);
   });
 
   it("resolves the advertiser id and site id before listing campaigns", async () => {
@@ -372,11 +379,11 @@ describe("getAdsSpend", () => {
         results: [{ metrics_by_day: [{ item_id: "MLA1", date: "2026-01-05", cost: 100 }] }],
       });
 
-    const rows = await getAdsSpend("acc1", "123", "2026-01-01", "2026-01-31");
+    const rows = await getAdsSpend("acc1", "123", haceDias(30), haceDias(1));
 
     expect(rows).toEqual([{ productId: "MLA1", date: "2026-01-05", amount: 100 }]);
     expect(vi.mocked(mlFetch).mock.calls[1][0]).toBe(
-      "/marketplace/advertising/MLA/advertisers/999/product_ads/campaigns/search?date_from=2026-01-01&date_to=2026-01-31&metrics=cost"
+      `/marketplace/advertising/MLA/advertisers/999/product_ads/campaigns/search?date_from=${haceDias(30)}&date_to=${haceDias(1)}&metrics=cost`
     );
     expect(vi.mocked(mlFetch).mock.calls[1][2]).toEqual(expect.objectContaining({ headers: { "Api-Version": "2" } }));
   });
@@ -386,7 +393,7 @@ describe("getAdsSpend", () => {
       .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
       .mockResolvedValue({ results: [] });
 
-    await getAdsSpend("acc1", "123", "2026-01-01", "2026-08-25");
+    await getAdsSpend("acc1", "123", haceDias(2000), haceDias(0));
 
     const searchCalls = vi.mocked(mlFetch).mock.calls.filter((c) => String(c[0]).includes("campaigns/search"));
     expect(searchCalls.length).toBeGreaterThan(1);
@@ -576,5 +583,37 @@ describe("getProductsByIds", () => {
     const itemCalls = vi.mocked(mlFetch).mock.calls.filter((c) => String(c[0]).startsWith("/items?ids="));
     expect(itemCalls).toHaveLength(3);
     expect(String(itemCalls[0][0]).split(",")).toHaveLength(20);
+  });
+});
+
+describe("clampToAdsWindow", () => {
+  const hoy = new Date("2026-08-30T12:00:00Z");
+
+  it("adelanta una fecha vieja hasta donde la API contesta", () => {
+    // Mercado Ads solo sirve métricas de los últimos 90 días corridos. El sync
+    // del historial pedía desde 2020 y cada tramo viejo devolvía 400, así que
+    // la publicidad no entraba nunca.
+    expect(clampToAdsWindow("2020-01-01", hoy)).toBe(
+      new Date(hoy.getTime() - ADS_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10)
+    );
+  });
+
+  it("deja intacta una fecha que ya está dentro de la ventana", () => {
+    expect(clampToAdsWindow("2026-08-20", hoy)).toBe("2026-08-20");
+  });
+});
+
+describe("getAdsSpend fuera de la ventana", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("no le pide métricas a la API cuando todo el rango es más viejo de lo que sirve", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] });
+
+    const rows = await getAdsSpend("acc1", "123", "2020-01-01", "2020-03-31");
+
+    expect(rows).toEqual([]);
+    // Solo la llamada del advertiser: ninguna de campaigns/search.
+    const searchCalls = vi.mocked(mlFetch).mock.calls.filter((c) => String(c[0]).includes("campaigns/search"));
+    expect(searchCalls).toHaveLength(0);
   });
 });

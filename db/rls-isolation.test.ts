@@ -7,6 +7,7 @@ vi.mock("@/mcp/tools", () => ({
   getOrderDetail: vi.fn(),
   getAdsSpend: vi.fn(),
   getProductsByIds: vi.fn().mockResolvedValue([]),
+  getOrderItemTitles: vi.fn().mockResolvedValue(new Map()),
 }));
 
 // This is the test that matters most for the Supabase migration: it proves

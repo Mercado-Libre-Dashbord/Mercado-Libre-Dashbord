@@ -1,5 +1,5 @@
 import type { QueryExecutor } from "@/db/client";
-import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds } from "@/mcp/tools";
+import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds, getOrderItemTitles } from "@/mcp/tools";
 import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit, calculateIva } from "./profitability";
 import { hasColumn } from "@/db/schema-capabilities";
 
@@ -103,7 +103,8 @@ export async function syncOrders(
       await db.query(
         `INSERT INTO products (account_id, id, title, current_price, stock, updated_at)
          VALUES ($1, $2, $3, $4, 0, $5)
-         ON CONFLICT (account_id, id) DO NOTHING`,
+         ON CONFLICT (account_id, id) DO UPDATE SET
+         title = CASE WHEN products.title = products.id THEN excluded.title ELSE products.title END`,
         [accountId, item.productId, item.productTitle || item.productId, item.unitPrice, order.dateCreated]
       );
 
@@ -206,11 +207,22 @@ export async function backfillMissingProducts(
   accountId: string,
   sellerId: string
 ): Promise<number> {
-  const missing = await db.query<{ product_id: string }>(
-    `SELECT DISTINCT oi.product_id
+  // Se trae también UNA orden por producto: si la publicación fue borrada de
+  // Mercado Libre, /items ya no la conoce, pero la orden guarda el nombre con
+  // el que se vendió.
+  const missing = await db.query<{ product_id: string; order_id: string }>(
+    `SELECT oi.product_id, MIN(oi.order_id) as order_id
        FROM order_items oi
        LEFT JOIN products p ON p.account_id = oi.account_id AND p.id = oi.product_id
-      WHERE oi.account_id = $1 AND p.id IS NULL`,
+      WHERE oi.account_id = $1
+        AND (
+          p.id IS NULL
+          -- Fichas mínimas de una corrida anterior: quedaron con el id como
+          -- nombre porque en ese momento no se pudo resolver. Se reintenta,
+          -- si no el nombre feo se queda para siempre.
+          OR p.title = p.id
+        )
+      GROUP BY oi.product_id`,
     [accountId]
   );
   const ids = missing.rows.map((r) => r.product_id);
@@ -224,14 +236,26 @@ export async function backfillMissingProducts(
   const fetched = await getProductsByIds(accountId, ids);
   const byId = new Map(fetched.map((p) => [p.id, p]));
 
+  // Para los que /items no reconoció, el nombre sale de la orden. Es una
+  // llamada por producto irrecuperable, no por producto: los que sí están en
+  // el catálogo ya se resolvieron de a 20 arriba.
+  const fallbackTitles = new Map<string, string>();
+  for (const row of missing.rows) {
+    if (byId.has(row.product_id) || !row.order_id) continue;
+    const titles = await getOrderItemTitles(accountId, row.order_id);
+    const title = titles.get(row.product_id);
+    if (title) fallbackTitles.set(row.product_id, title);
+  }
+
   for (const id of ids) {
     const p = byId.get(id);
     await db.query(
       `INSERT INTO products (account_id, id, title, sku, current_price, stock, permalink, updated_at${hasCategory ? ", category_id, category_name" : ""}${hasThumbnail ? ", thumbnail" : ""})
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8${hasCategory ? ", $9, $10" : ""}${hasThumbnail ? `, $${hasCategory ? 11 : 9}` : ""})
-       ON CONFLICT (account_id, id) DO NOTHING`,
+       ON CONFLICT (account_id, id) DO UPDATE SET
+         title = CASE WHEN products.title = products.id THEN excluded.title ELSE products.title END`,
       [
-        accountId, id, p?.title ?? id, p?.sku ?? null, p?.price ?? 0, p?.stock ?? 0, p?.permalink ?? null, now,
+        accountId, id, p?.title ?? fallbackTitles.get(id) ?? id, p?.sku ?? null, p?.price ?? 0, p?.stock ?? 0, p?.permalink ?? null, now,
         ...(hasCategory ? [p?.categoryId ?? null, p?.categoryName ?? null] : []),
         ...(hasThumbnail ? [p?.thumbnail ?? null] : []),
       ]

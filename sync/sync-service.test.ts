@@ -7,27 +7,29 @@ vi.mock("@/mcp/tools", () => ({
   getOrderDetail: vi.fn(),
   getAdsSpend: vi.fn(),
   getProductsByIds: vi.fn().mockResolvedValue([]),
+  getOrderItemTitles: vi.fn().mockResolvedValue(new Map()),
 }));
 
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL || "postgres://app_user:app_user_local_test_pw@localhost:5432/ml_dashboard_test";
 
+/** Cuenta nueva y aislada por test. La usan los dos describes de este archivo. */
+async function makeAccount() {
+  const { withScope } = await import("@/db/client");
+  const { createAccount } = await import("@/db/accounts");
+  return withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta test", `sync.${nanoid(8)}@example.com`));
+}
+
+beforeAll(() => {
+  process.env.DATABASE_URL = TEST_DATABASE_URL;
+});
+
+afterAll(async () => {
+  const { closeDb } = await import("@/db/client");
+  await closeDb();
+});
+
 describe("runSync", () => {
-  beforeAll(() => {
-    process.env.DATABASE_URL = TEST_DATABASE_URL;
-  });
-
-  afterAll(async () => {
-    const { closeDb } = await import("@/db/client");
-    await closeDb();
-  });
-
-  async function makeAccount() {
-    const { withScope } = await import("@/db/client");
-    const { createAccount } = await import("@/db/accounts");
-    return withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta test", `sync.${nanoid(8)}@example.com`));
-  }
-
   it("persists products, orders and a computed net_profit per order item", async () => {
     const { listProducts, listOrders, getOrderDetail, getAdsSpend } = await import("@/mcp/tools");
     vi.mocked(listProducts).mockResolvedValueOnce([
@@ -164,5 +166,116 @@ describe("runSync", () => {
       return r.rows[0];
     });
     expect(order).toBeTruthy();
+  });
+});
+
+describe("backfillMissingProducts", () => {
+  it("le pone nombre y foto a una publicación que ya no está en el catálogo", async () => {
+    const { getProductsByIds } = await import("@/mcp/tools");
+    const { withScope } = await import("@/db/client");
+    const { backfillMissingProducts } = await import("./sync-service");
+    const account = await makeAccount();
+
+    vi.mocked(getProductsByIds).mockResolvedValueOnce([
+      {
+        id: "MLA999", title: "Luz De Emergencia 30 Led", sku: "SKU1", price: 12000,
+        stock: 0, permalink: "https://ml/p", categoryId: null, categoryName: null,
+        thumbnail: "https://thumb",
+      },
+    ]);
+
+    const saved = await withScope({ accountId: account.id }, async (client) => {
+      await client.query(
+        `INSERT INTO orders (account_id, id, date_created, status, buyer_total) VALUES ($1,'O1',now(),'paid',100)`,
+        [account.id]
+      );
+      await client.query(
+        `INSERT INTO order_items (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated)
+         VALUES ($1,'O1','MLA999',100,1,0,0,0)`,
+        [account.id]
+      );
+      return backfillMissingProducts(client, account.id, "SELLER1");
+    });
+
+    expect(saved).toBe(1);
+    const row = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ title: string; thumbnail: string | null }>(
+        `SELECT title, thumbnail FROM products WHERE account_id = $1 AND id = 'MLA999'`,
+        [account.id]
+      );
+      return r.rows[0];
+    });
+    expect(row.title).toBe("Luz De Emergencia 30 Led");
+    expect(row.thumbnail).toBe("https://thumb");
+  });
+
+  it("si la publicación fue borrada de ML, saca el nombre de la orden", async () => {
+    // Es el caso real: /items ya no la conoce, pero la venta guarda el título
+    // con el que se vendió. Sin esto queda como "MLA888" para siempre.
+    const { getProductsByIds, getOrderItemTitles } = await import("@/mcp/tools");
+    const { withScope } = await import("@/db/client");
+    const { backfillMissingProducts } = await import("./sync-service");
+    const account = await makeAccount();
+
+    vi.mocked(getProductsByIds).mockResolvedValueOnce([]);
+    vi.mocked(getOrderItemTitles).mockResolvedValueOnce(new Map([["MLA888", "Espejo Triple Touch"]]));
+
+    await withScope({ accountId: account.id }, async (client) => {
+      await client.query(
+        `INSERT INTO orders (account_id, id, date_created, status, buyer_total) VALUES ($1,'O2',now(),'paid',100)`,
+        [account.id]
+      );
+      await client.query(
+        `INSERT INTO order_items (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated)
+         VALUES ($1,'O2','MLA888',100,1,0,0,0)`,
+        [account.id]
+      );
+      return backfillMissingProducts(client, account.id, "SELLER1");
+    });
+
+    const title = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ title: string }>(
+        `SELECT title FROM products WHERE account_id = $1 AND id = 'MLA888'`,
+        [account.id]
+      );
+      return r.rows[0]?.title;
+    });
+    expect(title).toBe("Espejo Triple Touch");
+  });
+
+  it("repara una ficha vieja que había quedado con el id como nombre", async () => {
+    const { getProductsByIds, getOrderItemTitles } = await import("@/mcp/tools");
+    const { withScope } = await import("@/db/client");
+    const { backfillMissingProducts } = await import("./sync-service");
+    const account = await makeAccount();
+
+    vi.mocked(getProductsByIds).mockResolvedValueOnce([]);
+    vi.mocked(getOrderItemTitles).mockResolvedValueOnce(new Map([["MLA777", "Nombre recuperado"]]));
+
+    await withScope({ accountId: account.id }, async (client) => {
+      await client.query(
+        `INSERT INTO products (account_id, id, title, current_price, stock, updated_at) VALUES ($1,'MLA777','MLA777',0,0,now())`,
+        [account.id]
+      );
+      await client.query(
+        `INSERT INTO orders (account_id, id, date_created, status, buyer_total) VALUES ($1,'O3',now(),'paid',100)`,
+        [account.id]
+      );
+      await client.query(
+        `INSERT INTO order_items (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated)
+         VALUES ($1,'O3','MLA777',100,1,0,0,0)`,
+        [account.id]
+      );
+      return backfillMissingProducts(client, account.id, "SELLER1");
+    });
+
+    const title = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ title: string }>(
+        `SELECT title FROM products WHERE account_id = $1 AND id = 'MLA777'`,
+        [account.id]
+      );
+      return r.rows[0]?.title;
+    });
+    expect(title).toBe("Nombre recuperado");
   });
 });

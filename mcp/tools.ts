@@ -118,6 +118,33 @@ export async function getProductsByIds(accountId: string, ids: string[]): Promis
 }
 
 /**
+ * Títulos tal como quedaron registrados en una orden.
+ *
+ * Último recurso para las publicaciones borradas de Mercado Libre: `/items`
+ * ya no las conoce, pero la orden guarda el nombre con el que se vendieron.
+ * Sin esto, un producto borrado se queda para siempre como "MLA2293610632" y
+ * el vendedor no puede reconocerlo para cargarle el costo.
+ *
+ * No usa getOrderDetail a propósito: ese además pide el costo del envío, que
+ * acá no hace falta.
+ */
+export async function getOrderItemTitles(accountId: string, orderId: string): Promise<Map<string, string>> {
+  const token = await getValidAccessToken(accountId);
+  const titles = new Map<string, string>();
+  try {
+    const order = await mlFetch(`/orders/${orderId}`, token);
+    for (const oi of order.order_items ?? []) {
+      const id = oi?.item?.id;
+      const title = oi?.item?.title;
+      if (id && title) titles.set(String(id), String(title));
+    }
+  } catch (err) {
+    console.warn(`No se pudo leer la orden ${orderId} para recuperar títulos:`, (err as Error).message);
+  }
+  return titles;
+}
+
+/**
  * Resuelve el nombre de cada categoría. `/items` solo devuelve el id
  * (ej. "MLA1234"), que no le dice nada a nadie en un gráfico.
  *
@@ -361,6 +388,22 @@ async function listOrEmpty<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
+/**
+ * Cuántos días para atrás sirve métricas Mercado Ads. Con margen sobre los 90
+ * que documenta la API: pedir justo el borde ya devolvió 400.
+ */
+export const ADS_LOOKBACK_DAYS = 85;
+
+/**
+ * Adelanta la fecha de inicio hasta donde la API puede contestar.
+ *
+ * `today` existe para poder testear sin depender del reloj.
+ */
+export function clampToAdsWindow(dateFrom: string, today = new Date()): string {
+  const limit = new Date(today.getTime() - ADS_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
+  return dateFrom < limit ? limit : dateFrom;
+}
+
 export async function getAdsSpend(
   accountId: string,
   sellerId: string,
@@ -373,10 +416,16 @@ export async function getAdsSpend(
   const token = await getValidAccessToken(accountId);
   const base = productAdsBase(advertiser.siteId, advertiser.advertiserId);
 
-  // El rango se recorre en tramos de 90 días (tope de la API). Un sync
-  // completo del historial pide desde 2020, que en una sola consulta da 400.
+  // Mercado Ads solo sirve métricas de los últimos 90 días CORRIDOS: el límite
+  // es hacia atrás desde hoy, no del largo del rango. Un sync del historial
+  // pedía desde 2020 y se comía un 400 en cada tramo viejo, así que la
+  // publicidad no entraba nunca. Se recorta el pedido a lo que la API puede
+  // contestar; lo anterior no existe del lado de ML y no hay forma de traerlo.
+  const from = clampToAdsWindow(dateFrom);
+  if (from > dateTo) return [];
+
   const rows: { productId: string; date: string; amount: number }[] = [];
-  for (const window of splitIntoWindows(dateFrom, dateTo)) {
+  for (const window of splitIntoWindows(from, dateTo)) {
     const campaigns = await listOrEmpty(
       () =>
         mlFetch(

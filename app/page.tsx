@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
-  LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
+  PieChart, Pie, Cell, AreaChart, Area,
 } from "recharts";
 import { SyncButton } from "./SyncButton";
 import { NoAccountState } from "./NoAccountState";
@@ -234,8 +234,8 @@ function RevenueSplitPie({ daily }: { daily: DailyBreakdown[] }) {
       <div className="chart-card-head">
         <h3 className="chart-card-title">En qué se fue tu facturación</h3>
       </div>
-      <div style={{ width: "100%", height: 200, position: "relative" }}>
-        <ResponsiveContainer>
+      <div className="donut-wrap" style={{ width: "100%", minHeight: 200, position: "relative" }}>
+        <ResponsiveContainer width="100%" height={200}>
           <PieChart>
             <Pie
               data={visible}
@@ -523,7 +523,7 @@ function RevenueStackedArea({ daily }: { daily: DailyBreakdown[] }) {
     <div className="chart-card">
       <div className="chart-card-head">
         <h3 className="chart-card-title">Cómo se repartió la facturación, día a día</h3>
-        <span className="field-hint" style={{ margin: 0 }}>La altura de cada día es lo que facturaste</span>
+        <span className="field-hint" style={{ margin: 0 }}>La altura es lo que facturaste; la franja verde de abajo, lo que te quedó</span>
       </div>
       <ResponsiveContainer width="100%" height={300}>
         <AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
@@ -553,45 +553,6 @@ function RevenueStackedArea({ daily }: { daily: DailyBreakdown[] }) {
           ))}
         </AreaChart>
       </ResponsiveContainer>
-    </div>
-  );
-}
-
-/**
- * Ganancia contra costos día a día. La ganancia va en negro (la serie que
- * importa) y los costos en gris de contexto — resaltar una y apagar la otra
- * se lee mucho más rápido que dos colores compitiendo.
- */
-function PerformanceChart({ daily }: { daily: DailyBreakdown[] }) {
-  const data = daily.map((d) => ({
-    day: d.day,
-    ganancia: d.netProfit,
-    costos: d.commission + d.shipping + d.tax + d.iva + d.cost,
-  }));
-
-  return (
-    <div className="chart-card">
-      <div className="chart-card-head">
-        <h3 className="chart-card-title">Rendimiento de ventas</h3>
-        <span className="field-hint" style={{ margin: 0 }}>Ganancia neta vs. costos totales</span>
-      </div>
-      <div style={{ width: "100%", height: 260 }}>
-        <ResponsiveContainer>
-          <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-            <XAxis dataKey="day" stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 11 }} tickMargin={8} />
-            <YAxis stroke="var(--text-dim)" tick={{ fill: "var(--text-dim)", fontSize: 11 }} width={54} />
-            <Tooltip
-              contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
-              labelStyle={{ color: "var(--text-dim)" }}
-              formatter={(value: number) => fmt(value)}
-            />
-            <Legend verticalAlign="top" align="left" wrapperStyle={{ fontSize: 12, color: "var(--text-dim)", paddingBottom: 8 }} />
-            <Line type="monotone" dataKey="costos" name="Costos" stroke="var(--series-muted)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-            <Line type="monotone" dataKey="ganancia" name="Ganancia neta" stroke="var(--series-strong)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
     </div>
   );
 }
@@ -770,7 +731,6 @@ export default function HomePage() {
         </div>
       ) : (
         <>
-          <PerformanceChart daily={daily} />
           <RevenueStackedArea daily={daily} />
           <div className="chart-split-even">
             <TopProductsCard rows={products ?? []} />
