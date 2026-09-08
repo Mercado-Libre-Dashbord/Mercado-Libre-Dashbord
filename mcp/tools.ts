@@ -456,9 +456,22 @@ export async function getAdsSpend(
     // vez de otra suposición.
     const noneHasMetricsField = results.length > 0 && results.every((c: any) => c.metrics_by_day === undefined);
     if (noneHasMetricsField && rows.length === before) {
+      const sample = results[0] ?? {};
+      // Ya sabemos (de un log real) que el campo no se llama "metrics_by_day"
+      // sino "metrics". Falta saber su FORMA: ¿un array por día, o un objeto
+      // agregado del rango pedido? Se loguea nada más que la estructura
+      // (claves, tipo, longitud), nunca montos.
+      const metricsShape =
+        sample.metrics === undefined
+          ? "sin campo 'metrics'"
+          : Array.isArray(sample.metrics)
+            ? `array de ${sample.metrics.length} elemento(s), claves del primero: ${Object.keys(sample.metrics[0] ?? {}).join(", ")}`
+            : typeof sample.metrics === "object" && sample.metrics !== null
+              ? `objeto con claves: ${Object.keys(sample.metrics).join(", ")}`
+              : `valor de tipo ${typeof sample.metrics}`;
       console.warn(
         `Product Ads: ${results.length} campaña(s) en ${window.from}..${window.to} sin gasto reconocible. ` +
-        `Claves de la primera campaña: ${Object.keys(results[0] ?? {}).join(", ")}`
+        `Claves de la primera campaña: ${Object.keys(sample).join(", ")}. Forma de 'metrics': ${metricsShape}`
       );
     }
   }

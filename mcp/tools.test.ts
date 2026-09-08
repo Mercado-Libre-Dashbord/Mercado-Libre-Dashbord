@@ -675,4 +675,19 @@ describe("getAdsSpend con campañas sin gasto reconocible", () => {
 
     expect(warn).not.toHaveBeenCalled();
   });
+
+  it("describe la forma real del campo 'metrics' cuando aparece en vez de 'metrics_by_day'", async () => {
+    // Confirmado con un log real: ML no manda "metrics_by_day", manda
+    // "metrics". Falta saber si es un array por día o un objeto agregado del
+    // rango — este aviso lo va a decir la próxima vez, sin loguear montos.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
+      .mockResolvedValueOnce({ results: [{ id: "C1", metrics: { cost: 1234, clicks: 10 } }] });
+
+    await getAdsSpend("acc1", "123", haceDias(10), haceDias(1));
+
+    const warned = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warned).toContain("Forma de 'metrics': objeto con claves: cost, clicks");
+  });
 });
