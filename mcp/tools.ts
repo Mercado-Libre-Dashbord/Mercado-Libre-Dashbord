@@ -228,7 +228,13 @@ export async function getShipmentSellerCost(accountId: string, shipmentId: strin
       const value = Number(candidate);
       if (Number.isFinite(value)) return value;
     }
-    console.warn(`Envío ${shipmentId}: /costs respondió sin costo de vendedor reconocible.`);
+    // Se loguean las claves (no el body entero, por las dudas) para poder ver
+    // la forma real de la respuesta la próxima vez que esto pase — es la
+    // sospecha concreta con Fulfillment/Full, que podría devolver un formato
+    // distinto a `senders[]` / `sender.cost` / `gross_amount`.
+    console.warn(
+      `Envío ${shipmentId}: /costs respondió sin costo de vendedor reconocible. Claves recibidas: ${Object.keys(costs ?? {}).join(", ")}`
+    );
     return 0;
   } catch (err) {
     // Silenciar esto del todo dejaba el envío en $0 sin ninguna pista de por
@@ -559,8 +565,12 @@ export async function getStoreVisits(
 ): Promise<number | null> {
   const token = await getValidAccessToken(accountId);
   // El endpoint espera timestamps completos con offset, no fechas sueltas.
-  const from = `${dateFrom}T00:00:00.000-00:00`;
-  const to = `${dateTo}T23:59:59.999-00:00`;
+  // "-00:00" (offset cero pero "desconocido", válido en RFC 3339) es lo que
+  // se mandaba antes, y ML lo rechaza con 400 "unknown date format" — quiere
+  // el offset UTC estándar. Con "Z" nunca más se trajo un solo dato de
+  // visitas, silenciosamente, desde que se agregó esta función.
+  const from = `${dateFrom}T00:00:00.000Z`;
+  const to = `${dateTo}T23:59:59.999Z`;
   try {
     const res = await mlFetch(
       `/users/${sellerId}/items_visits?date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}`,

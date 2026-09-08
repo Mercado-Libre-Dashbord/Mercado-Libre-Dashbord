@@ -19,6 +19,7 @@ import {
   splitIntoWindows,
   createSellerCoupon,
   listBillingPeriods,
+  getStoreVisits,
   getProductsByIds,
   clampToAdsWindow,
   ADS_LOOKBACK_DAYS,
@@ -615,5 +616,29 @@ describe("getAdsSpend fuera de la ventana", () => {
     // Solo la llamada del advertiser: ninguna de campaigns/search.
     const searchCalls = vi.mocked(mlFetch).mock.calls.filter((c) => String(c[0]).includes("campaigns/search"));
     expect(searchCalls).toHaveLength(0);
+  });
+});
+
+describe("getStoreVisits", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("manda el offset UTC estándar, no el -00:00 que ML rechaza con 400", async () => {
+    // Bug real, en producción: con "-00:00" (offset cero "desconocido", válido
+    // en RFC 3339 pero no en lo que acepta este endpoint) ML respondía
+    // "Invalid request unknown date format" y las visitas quedaban en null
+    // para siempre, sin que nada lo mostrara salvo un warning en los logs.
+    vi.mocked(mlFetch).mockResolvedValueOnce({ total_visits: 120 });
+
+    await getStoreVisits("acc1", "123", "2026-08-01", "2026-08-31");
+
+    const url = decodeURIComponent(vi.mocked(mlFetch).mock.calls[0][0] as string);
+    expect(url).toContain("date_from=2026-08-01T00:00:00.000Z");
+    expect(url).toContain("date_to=2026-08-31T23:59:59.999Z");
+    expect(url).not.toContain("-00:00");
+  });
+
+  it("devuelve null (no 0) si la API falla, para no mostrar una conversión imposible", async () => {
+    vi.mocked(mlFetch).mockRejectedValueOnce(new Error("400"));
+    expect(await getStoreVisits("acc1", "123", "2026-08-01", "2026-08-31")).toBeNull();
   });
 });
