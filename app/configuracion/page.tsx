@@ -90,6 +90,16 @@ export default function ConfiguracionPage() {
             ? "Calculamos el IVA de tus ventas (débito menos crédito) y lo descontamos de tu ganancia neta."
             : "No se calcula IVA sobre tus ventas: tu régimen no lo discrimina en el precio."}
         </p>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginTop: "var(--space-4)" }}>
+          <button className="btn btn-primary" onClick={save} disabled={saving || !loaded}>
+            {saving ? "Guardando…" : "Guardar"}
+          </button>
+          {saved && (
+            <span role="status" aria-live="polite" className="success-text">
+              Guardado.
+            </span>
+          )}
+        </div>
       </div>
 
       <h2 className="section-title">Impuestos</h2>
