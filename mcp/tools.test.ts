@@ -642,3 +642,37 @@ describe("getStoreVisits", () => {
     expect(await getStoreVisits("acc1", "123", "2026-08-01", "2026-08-31")).toBeNull();
   });
 });
+
+describe("getAdsSpend con campañas sin gasto reconocible", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("avisa con las claves reales de la respuesta cuando hay campañas pero ninguna aporta gasto", async () => {
+    // Es el caso real que encontramos: la pantalla de Campañas mostraba
+    // presupuestos reales, pero Ad Spend daba $0. listCampaigns funciona
+    // (no necesita "metrics_by_day"); getAdsSpend sí lo necesita, y si la API
+    // no lo devuelve con ese nombre, hoy queda en silencio total. Este aviso
+    // es lo que va a decirnos, la próxima vez que pase, cuál es el campo real.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
+      .mockResolvedValueOnce({ results: [{ id: "C1", name: "Campaña real", status: "active", budget: 20000 }] });
+
+    const rows = await getAdsSpend("acc1", "123", haceDias(10), haceDias(1));
+
+    expect(rows).toEqual([]);
+    const warned = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warned).toContain("campaña(s)");
+    expect(warned).toContain("Claves de la primera campaña: id, name, status, budget");
+  });
+
+  it("no avisa si la campaña sí trae metrics_by_day, aunque el gasto sea cero", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
+      .mockResolvedValueOnce({ results: [{ id: "C1", metrics_by_day: [] }] });
+
+    await getAdsSpend("acc1", "123", haceDias(10), haceDias(1));
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

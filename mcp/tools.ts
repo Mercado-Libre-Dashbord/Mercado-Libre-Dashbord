@@ -441,10 +441,25 @@ export async function getAdsSpend(
         ),
       { results: [] }
     );
-    for (const c of campaigns.results ?? []) {
+    const results = campaigns.results ?? [];
+    const before = rows.length;
+    for (const c of results) {
       for (const metric of c.metrics_by_day ?? []) {
         rows.push({ productId: metric.item_id, date: metric.date, amount: metric.cost });
       }
+    }
+    // Diagnóstico: si hay campañas en el rango pero ninguna aportó gasto, algo
+    // no matchea con la forma real de la respuesta —"metrics_by_day" es una
+    // suposición sin confirmar contra un caso real con inversión real—. Se
+    // loguean nada más que los NOMBRES de los campos (no montos ni textos) de
+    // la primera campaña, para poder corregir el parseo con evidencia real en
+    // vez de otra suposición.
+    const noneHasMetricsField = results.length > 0 && results.every((c: any) => c.metrics_by_day === undefined);
+    if (noneHasMetricsField && rows.length === before) {
+      console.warn(
+        `Product Ads: ${results.length} campaña(s) en ${window.from}..${window.to} sin gasto reconocible. ` +
+        `Claves de la primera campaña: ${Object.keys(results[0] ?? {}).join(", ")}`
+      );
     }
   }
   return rows;
