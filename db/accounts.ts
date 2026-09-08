@@ -1,6 +1,8 @@
 import { nanoid } from "nanoid";
 import type { QueryExecutor } from "./client";
 
+export type TaxCondition = "responsable_inscripto" | "monotributo" | "exento";
+
 export interface Account {
   id: string;
   name: string;
@@ -8,7 +10,20 @@ export interface Account {
   mlSellerId: string | null;
   /** Otros impuestos (IIBB, internos) como fracción de la facturación: 0.03 = 3%. */
   otherTaxRate: number;
+  /**
+   * Régimen fiscal del vendedor. Decide si corresponde calcular IVA: el
+   * precio de Mercado Libre solo "incluye" IVA para un Responsable Inscripto.
+   * Default 'responsable_inscripto' porque es el caso de la enorme mayoría de
+   * los vendedores de la plataforma.
+   */
+  taxCondition: TaxCondition;
   createdAt: string;
+}
+
+/** Si corresponde calcular IVA para este régimen. Solo el Responsable
+ * Inscripto discrimina IVA en el precio; Monotributo y exento, no. */
+export function appliesIva(taxCondition: TaxCondition): boolean {
+  return taxCondition === "responsable_inscripto";
 }
 
 interface AccountRow {
@@ -17,6 +32,7 @@ interface AccountRow {
   owner_email: string;
   ml_seller_id: string | null;
   other_tax_rate?: number | string | null;
+  tax_condition?: string | null;
   created_at: string | Date;
 }
 
@@ -29,6 +45,10 @@ function mapRow(row: AccountRow): Account {
     // La columna llega por migración; sin ella la cuenta simplemente no
     // tiene otros impuestos configurados todavía.
     otherTaxRate: Number(row.other_tax_rate ?? 0),
+    // La columna llega por migración (011); sin ella, todas las cuentas se
+    // siguen tratando como Responsable Inscripto — el comportamiento de
+    // siempre, no un cambio de golpe.
+    taxCondition: (row.tax_condition as TaxCondition | null) ?? "responsable_inscripto",
     createdAt: new Date(row.created_at).toISOString(),
   };
 }
@@ -41,7 +61,10 @@ export async function createAccount(db: QueryExecutor, name: string, ownerEmail:
     `INSERT INTO accounts (id, name, owner_email, ml_seller_id, created_at) VALUES ($1, $2, $3, NULL, $4)`,
     [id, name, normalizedEmail, createdAt]
   );
-  return { id, name, ownerEmail: normalizedEmail, mlSellerId: null, otherTaxRate: 0, createdAt };
+  return {
+    id, name, ownerEmail: normalizedEmail, mlSellerId: null,
+    otherTaxRate: 0, taxCondition: "responsable_inscripto", createdAt,
+  };
 }
 
 export async function listAccounts(db: QueryExecutor): Promise<Account[]> {
@@ -70,6 +93,15 @@ export async function setAccountMlSellerId(db: QueryExecutor, accountId: string,
 /** Guarda la alícuota de otros impuestos (IIBB, internos) de la cuenta. */
 export async function setAccountOtherTaxRate(db: QueryExecutor, accountId: string, rate: number): Promise<void> {
   await db.query(`UPDATE accounts SET other_tax_rate = $1 WHERE id = $2`, [rate, accountId]);
+}
+
+/** Guarda el régimen fiscal de la cuenta (decide si corresponde IVA). */
+export async function setAccountTaxCondition(
+  db: QueryExecutor,
+  accountId: string,
+  taxCondition: TaxCondition
+): Promise<void> {
+  await db.query(`UPDATE accounts SET tax_condition = $1 WHERE id = $2`, [taxCondition, accountId]);
 }
 
 /**

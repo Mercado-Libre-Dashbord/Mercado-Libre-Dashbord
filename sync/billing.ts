@@ -20,6 +20,12 @@ export const BUCKET_LABEL: Record<ChargeBucket, string> = {
 export function classifyCharge(...fields: (string | null | undefined)[]): ChargeBucket {
   const haystack = fields.filter(Boolean).join(" ").toLowerCase();
 
+  // Va primero a propósito: "Incumplimiento de envíos" contiene la palabra
+  // "envíos" y caía en el bucket "envio", como si fuera flete. Es una multa
+  // por una entrega tardía o un producto agotado en Full, no un costo de
+  // logística — mezclarlas hacía parecer que el gasto de envío era más alto
+  // de lo real y escondía la penalidad en un bucket que no le corresponde.
+  if (/incumplimiento|penalidad|multa/.test(haystack)) return "otro";
   if (/percep|retenc|impuesto|iva|iibb|ingresos brutos|ganancias|tax/.test(haystack)) return "impuesto";
   if (/env[ií]o|envios|shipping|mercado envios|flete|logisti/.test(haystack)) return "envio";
   if (/product ads|publicidad|advertis|campaign|ads/.test(haystack)) return "publicidad";

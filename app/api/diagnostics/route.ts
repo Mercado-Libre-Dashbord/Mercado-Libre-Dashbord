@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { missingMigrations } from "@/db/schema-capabilities";
 import { getCurrentUser, resolveCurrentAccount } from "@/lib/current-account";
+import { getAdvertiserId } from "@/mcp/tools";
 
 export const runtime = "nodejs";
 
@@ -49,6 +50,26 @@ export async function GET() {
           ).rows[0].n
         );
 
+    // Publicidad: cuánto llegó a sincronizarse y si ML reconoce un advertiser
+    // de Product Ads para esta cuenta. Sin esto, "los números de ads no dan"
+    // era imposible de diagnosticar sin acceso directo a la base de otro
+    // cliente: ahora lo puede ver cualquier admin desde el panel.
+    let advertiserFound: boolean | null = null;
+    let advertiserError: string | null = null;
+    if (account.mlSellerId) {
+      try {
+        advertiserFound = (await getAdvertiserId(account.id)) !== null;
+      } catch (err) {
+        advertiserError = (err as Error).message;
+      }
+    }
+    const adsResult = await client.query<{ n: string; total: string; min_date: string | null; max_date: string | null }>(
+      `SELECT COUNT(*) as n, COALESCE(SUM(amount), 0) as total, MIN(date) as min_date, MAX(date) as max_date
+         FROM ads_spend WHERE account_id = $1 AND channel = 'mercado_ads'`,
+      [account.id]
+    );
+    const ads = adsResult.rows[0];
+
     const row = health.rows[0];
     return {
       account: { id: account.id, name: account.name, mlSellerId: account.mlSellerId },
@@ -60,8 +81,21 @@ export async function GET() {
         conComisionEnCero: Number(row.sinComision ?? 0),
         conIvaCalculado: ivaCount,
         cargosDeFacturacion: billingCount,
+        regimenFiscal: account.taxCondition,
+        publicidad: {
+          advertiserEncontrado: advertiserFound,
+          errorAlBuscarAdvertiser: advertiserError,
+          filasSincronizadas: Number(ads.n ?? 0),
+          totalSincronizado: Number(ads.total ?? 0),
+          desde: ads.min_date,
+          hasta: ads.max_date,
+        },
       },
       comoLeerlo: {
+        regimenFiscal:
+          "Si dice 'monotributo' o 'exento', el IVA no se calcula — es correcto, no un error.",
+        publicidad:
+          "Si advertiserEncontrado es false, ML dice que la cuenta nunca creó una campaña de Product Ads: no hay nada que sincronizar. Si es true y totalSincronizado es 0 (o 'desde'/'hasta' quedan muy viejos), la publicidad de los últimos ~90 días no se trajo — Mercado Ads solo sirve métricas de ese rango. Apretá 'Sincronizar' de nuevo para reintentarlo.",
         conEnvioEnCero:
           "Si es igual a lineasDeVenta, ninguna orden tiene el envío traído de la API. Apretá 'Sincronizar' en Resumen: recorre toda la historia y repara las órdenes que quedaron en una versión vieja del cálculo.",
         conIvaCalculado:

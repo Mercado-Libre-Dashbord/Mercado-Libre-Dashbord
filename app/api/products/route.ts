@@ -4,6 +4,7 @@ import { hasColumn } from "@/db/schema-capabilities";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { revenueStatusFilter } from "@/lib/order-status";
 import { recalculateProduct } from "@/sync/sync-service";
+import { appliesIva } from "@/db/accounts";
 
 export const runtime = "nodejs";
 
@@ -85,7 +86,7 @@ export async function PATCH(request: NextRequest) {
     // cargado" para productos que acababa de completar, y parecía que la
     // carga no había tomado.
     const hasIva = await hasColumn(client, "order_items", "iva_applied");
-    return recalculateProduct(client, account.id, productId, hasIva, account.otherTaxRate);
+    return recalculateProduct(client, account.id, productId, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
   });
 
   return NextResponse.json({ ok: true, itemsUpdated });

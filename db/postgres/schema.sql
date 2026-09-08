@@ -59,10 +59,20 @@ CREATE TABLE IF NOT EXISTS accounts (
   -- Credencial de la app de fidelización. Se guarda el hash, nunca la clave.
   loyalty_api_key_hash TEXT,
   loyalty_api_key_created_at TIMESTAMPTZ,
+  -- Régimen fiscal del vendedor: decide si corresponde calcular IVA sobre sus
+  -- ventas (solo Responsable Inscripto) y, a futuro, qué tipo de comprobante
+  -- emitir en el módulo de facturación (ARCA).
+  tax_condition TEXT NOT NULL DEFAULT 'responsable_inscripto'
+    CHECK (tax_condition IN ('responsable_inscripto', 'monotributo', 'exento')),
+  point_of_sale INTEGER,
+  cuit TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS other_tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tax_condition TEXT NOT NULL DEFAULT 'responsable_inscripto';
+ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_tax_condition_check;
+ALTER TABLE accounts ADD CONSTRAINT accounts_tax_condition_check
+  CHECK (tax_condition IN ('responsable_inscripto', 'monotributo', 'exento'));
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS point_of_sale INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS cuit TEXT;
 

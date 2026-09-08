@@ -8,7 +8,7 @@ import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { resetColumnCache } from "@/db/schema-capabilities";
 
-const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, createdAt: "2026-01-01" };
+const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, createdAt: "2026-01-01" };
 
 function queryMock() {
   return vi.fn().mockImplementation(async (sql: string) => {

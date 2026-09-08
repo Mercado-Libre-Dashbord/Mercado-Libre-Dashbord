@@ -25,7 +25,7 @@ import { generateApiKey, hashApiKey } from "@/lib/loyalty-auth";
 import { resetColumnCache } from "@/db/schema-capabilities";
 import { DEFAULT_CONFIG } from "@/lib/loyalty";
 
-const account = { id: "acc1", name: "C", ownerEmail: "a@b.com", mlSellerId: "S1", otherTaxRate: 0, createdAt: "2026-01-01" };
+const account = { id: "acc1", name: "C", ownerEmail: "a@b.com", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, createdAt: "2026-01-01" };
 // La ruta ahora mira el header Authorization para distinguir a la app de la
 // billetera del vendedor logueado, así que el request de prueba lo necesita.
 const req = (body: unknown, authorization: string | null = null) =>

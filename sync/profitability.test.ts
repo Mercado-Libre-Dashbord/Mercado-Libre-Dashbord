@@ -64,6 +64,7 @@ describe("calculateNetProfit", () => {
       adsCostAllocated: 50,
       costApplied: null,
       taxApplied: null,
+      appliesIva: true,
     });
     expect(result).toBeNull();
   });
@@ -77,6 +78,7 @@ describe("calculateNetProfit", () => {
       adsCostAllocated: 50,
       costApplied: 300,
       taxApplied: 20,
+      appliesIva: true,
     };
     // Bruto 2000 − 130 − 90 − 50 − 600 de costo − 40 de impuesto manual = 1090,
     // y de ahí sale además el saldo de IVA (débito de la venta menos crédito
@@ -95,8 +97,26 @@ describe("calculateNetProfit", () => {
       adsCostAllocated: 50,
       costApplied: 300,
       taxApplied: null,
+      appliesIva: true,
     };
     expect(calculateNetProfit(input)).toBeCloseTo(1130 - calculateIva(input));
+  });
+
+  it("no descuenta IVA para una cuenta que no factura con IVA discriminado", () => {
+    // El caso real que lo motivó: un vendedor Monotributista. El precio de
+    // Mercado Libre no "incluye" un IVA que haya que separarle — restándoselo
+    // igual, un vendedor con 39% de rentabilidad real aparecía con bastante
+    // menos.
+    const conIva = calculateNetProfit({
+      unitPrice: 1000, quantity: 2, mlCommission: 130, shippingCost: 90,
+      adsCostAllocated: 50, costApplied: 300, taxApplied: 20, appliesIva: true,
+    });
+    const sinIva = calculateNetProfit({
+      unitPrice: 1000, quantity: 2, mlCommission: 130, shippingCost: 90,
+      adsCostAllocated: 50, costApplied: 300, taxApplied: 20, appliesIva: false,
+    });
+    expect(sinIva).toBeCloseTo(1090); // sin el saldo de IVA restado
+    expect(sinIva).toBeGreaterThan(conIva!);
   });
 });
 
@@ -110,6 +130,7 @@ describe("calculateIva", () => {
       adsCostAllocated: 0,
       costApplied: 605,
       taxApplied: null,
+      appliesIva: true,
     });
     // Débito 210 − crédito (21 de comisión + 105 del costo).
     expect(iva).toBeCloseTo(210 - 21 - 105);
@@ -124,7 +145,22 @@ describe("calculateIva", () => {
       adsCostAllocated: 0,
       costApplied: null,
       taxApplied: null,
+      appliesIva: true,
     });
     expect(iva).toBeCloseTo(210);
+  });
+
+  it("es cero, sin calcular nada, para Monotributo o exento", () => {
+    const iva = calculateIva({
+      unitPrice: 1210,
+      quantity: 1,
+      mlCommission: 121,
+      shippingCost: 0,
+      adsCostAllocated: 0,
+      costApplied: 605,
+      taxApplied: null,
+      appliesIva: false,
+    });
+    expect(iva).toBe(0);
   });
 });

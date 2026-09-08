@@ -3,8 +3,17 @@
 import { useEffect, useState } from "react";
 import { NoAccountState } from "../NoAccountState";
 
+type TaxCondition = "responsable_inscripto" | "monotributo" | "exento";
+
+const TAX_CONDITION_LABEL: Record<TaxCondition, string> = {
+  responsable_inscripto: "Responsable Inscripto",
+  monotributo: "Monotributista",
+  exento: "Exento",
+};
+
 export default function ConfiguracionPage() {
   const [rate, setRate] = useState("");
+  const [taxCondition, setTaxCondition] = useState<TaxCondition>("responsable_inscripto");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -17,6 +26,7 @@ export default function ConfiguracionPage() {
       const data = await r.json();
       // Se guarda como fracción (0.03) y se edita como porcentaje (3).
       setRate(String((Number(data.otherTaxRate ?? 0) * 100).toFixed(2).replace(/\.?0+$/, "")));
+      if (data.taxCondition) setTaxCondition(data.taxCondition);
       setLoaded(true);
     }).catch(() => {
       setError("No se pudo cargar la configuración.");
@@ -46,7 +56,7 @@ export default function ConfiguracionPage() {
       const res = await fetch("/api/account/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ otherTaxRate: percent / 100 }),
+        body: JSON.stringify({ otherTaxRate: percent / 100, taxCondition }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "No se pudo guardar."); return; }
@@ -59,6 +69,28 @@ export default function ConfiguracionPage() {
   return (
     <div>
       <h1>Configuración</h1>
+
+      <h2 className="section-title">Régimen fiscal</h2>
+      <div className="day-card" style={{ maxWidth: 620 }}>
+        <div className="field-group" style={{ maxWidth: 280 }}>
+          <label className="field-hint" htmlFor="tax-condition">Tu condición ante IVA</label>
+          <select
+            id="tax-condition"
+            value={taxCondition}
+            onChange={(e) => { setTaxCondition(e.target.value as TaxCondition); setSaved(false); }}
+            disabled={!loaded}
+          >
+            {(Object.keys(TAX_CONDITION_LABEL) as TaxCondition[]).map((key) => (
+              <option key={key} value={key}>{TAX_CONDITION_LABEL[key]}</option>
+            ))}
+          </select>
+        </div>
+        <p className="field-hint" style={{ marginTop: "var(--space-2)", marginBottom: 0 }}>
+          {taxCondition === "responsable_inscripto"
+            ? "Calculamos el IVA de tus ventas (débito menos crédito) y lo descontamos de tu ganancia neta."
+            : "No se calcula IVA sobre tus ventas: tu régimen no lo discrimina en el precio."}
+        </p>
+      </div>
 
       <h2 className="section-title">Impuestos</h2>
       <div className="day-card" style={{ maxWidth: 620 }}>
@@ -102,9 +134,9 @@ export default function ConfiguracionPage() {
               facturás. Se aplica igual a todos tus productos.
             </li>
             <li>
-              <strong>No</strong>: el IVA. Se calcula solo al 21% (Responsable Inscripto) sobre cada venta,
-              descontando el crédito de la comisión, el envío, la publicidad y el costo. Si lo cargás acá lo
-              estarías contando dos veces.
+              <strong>No</strong>: el IVA. Se calcula al 21% sobre cada venta —descontando el crédito de la
+              comisión, el envío, la publicidad y el costo— solo si arriba tenés marcado "Responsable
+              Inscripto". Si lo cargás acá también lo estarías contando dos veces.
             </li>
           </ul>
           <p>

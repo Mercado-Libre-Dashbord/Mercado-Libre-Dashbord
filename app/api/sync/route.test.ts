@@ -27,6 +27,22 @@ function req(body: unknown = {}) {
 describe("POST /api/sync", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("le avisa a syncOrders y a recalculate que esta cuenta es Monotributista", async () => {
+    // El bug real que lo motivó: una cuenta Monotributista se estaba
+    // sincronizando como si fuera Responsable Inscripto, así que se le
+    // restaba un saldo de IVA que no le corresponde pagar.
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({
+      id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "monotributo",
+    } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue({ ids: [], total: 0 });
+
+    await POST(req({ offset: 0 }));
+
+    expect(vi.mocked(syncOrders).mock.calls[0][5]).toBe(false);
+    expect(vi.mocked(recalculate).mock.calls[0][4]).toBe(false);
+  });
+
   it("returns 401 when there is no active account", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue(null);
 
@@ -41,7 +57,7 @@ describe("POST /api/sync", () => {
       name: "Cuenta",
       ownerEmail: "a@example.com",
       mlSellerId: null,
-      otherTaxRate: 0,
+      otherTaxRate: 0, taxCondition: "responsable_inscripto" as const,
       createdAt: "2026-01-01T00:00:00Z",
     });
 
@@ -51,7 +67,7 @@ describe("POST /api/sync", () => {
   });
 
   it("walks the whole history in batches and reports progress", async () => {
-    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0 } as any);
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
     vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1", "2"], total: 120 });
     vi.mocked(syncOrders).mockResolvedValue(2);
@@ -67,7 +83,7 @@ describe("POST /api/sync", () => {
   });
 
   it("only asks Mercado Libre for the orders that are not up to date", async () => {
-    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0 } as any);
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
     vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1", "2", "3"], total: 3 });
     // Solo la 3 está desactualizada.
@@ -79,7 +95,7 @@ describe("POST /api/sync", () => {
   });
 
   it("finishes the run — ads, recalc and billing — on the last batch", async () => {
-    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0 } as any);
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
     vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1"], total: 6 });
     vi.mocked(pendingOrderIds).mockImplementation(async (_d: any, _a: any, ids: any) => ids);
@@ -94,7 +110,7 @@ describe("POST /api/sync", () => {
   });
 
   it("returns a 500 with the error message when the sync fails", async () => {
-    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0 } as any);
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockRejectedValue(new Error("boom"));
 
     const res = await POST(req());

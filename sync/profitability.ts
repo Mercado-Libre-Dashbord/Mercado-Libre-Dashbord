@@ -46,14 +46,27 @@ export interface NetProfitInput {
   adsCostAllocated: number;
   costApplied: number | null;
   taxApplied: number | null;
+  /**
+   * Si la cuenta es Responsable Inscripto. El precio de Mercado Libre incluye
+   * IVA solo para ese régimen; un Monotributista o un exento no tienen débito
+   * ni crédito fiscal que calcular, y restarles un saldo de IVA que no existe
+   * les infla artificialmente el costo y les esconde ganancia real. Campo
+   * obligatorio (no default) a propósito: para algo tan sensible al bolsillo,
+   * un olvido tiene que ser un error de compilación, no un silencio.
+   */
+  appliesIva: boolean;
 }
 
 /**
  * IVA que esta línea de venta le deja a pagar a AFIP (débito menos crédito).
  * Se expone aparte de calculateNetProfit para poder mostrarlo como una franja
  * propia en el gráfico de "de qué está hecha tu facturación".
+ *
+ * Devuelve 0 sin calcular nada si la cuenta no factura con IVA discriminado
+ * (Monotributo, exento): no hay débito fiscal que pagar.
  */
 export function calculateIva(input: NetProfitInput): number {
+  if (!input.appliesIva) return 0;
   return ivaBalance({
     grossRevenue: input.unitPrice * input.quantity,
     mlCharges: input.mlCommission + input.shippingCost + input.adsCostAllocated,

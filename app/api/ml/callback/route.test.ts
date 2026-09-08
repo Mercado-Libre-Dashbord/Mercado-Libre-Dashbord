@@ -39,7 +39,7 @@ describe("GET /api/ml/callback", () => {
       name: "Attacker",
       ownerEmail: "attacker@example.com",
       mlSellerId: null,
-      otherTaxRate: 0,
+      otherTaxRate: 0, taxCondition: "responsable_inscripto" as const,
       createdAt: "2026-01-01T00:00:00Z",
     });
     const request = {

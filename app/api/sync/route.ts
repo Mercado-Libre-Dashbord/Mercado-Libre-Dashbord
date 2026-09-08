@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
 import { syncProducts, syncOrders, syncAds, syncBillingCharges, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
+import { appliesIva } from "@/db/accounts";
 import { listOrdersPage } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
 
       const page = await listOrdersPage(account.id, sellerId, HISTORY_START, offset, ORDERS_PER_BATCH);
       const pending = await pendingOrderIds(client, account.id, page.ids);
-      const ordersSynced = await syncOrders(client, account.id, pending, hasIva, account.otherTaxRate);
+      const ordersSynced = await syncOrders(client, account.id, pending, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
 
       const nextOffset = offset + page.ids.length;
       const done = page.ids.length === 0 || nextOffset >= page.total;
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
         // de baja que se vendieron, así aparecen en Productos y se les puede
         // cargar el costo.
         await backfillMissingProducts(client, account.id, sellerId);
-        await recalculate(client, account.id, hasIva, account.otherTaxRate);
+        await recalculate(client, account.id, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
         billingChargesSynced = await syncBillingCharges(client, account.id);
       }
 

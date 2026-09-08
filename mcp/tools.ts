@@ -326,7 +326,7 @@ export async function listOrders(accountId: string, sellerId: string, sinceIso: 
 // nueva en 2025 bajo /marketplace/advertising/{site_id}/advertisers/{id}/...
 // que además requiere el header Api-Version. Devuelve null si la cuenta no
 // tiene Product Ads habilitado (nunca creó una campaña).
-async function getAdvertiserId(accountId: string): Promise<{ advertiserId: string; siteId: string } | null> {
+export async function getAdvertiserId(accountId: string): Promise<{ advertiserId: string; siteId: string } | null> {
   const token = await getValidAccessToken(accountId);
   const res = await mlFetch(`/advertising/advertisers?product_id=PADS`, token);
   const advertiser = (res.advertisers ?? [])[0];

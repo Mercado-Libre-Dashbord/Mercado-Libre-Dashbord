@@ -641,6 +641,12 @@ export default function HomePage() {
         onCustomToChange={setCustomTo}
       />
 
+      <p className="field-hint" style={{ margin: "var(--space-2) 0 0", textAlign: "right" }}>
+        <a href={`/api/export/orders?from=${from}&to=${to}`}>
+          Descargar detalle del período (CSV)
+        </a>
+      </p>
+
       <h2 className="section-title">Tienda</h2>
       {summary === null ? (
         <KpiSkeleton />

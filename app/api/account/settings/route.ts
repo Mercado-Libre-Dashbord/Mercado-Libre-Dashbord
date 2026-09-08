@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
-import { setAccountOtherTaxRate } from "@/db/accounts";
+import { setAccountOtherTaxRate, setAccountTaxCondition, type TaxCondition } from "@/db/accounts";
 import { getCurrentUser, resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
@@ -9,11 +9,12 @@ export const runtime = "nodejs";
 /** Tope defensivo: una alícuota por encima de esto es un error de tipeo
  *  (alguien puso "21" queriendo decir 21%, no 2100%). */
 const MAX_RATE = 1;
+const TAX_CONDITIONS: TaxCondition[] = ["responsable_inscripto", "monotributo", "exento"];
 
 export async function GET() {
   const account = await resolveCurrentAccount();
   if (!account) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  return NextResponse.json({ otherTaxRate: account.otherTaxRate, name: account.name });
+  return NextResponse.json({ otherTaxRate: account.otherTaxRate, taxCondition: account.taxCondition, name: account.name });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -21,9 +22,12 @@ export async function PATCH(request: NextRequest) {
   if (!account) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const body = await request.json().catch(() => ({}));
-  const { otherTaxRate } = body as { otherTaxRate?: number };
+  const { otherTaxRate, taxCondition } = body as { otherTaxRate?: number; taxCondition?: string };
   if (typeof otherTaxRate !== "number" || !Number.isFinite(otherTaxRate) || otherTaxRate < 0 || otherTaxRate > MAX_RATE) {
     return NextResponse.json({ error: "La alícuota tiene que estar entre 0% y 100%." }, { status: 400 });
+  }
+  if (taxCondition !== undefined && !TAX_CONDITIONS.includes(taxCondition as TaxCondition)) {
+    return NextResponse.json({ error: "Régimen fiscal inválido." }, { status: 400 });
   }
 
   // La política RLS de `accounts` autoriza por email/admin, no por
@@ -35,6 +39,12 @@ export async function PATCH(request: NextRequest) {
     async (client) => {
       if (!(await hasColumn(client, "accounts", "other_tax_rate"))) return false;
       await setAccountOtherTaxRate(client, account.id, otherTaxRate);
+      // El régimen fiscal llega por una migración aparte (011): si todavía no
+      // se corrió, se guarda igual la alícuota y el régimen queda para la
+      // próxima vez que el vendedor entre a Configuración.
+      if (taxCondition !== undefined && (await hasColumn(client, "accounts", "tax_condition"))) {
+        await setAccountTaxCondition(client, account.id, taxCondition as TaxCondition);
+      }
       return true;
     }
   );
@@ -45,5 +55,5 @@ export async function PATCH(request: NextRequest) {
       { status: 503 }
     );
   }
-  return NextResponse.json({ ok: true, otherTaxRate });
+  return NextResponse.json({ ok: true, otherTaxRate, taxCondition });
 }

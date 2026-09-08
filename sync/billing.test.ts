@@ -31,4 +31,12 @@ describe("classifyCharge", () => {
     expect(classifyCharge("Cargo por servicio raro nuevo")).toBe("otro");
     expect(classifyCharge(null, undefined)).toBe("otro");
   });
+
+  it("una penalidad de incumplimiento de envíos no es un costo de envío", () => {
+    // Es el bug real que encontramos cruzando el reporte de un cliente: esta
+    // frase contiene "envíos" y caía en el bucket de flete, inflándolo, y
+    // escondiendo que en realidad es una multa por Full.
+    expect(classifyCharge("Incumplimiento Envíos Full")).toBe("otro");
+    expect(classifyCharge("Penalidad por demora en despacho")).toBe("otro");
+  });
 });

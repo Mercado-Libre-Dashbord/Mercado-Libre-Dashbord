@@ -85,6 +85,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     table: "accounts",
     column: "loyalty_api_key_hash",
     ddl: "-- Correr db/postgres/migrations/010-loyalty-api-key.sql (agrega columnas, función y política).",
+  },
+  {
+    table: "accounts",
+    column: "tax_condition",
+    ddl: "-- Correr db/postgres/migrations/011-regimen-fiscal.sql (decide si corresponde calcular IVA).",
   }
 ];
 

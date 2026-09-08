@@ -12,7 +12,7 @@ import { resolveCurrentAccount, getCurrentUser } from "@/lib/current-account";
 import { resetColumnCache } from "@/db/schema-capabilities";
 import { getStoreVisits } from "@/mcp/tools";
 
-const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, createdAt: "2026-01-01" };
+const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, createdAt: "2026-01-01" };
 
 describe("GET /api/summary", () => {
   beforeEach(() => {
@@ -222,7 +222,7 @@ describe("GET /api/summary", () => {
     resetColumnCache();
     vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
     const adminBody = await (await GET(request)).json();
-    expect(adminBody.pendingMigrations).toHaveLength(10);
+    expect(adminBody.pendingMigrations).toHaveLength(11);
     const sql = adminBody.pendingMigrations.join(" ");
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS tax");
     expect(sql).toContain("iva_applied");
