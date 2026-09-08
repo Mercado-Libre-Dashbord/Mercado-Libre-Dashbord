@@ -7,7 +7,7 @@ import { POST, GET } from "./route";
 import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
-const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, createdAt: "2026-01-01" };
+const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, taxConditionConfirmed: true, createdAt: "2026-01-01" };
 
 describe("POST /api/ads-spend", () => {
   beforeEach(() => {

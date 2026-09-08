@@ -8,7 +8,7 @@ import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { resetColumnCache } from "@/db/schema-capabilities";
 
-const account = { id: "acc1", name: "C", ownerEmail: "a@b.com", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, createdAt: "2026-01-01" };
+const account = { id: "acc1", name: "C", ownerEmail: "a@b.com", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, taxConditionConfirmed: true, createdAt: "2026-01-01" };
 const req = (qs = "") => ({ nextUrl: { searchParams: new URLSearchParams(qs) } }) as any;
 
 describe("GET /api/export/orders", () => {

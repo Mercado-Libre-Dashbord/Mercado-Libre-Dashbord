@@ -14,7 +14,12 @@ const TAX_CONDITIONS: TaxCondition[] = ["responsable_inscripto", "monotributo", 
 export async function GET() {
   const account = await resolveCurrentAccount();
   if (!account) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  return NextResponse.json({ otherTaxRate: account.otherTaxRate, taxCondition: account.taxCondition, name: account.name });
+  return NextResponse.json({
+    otherTaxRate: account.otherTaxRate,
+    taxCondition: account.taxCondition,
+    taxConditionConfirmed: account.taxConditionConfirmed,
+    name: account.name,
+  });
 }
 
 export async function PATCH(request: NextRequest) {

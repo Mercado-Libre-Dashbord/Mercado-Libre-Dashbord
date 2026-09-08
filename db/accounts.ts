@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import type { QueryExecutor } from "./client";
+import { hasColumn } from "./schema-capabilities";
 
 export type TaxCondition = "responsable_inscripto" | "monotributo" | "exento";
 
@@ -17,6 +18,9 @@ export interface Account {
    * los vendedores de la plataforma.
    */
   taxCondition: TaxCondition;
+  /** Si el vendedor ya eligió su régimen o todavía corre con el default sin
+   * que se lo hayamos preguntado (ver migración 012). */
+  taxConditionConfirmed: boolean;
   createdAt: string;
 }
 
@@ -33,6 +37,7 @@ interface AccountRow {
   ml_seller_id: string | null;
   other_tax_rate?: number | string | null;
   tax_condition?: string | null;
+  tax_condition_confirmed?: boolean | null;
   created_at: string | Date;
 }
 
@@ -49,6 +54,9 @@ function mapRow(row: AccountRow): Account {
     // siguen tratando como Responsable Inscripto — el comportamiento de
     // siempre, no un cambio de golpe.
     taxCondition: (row.tax_condition as TaxCondition | null) ?? "responsable_inscripto",
+    // La columna llega por migración (012); sin ella no hay forma de
+    // preguntar, así que se asume confirmada para no bloquear a nadie.
+    taxConditionConfirmed: row.tax_condition_confirmed ?? true,
     createdAt: new Date(row.created_at).toISOString(),
   };
 }
@@ -63,7 +71,7 @@ export async function createAccount(db: QueryExecutor, name: string, ownerEmail:
   );
   return {
     id, name, ownerEmail: normalizedEmail, mlSellerId: null,
-    otherTaxRate: 0, taxCondition: "responsable_inscripto", createdAt,
+    otherTaxRate: 0, taxCondition: "responsable_inscripto", taxConditionConfirmed: false, createdAt,
   };
 }
 
@@ -95,13 +103,23 @@ export async function setAccountOtherTaxRate(db: QueryExecutor, accountId: strin
   await db.query(`UPDATE accounts SET other_tax_rate = $1 WHERE id = $2`, [rate, accountId]);
 }
 
-/** Guarda el régimen fiscal de la cuenta (decide si corresponde IVA). */
+/** Guarda el régimen fiscal de la cuenta (decide si corresponde IVA) y lo
+ * marca como confirmado: ya no hace falta volver a preguntarlo. */
 export async function setAccountTaxCondition(
   db: QueryExecutor,
   accountId: string,
   taxCondition: TaxCondition
 ): Promise<void> {
-  await db.query(`UPDATE accounts SET tax_condition = $1 WHERE id = $2`, [taxCondition, accountId]);
+  // "confirmed" llega por una migración aparte (012): si todavía no se corrió,
+  // se guarda igual el régimen y la marca de confirmado queda para la próxima.
+  if (await hasColumn(db, "accounts", "tax_condition_confirmed")) {
+    await db.query(
+      `UPDATE accounts SET tax_condition = $1, tax_condition_confirmed = TRUE WHERE id = $2`,
+      [taxCondition, accountId]
+    );
+  } else {
+    await db.query(`UPDATE accounts SET tax_condition = $1 WHERE id = $2`, [taxCondition, accountId]);
+  }
 }
 
 /**

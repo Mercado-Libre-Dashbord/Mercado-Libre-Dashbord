@@ -57,7 +57,7 @@ describe("POST /api/sync", () => {
       name: "Cuenta",
       ownerEmail: "a@example.com",
       mlSellerId: null,
-      otherTaxRate: 0, taxCondition: "responsable_inscripto" as const,
+      otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, taxConditionConfirmed: true,
       createdAt: "2026-01-01T00:00:00Z",
     });
 

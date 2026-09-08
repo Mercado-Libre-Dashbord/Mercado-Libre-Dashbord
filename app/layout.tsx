@@ -2,6 +2,7 @@ import { Montserrat } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./AuthProvider";
 import { NavBar } from "./NavBar";
+import { TaxConditionGate } from "./TaxConditionGate";
 
 const montserrat = Montserrat({
   subsets: ["latin"],
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es" className={montserrat.variable}>
       <body>
         <AuthProvider>
+          <TaxConditionGate />
           <div className="app-shell">
             <NavBar />
             <main>{children}</main>

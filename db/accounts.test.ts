@@ -77,4 +77,22 @@ describe("accounts", () => {
     const updated = await withScope({ isAdmin: true }, (client) => getAccountById(client, account.id));
     expect(updated?.mlSellerId).toBe("123456789");
   });
+
+  it("a new account starts without confirming its régimen fiscal, and setAccountTaxCondition confirms it", async () => {
+    // Es lo que dispara el onboarding: sin este flag no hay forma de saber si
+    // una cuenta nueva ya contestó o si nadie le preguntó todavía.
+    const { withScope } = await import("./client");
+    const { createAccount, setAccountTaxCondition, getAccountById } = await import("./accounts");
+    const email = `nueva.${nanoid(6)}@example.com`;
+    const account = await withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta Nueva", email));
+    expect(account.taxConditionConfirmed).toBe(false);
+
+    await withScope({ isAdmin: false, userEmail: email.toLowerCase() }, (client) =>
+      setAccountTaxCondition(client, account.id, "monotributo")
+    );
+
+    const updated = await withScope({ isAdmin: true }, (client) => getAccountById(client, account.id));
+    expect(updated?.taxCondition).toBe("monotributo");
+    expect(updated?.taxConditionConfirmed).toBe(true);
+  });
 });

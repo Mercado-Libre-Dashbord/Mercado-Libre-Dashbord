@@ -90,6 +90,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     table: "accounts",
     column: "tax_condition",
     ddl: "-- Correr db/postgres/migrations/011-regimen-fiscal.sql (decide si corresponde calcular IVA).",
+  },
+  {
+    table: "accounts",
+    column: "tax_condition_confirmed",
+    ddl: "-- Correr db/postgres/migrations/012-regimen-fiscal-confirmado.sql (para preguntarlo una sola vez).",
   }
 ];
 

@@ -130,6 +130,16 @@ export default function CampanasPage() {
         onCustomToChange={setCustomTo}
       />
 
+      <h2 className="section-title">Anuncios</h2>
+      <div className="kpi-grid">
+        <div className="kpi-card"><div className="label">Ad Spend</div><div className="value"><KpiValue>{summary ? fmt(summary.adSpend) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">MER</div><div className="value"><KpiValue>{summary ? summary.mer.toFixed(2) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">ROAS</div><div className="value"><KpiValue>{summary ? summary.roas.toFixed(2) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">CPA</div><div className="value"><KpiValue>{summary ? fmt(summary.cpa) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">Net AOV</div><div className="value"><KpiValue>{summary ? fmt(summary.netAov) : "-"}</KpiValue></div></div>
+        <div className="kpi-card"><div className="label">True CPA</div><div className="value"><KpiValue>{summary ? fmt(summary.trueCpa) : "-"}</KpiValue></div></div>
+      </div>
+
       <h2 className="section-title">Campañas de Mercado Ads</h2>
       {campaignsError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{campaignsError}</p>}
       {campaigns === null ? (
@@ -176,16 +186,6 @@ export default function CampanasPage() {
           </table>
         </div>
       ) : null}
-
-      <h2 className="section-title">Anuncios</h2>
-      <div className="kpi-grid">
-        <div className="kpi-card"><div className="label">Ad Spend</div><div className="value"><KpiValue>{summary ? fmt(summary.adSpend) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">MER</div><div className="value"><KpiValue>{summary ? summary.mer.toFixed(2) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">ROAS</div><div className="value"><KpiValue>{summary ? summary.roas.toFixed(2) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">CPA</div><div className="value"><KpiValue>{summary ? fmt(summary.cpa) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">Net AOV</div><div className="value"><KpiValue>{summary ? fmt(summary.netAov) : "-"}</KpiValue></div></div>
-        <div className="kpi-card"><div className="label">True CPA</div><div className="value"><KpiValue>{summary ? fmt(summary.trueCpa) : "-"}</KpiValue></div></div>
-      </div>
 
       <h2 className="section-title">Cargar publicidad externa</h2>
       <form className="ad-form" onSubmit={submitAdSpend} noValidate>

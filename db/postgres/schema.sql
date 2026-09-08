@@ -64,6 +64,10 @@ CREATE TABLE IF NOT EXISTS accounts (
   -- emitir en el módulo de facturación (ARCA).
   tax_condition TEXT NOT NULL DEFAULT 'responsable_inscripto'
     CHECK (tax_condition IN ('responsable_inscripto', 'monotributo', 'exento')),
+  -- Si el vendedor ya eligió su régimen o todavía corre con el default sin
+  -- que se lo hayamos preguntado. Cuentas nuevas arrancan en FALSE para que
+  -- el primer login le pregunte antes de mostrar cualquier número.
+  tax_condition_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
   point_of_sale INTEGER,
   cuit TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -73,6 +77,7 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tax_condition TEXT NOT NULL DEFAUL
 ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_tax_condition_check;
 ALTER TABLE accounts ADD CONSTRAINT accounts_tax_condition_check
   CHECK (tax_condition IN ('responsable_inscripto', 'monotributo', 'exento'));
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tax_condition_confirmed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS point_of_sale INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS cuit TEXT;
 
