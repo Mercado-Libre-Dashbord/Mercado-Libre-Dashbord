@@ -198,14 +198,21 @@ export async function GET(request: NextRequest) {
     );
     const totals = totalsResult.rows[0] as Record<string, string | number>;
 
-    const manualAdsResult = await client.query(
+    // "totalMercadoAds" de arriba es solo lo que se pudo atar a una venta
+    // puntual (product_id + fecha matchean una línea real). Lo que queda a
+    // nivel cuenta —lo cargado a mano (Meta/Google/TikTok, siempre sin
+    // producto) y, desde que Mercado Ads dejó de dar el gasto por
+    // publicación, también el total de Product Ads sin poder repartirse por
+    // producto— entra acá. Son conjuntos disjuntos: nunca se cuenta dos veces.
+    const unallocatedAdsResult = await client.query(
       `SELECT COALESCE(SUM(amount), 0) as total FROM ads_spend
-       WHERE account_id = $1 AND channel != 'mercado_ads' AND date BETWEEN $2::date AND $3::date`,
+       WHERE account_id = $1 AND (channel != 'mercado_ads' OR product_id IS NULL)
+         AND date BETWEEN $2::date AND $3::date`,
       [account.id, from, to]
     );
-    const manualAdsTotal = Number(manualAdsResult.rows[0].total);
+    const unallocatedAdsTotal = Number(unallocatedAdsResult.rows[0].total);
 
-    const adSpend = Number(totals.totalMercadoAds) + manualAdsTotal;
+    const adSpend = Number(totals.totalMercadoAds) + unallocatedAdsTotal;
     const revenue = Number(totals.grossSales);
     const orders = Number(totals.orders);
     const netProfit = Number(totals.netProfit);

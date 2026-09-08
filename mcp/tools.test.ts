@@ -376,17 +376,33 @@ describe("getAdsSpend", () => {
   it("resolves the advertiser id and site id before listing campaigns", async () => {
     vi.mocked(mlFetch)
       .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
-      .mockResolvedValueOnce({
-        results: [{ metrics_by_day: [{ item_id: "MLA1", date: "2026-01-05", cost: 100 }] }],
-      });
+      .mockResolvedValueOnce({ results: [{ metrics: { cost: 100 } }] });
 
-    const rows = await getAdsSpend("acc1", "123", haceDias(30), haceDias(1));
+    const rows = await getAdsSpend("acc1", "123", haceDias(2), haceDias(1));
 
-    expect(rows).toEqual([{ productId: "MLA1", date: "2026-01-05", amount: 100 }]);
+    // Confirmado con un log real de producción: ML da un total agregado del
+    // rango completo por campaña ("metrics.cost"), no un desglose por día ni
+    // por publicación. Se reparte en partes iguales entre los días del rango,
+    // sin producto asociado (product_id null), igual que la publicidad que se
+    // carga a mano.
+    expect(rows).toEqual([
+      { productId: null, date: haceDias(2), amount: 50 },
+      { productId: null, date: haceDias(1), amount: 50 },
+    ]);
     expect(vi.mocked(mlFetch).mock.calls[1][0]).toBe(
-      `/marketplace/advertising/MLA/advertisers/999/product_ads/campaigns/search?date_from=${haceDias(30)}&date_to=${haceDias(1)}&metrics=cost`
+      `/marketplace/advertising/MLA/advertisers/999/product_ads/campaigns/search?date_from=${haceDias(2)}&date_to=${haceDias(1)}&metrics=cost`
     );
     expect(vi.mocked(mlFetch).mock.calls[1][2]).toEqual(expect.objectContaining({ headers: { "Api-Version": "2" } }));
+  });
+
+  it("suma el costo de todas las campañas del rango antes de repartirlo", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
+      .mockResolvedValueOnce({ results: [{ metrics: { cost: 60 } }, { metrics: { cost: 40 } }] });
+
+    const rows = await getAdsSpend("acc1", "123", haceDias(1), haceDias(1));
+
+    expect(rows).toEqual([{ productId: null, date: haceDias(1), amount: 100 }]);
   });
 
   it("parte un historial largo en ventanas cortas en vez de comerse un 400", async () => {
@@ -648,10 +664,9 @@ describe("getAdsSpend con campañas sin gasto reconocible", () => {
 
   it("avisa con las claves reales de la respuesta cuando hay campañas pero ninguna aporta gasto", async () => {
     // Es el caso real que encontramos: la pantalla de Campañas mostraba
-    // presupuestos reales, pero Ad Spend daba $0. listCampaigns funciona
-    // (no necesita "metrics_by_day"); getAdsSpend sí lo necesita, y si la API
-    // no lo devuelve con ese nombre, hoy queda en silencio total. Este aviso
-    // es lo que va a decirnos, la próxima vez que pase, cuál es el campo real.
+    // presupuestos reales, pero Ad Spend daba $0. Si el día de mañana ML
+    // vuelve a cambiar la forma de la respuesta, este aviso va a decir cuál
+    // es el campo real en vez de quedar en silencio total.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(mlFetch)
       .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
@@ -665,29 +680,17 @@ describe("getAdsSpend con campañas sin gasto reconocible", () => {
     expect(warned).toContain("Claves de la primera campaña: id, name, status, budget");
   });
 
-  it("no avisa si la campaña sí trae metrics_by_day, aunque el gasto sea cero", async () => {
+  it("no avisa si la campaña trae metrics.cost, aunque el gasto real sea cero", async () => {
+    // Un cero real (la campaña no gastó nada en el rango) no es lo mismo que
+    // el campo no venir: eso sí sería una API que cambió de forma otra vez.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(mlFetch)
       .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
-      .mockResolvedValueOnce({ results: [{ id: "C1", metrics_by_day: [] }] });
+      .mockResolvedValueOnce({ results: [{ id: "C1", metrics: { cost: 0 } }] });
 
-    await getAdsSpend("acc1", "123", haceDias(10), haceDias(1));
+    const rows = await getAdsSpend("acc1", "123", haceDias(10), haceDias(1));
 
+    expect(rows).toEqual([]);
     expect(warn).not.toHaveBeenCalled();
-  });
-
-  it("describe la forma real del campo 'metrics' cuando aparece en vez de 'metrics_by_day'", async () => {
-    // Confirmado con un log real: ML no manda "metrics_by_day", manda
-    // "metrics". Falta saber si es un array por día o un objeto agregado del
-    // rango — este aviso lo va a decir la próxima vez, sin loguear montos.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.mocked(mlFetch)
-      .mockResolvedValueOnce({ advertisers: [{ advertiser_id: 999, site_id: "MLA" }] })
-      .mockResolvedValueOnce({ results: [{ id: "C1", metrics: { cost: 1234, clicks: 10 } }] });
-
-    await getAdsSpend("acc1", "123", haceDias(10), haceDias(1));
-
-    const warned = warn.mock.calls.map((c) => String(c[0])).join("\n");
-    expect(warned).toContain("Forma de 'metrics': objeto con claves: cost, clicks");
   });
 });

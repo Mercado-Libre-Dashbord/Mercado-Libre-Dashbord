@@ -410,12 +410,22 @@ export function clampToAdsWindow(dateFrom: string, today = new Date()): string {
   return dateFrom < limit ? limit : dateFrom;
 }
 
+function eachDateInRange(from: string, to: string): string[] {
+  const start = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  const days: string[] = [];
+  for (let cursor = start; cursor <= end; cursor = new Date(cursor.getTime() + 86400000)) {
+    days.push(dateStr(cursor));
+  }
+  return days;
+}
+
 export async function getAdsSpend(
   accountId: string,
   sellerId: string,
   dateFrom: string,
   dateTo: string
-): Promise<{ productId: string; date: string; amount: number }[]> {
+): Promise<{ productId: string | null; date: string; amount: number }[]> {
   const advertiser = await getAdvertiserId(accountId);
   if (!advertiser) return [];
 
@@ -430,7 +440,7 @@ export async function getAdsSpend(
   const from = clampToAdsWindow(dateFrom);
   if (from > dateTo) return [];
 
-  const rows: { productId: string; date: string; amount: number }[] = [];
+  const rows: { productId: string | null; date: string; amount: number }[] = [];
   for (const window of splitIntoWindows(from, dateTo)) {
     const campaigns = await listOrEmpty(
       () =>
@@ -442,36 +452,36 @@ export async function getAdsSpend(
       { results: [] }
     );
     const results = campaigns.results ?? [];
-    const before = rows.length;
-    for (const c of results) {
-      for (const metric of c.metrics_by_day ?? []) {
-        rows.push({ productId: metric.item_id, date: metric.date, amount: metric.cost });
+
+    // Confirmado con un log real de producción (no era una suposición: la
+    // primera versión asumía "metrics_by_day" y nunca trajo nada). Cada
+    // campaña trae "metrics: { cost }", un total agregado de TODO el rango
+    // pedido — ML no lo abre por día ni por publicación acá. Sin esa
+    // discriminación, se reparte el total en partes iguales entre los días
+    // del rango y se guarda a nivel cuenta (product_id null), igual que la
+    // publicidad que se carga a mano: entra al Ad Spend/MER/ROAS de la
+    // cuenta, pero por ahora no se puede descontar de la ganancia neta de
+    // una venta puntual — no hay forma de saber qué publicación generó ese
+    // gasto.
+    const totalCost = results.reduce((sum: number, c: any) => sum + Number(c.metrics?.cost ?? 0), 0);
+    if (totalCost > 0) {
+      const days = eachDateInRange(window.from, window.to);
+      const perDay = totalCost / days.length;
+      for (const day of days) {
+        rows.push({ productId: null, date: day, amount: perDay });
       }
     }
-    // Diagnóstico: si hay campañas en el rango pero ninguna aportó gasto, algo
-    // no matchea con la forma real de la respuesta —"metrics_by_day" es una
-    // suposición sin confirmar contra un caso real con inversión real—. Se
-    // loguean nada más que los NOMBRES de los campos (no montos ni textos) de
-    // la primera campaña, para poder corregir el parseo con evidencia real en
-    // vez de otra suposición.
-    const noneHasMetricsField = results.length > 0 && results.every((c: any) => c.metrics_by_day === undefined);
-    if (noneHasMetricsField && rows.length === before) {
+
+    // Diagnóstico: si hay campañas en el rango pero ninguna trae un costo
+    // numérico, la API volvió a cambiar de forma. Se loguean nada más que los
+    // NOMBRES de los campos (no montos ni textos) para corregir con evidencia
+    // real en vez de otra suposición.
+    const noneHasCost = results.length > 0 && results.every((c: any) => typeof c.metrics?.cost !== "number");
+    if (noneHasCost) {
       const sample = results[0] ?? {};
-      // Ya sabemos (de un log real) que el campo no se llama "metrics_by_day"
-      // sino "metrics". Falta saber su FORMA: ¿un array por día, o un objeto
-      // agregado del rango pedido? Se loguea nada más que la estructura
-      // (claves, tipo, longitud), nunca montos.
-      const metricsShape =
-        sample.metrics === undefined
-          ? "sin campo 'metrics'"
-          : Array.isArray(sample.metrics)
-            ? `array de ${sample.metrics.length} elemento(s), claves del primero: ${Object.keys(sample.metrics[0] ?? {}).join(", ")}`
-            : typeof sample.metrics === "object" && sample.metrics !== null
-              ? `objeto con claves: ${Object.keys(sample.metrics).join(", ")}`
-              : `valor de tipo ${typeof sample.metrics}`;
       console.warn(
         `Product Ads: ${results.length} campaña(s) en ${window.from}..${window.to} sin gasto reconocible. ` +
-        `Claves de la primera campaña: ${Object.keys(sample).join(", ")}. Forma de 'metrics': ${metricsShape}`
+        `Claves de la primera campaña: ${Object.keys(sample).join(", ")}.`
       );
     }
   }
