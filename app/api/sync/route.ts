@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
-import { syncProducts, syncOrders, syncAds, syncBillingCharges, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
+import { syncProducts, syncOrders, syncAds, syncFullStock, syncBillingCharges, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
 import { appliesIva } from "@/db/accounts";
 import { listOrdersPage } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
@@ -58,12 +58,17 @@ export async function POST(request: NextRequest) {
       // órdenes cargadas, así que van al final, en el último lote.
       let adsRowsSynced = 0;
       let billingChargesSynced = 0;
+      let fullStockSynced = 0;
       if (done) {
         adsRowsSynced = await syncAds(client, account.id, sellerId, HISTORY_START);
         // Antes del recálculo: le da nombre y foto a las publicaciones dadas
         // de baja que se vendieron, así aparecen en Productos y se les puede
         // cargar el costo.
         await backfillMissingProducts(client, account.id, sellerId);
+        // Depende del catálogo ya sincronizado (necesita el inventory_id de
+        // cada producto), no de las órdenes — puede ir en cualquier momento
+        // del último lote.
+        fullStockSynced = await syncFullStock(client, account.id);
         await recalculate(client, account.id, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
         billingChargesSynced = await syncBillingCharges(client, account.id);
       }
@@ -76,6 +81,7 @@ export async function POST(request: NextRequest) {
         ordersSynced,
         adsRowsSynced,
         billingChargesSynced,
+        fullStockSynced,
       };
     });
 

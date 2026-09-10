@@ -33,7 +33,7 @@ describe("runSync", () => {
   it("persists products, orders and a computed net_profit per order item", async () => {
     const { listProducts, listOrders, getOrderDetail, getAdsSpend } = await import("@/mcp/tools");
     vi.mocked(listProducts).mockResolvedValueOnce([
-      { id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url", categoryId: "MLA1234", categoryName: "Categoría de prueba", thumbnail: null },
+      { id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url", categoryId: "MLA1234", categoryName: "Categoría de prueba", thumbnail: null, logisticType: null, inventoryId: null },
     ]);
     vi.mocked(listOrders).mockResolvedValueOnce(["ORD1"]);
     vi.mocked(getOrderDetail).mockResolvedValueOnce({
@@ -59,7 +59,7 @@ describe("runSync", () => {
       return runSync(client, account.id, "SELLER1", "2026-01-01T00:00:00Z");
     });
 
-    expect(result).toEqual({ productsSynced: 1, ordersSynced: 1, adsRowsSynced: 1, billingChargesSynced: 0 });
+    expect(result).toEqual({ productsSynced: 1, ordersSynced: 1, adsRowsSynced: 1, billingChargesSynced: 0, fullStockSynced: 0 });
 
     const item = await withScope({ accountId: account.id }, async (client) => {
       const r = await client.query<{ net_profit: number; cost_applied: number }>(
@@ -137,7 +137,7 @@ describe("runSync", () => {
   it("keeps products and orders synced even when getAdsSpend fails", async () => {
     const { listProducts, listOrders, getOrderDetail, getAdsSpend } = await import("@/mcp/tools");
     vi.mocked(listProducts).mockResolvedValueOnce([
-      { id: "MLA4", title: "Producto 4", sku: null, price: 100, stock: 1, permalink: "url", categoryId: "MLA1234", categoryName: "Categoría de prueba", thumbnail: null },
+      { id: "MLA4", title: "Producto 4", sku: null, price: 100, stock: 1, permalink: "url", categoryId: "MLA1234", categoryName: "Categoría de prueba", thumbnail: null, logisticType: null, inventoryId: null },
     ]);
     vi.mocked(listOrders).mockResolvedValueOnce(["ORD4"]);
     vi.mocked(getOrderDetail).mockResolvedValueOnce({
@@ -180,7 +180,7 @@ describe("backfillMissingProducts", () => {
       {
         id: "MLA999", title: "Luz De Emergencia 30 Led", sku: "SKU1", price: 12000,
         stock: 0, permalink: "https://ml/p", categoryId: null, categoryName: null,
-        thumbnail: "https://thumb",
+        thumbnail: "https://thumb", logisticType: null, inventoryId: null,
       },
     ]);
 

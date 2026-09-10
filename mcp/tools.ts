@@ -11,6 +11,35 @@ export interface MlProduct {
   categoryId: string | null;
   categoryName: string | null;
   thumbnail: string | null;
+  /** "fulfillment" = está en Mercado Envíos Full. Sin confirmar el nombre
+   * exacto del campo contra una respuesta real todavía. */
+  logisticType: string | null;
+  /** Id para consultar /inventories/{id}/stock/fulfillment. Sin confirmar. */
+  inventoryId: string | null;
+}
+
+/** Sin confirmar todavía dónde vive exactamente en la respuesta de /items:
+ * puede ser la raíz (ítem simple) o cada variación (ítem con variantes). */
+function extractLogistics(body: any): { logisticType: string | null; inventoryId: string | null } {
+  return {
+    logisticType: body?.shipping?.logistic_type ?? null,
+    inventoryId: body?.inventory_id ?? body?.variations?.[0]?.inventory_id ?? null,
+  };
+}
+
+/**
+ * Diagnóstico: si hay productos pero NINGUNO trajo `shipping.logistic_type`,
+ * el campo real tiene otro nombre o vive en otro lado — se loguean las claves
+ * de `shipping` (o su ausencia) del primer producto para corregir con
+ * evidencia real en vez de otra suposición sin confirmar.
+ */
+function warnIfNoLogisticType(bodies: any[]): void {
+  if (bodies.length === 0 || bodies.some((b) => b?.shipping?.logistic_type !== undefined)) return;
+  const sample = bodies[0] ?? {};
+  console.warn(
+    `Productos: ${bodies.length} ítem(s) sin 'shipping.logistic_type' reconocible. ` +
+    `Claves de 'shipping' del primero: ${Object.keys(sample.shipping ?? {}).join(", ") || "(sin campo 'shipping')"}.`
+  );
 }
 
 export async function listProducts(accountId: string, sellerId: string): Promise<MlProduct[]> {
@@ -45,8 +74,10 @@ export async function listProducts(accountId: string, sellerId: string): Promise
   const batchResults = await Promise.all(batches.map((batch) => mlFetch(`/items?ids=${batch.join(",")}`, token)));
 
   const products: MlProduct[] = [];
+  const bodies: any[] = [];
   for (const details of batchResults) {
     for (const entry of details) {
+      bodies.push(entry.body);
       products.push({
         id: entry.body.id,
         title: entry.body.title,
@@ -59,9 +90,11 @@ export async function listProducts(accountId: string, sellerId: string): Promise
         // secure_thumbnail primero: el `thumbnail` a secas viene por http y
         // el navegador lo bloquea como contenido mixto en una página https.
         thumbnail: entry.body.secure_thumbnail ?? entry.body.thumbnail ?? null,
+        ...extractLogistics(entry.body),
       });
     }
   }
+  warnIfNoLogisticType(bodies);
 
   await attachCategoryNames(products, token);
   return products;
@@ -109,6 +142,7 @@ export async function getProductsByIds(accountId: string, ids: string[]): Promis
         categoryId: body.category_id ?? null,
         categoryName: null,
         thumbnail: body.secure_thumbnail ?? body.thumbnail ?? null,
+        ...extractLogistics(body),
       });
     }
   }
@@ -622,6 +656,35 @@ export async function getStoreVisits(
   }
 }
 
+/**
+ * Sonda de diagnóstico para "facturas vencidas": `/users/{id}/restrictions`
+ * apareció mencionado en una investigación externa (no oficial, sin
+ * confirmar) como el lugar donde ML avisaría una restricción por deuda de
+ * facturación. En vez de construir una funcionalidad entera sobre un
+ * endpoint sin confirmar, esto llama y devuelve la FORMA de la respuesta
+ * (si existe, si es array u objeto, y sus claves) para decidir con
+ * evidencia real si vale la pena seguir por acá.
+ */
+export async function probeAccountRestrictions(
+  accountId: string,
+  sellerId: string
+): Promise<{ ok: true; isArray: boolean; length: number | null; sampleKeys: string[] } | { ok: false; error: string }> {
+  const token = await getValidAccessToken(accountId);
+  try {
+    const res = await mlFetch(`/users/${sellerId}/restrictions`, token);
+    const isArray = Array.isArray(res);
+    const sample = isArray ? res[0] : res;
+    return {
+      ok: true,
+      isArray,
+      length: isArray ? res.length : null,
+      sampleKeys: sample && typeof sample === "object" ? Object.keys(sample) : [],
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
 // ── API de facturación de Mercado Libre ──────────────────────────────────
 // Fuente de verdad de lo que ML EFECTIVAMENTE cobró (comisiones, envíos,
 // percepciones impositivas, Product Ads), a diferencia del resto de la app
@@ -773,4 +836,65 @@ export async function createSellerCoupon(accountId: string, input: SellerCouponI
     code: res.coupon_code ?? res.code ?? null,
     status: res.status ?? "unknown",
   };
+}
+
+// ── Stock en Mercado Envíos Full ──────────────────────────────────────────
+// Para "valorización de stock en Full": cuánto capital hay inmovilizado en
+// mercadería guardada en los depósitos de ML (cantidad × costo cargado).
+
+export interface MlFullStock {
+  inventoryId: string;
+  availableQuantity: number;
+  unavailableQuantity: number;
+}
+
+/**
+ * Trae el stock guardado en Full de una lista de inventory_id.
+ *
+ * Sin confirmar contra una respuesta real: no hay evidencia de que este
+ * endpoint acepte multi-get (varios ids separados por coma) como sí lo
+ * aceptan otros de esta API, así que se pide de a uno. Si una cuenta llega a
+ * tener cientos de productos en Full esto puede ser lento — no hay urgencia
+ * en optimizarlo hasta confirmar que el patrón de a uno es correcto.
+ */
+export async function getFullStock(accountId: string, inventoryIds: string[]): Promise<MlFullStock[]> {
+  if (inventoryIds.length === 0) return [];
+  const token = await getValidAccessToken(accountId);
+
+  const results: MlFullStock[] = [];
+  let unrecognized = 0;
+  let sample: any = null;
+
+  await Promise.all(
+    inventoryIds.map(async (inventoryId) => {
+      const res = await listOrEmpty(
+        () => mlFetch(`/inventories/${inventoryId}/stock/fulfillment`, token),
+        null
+      );
+      if (!res) return;
+      if (typeof res.available_quantity !== "number") {
+        unrecognized += 1;
+        sample = sample ?? res;
+        return;
+      }
+      results.push({
+        inventoryId,
+        availableQuantity: res.available_quantity,
+        unavailableQuantity: Number(res.not_available_quantity ?? 0),
+      });
+    })
+  );
+
+  // Diagnóstico: si NINGUNO de los inventory_id consultados trajo un
+  // 'available_quantity' reconocible, el nombre real del campo es otro —
+  // mismo criterio que con publicidad, se loguean las claves reales en vez
+  // de adivinar de nuevo.
+  if (unrecognized > 0 && results.length === 0) {
+    console.warn(
+      `Full: ${unrecognized} inventory_id(s) consultados sin 'available_quantity' reconocible. ` +
+      `Claves de la respuesta: ${Object.keys(sample ?? {}).join(", ") || "(respuesta vacía)"}.`
+    );
+  }
+
+  return results;
 }

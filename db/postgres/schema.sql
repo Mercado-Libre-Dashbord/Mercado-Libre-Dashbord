@@ -92,12 +92,24 @@ CREATE TABLE IF NOT EXISTS products (
   category_id TEXT,
   category_name TEXT,
   thumbnail TEXT,
+  -- Régimen logístico ("fulfillment" = Full) y, si aplica, el id de
+  -- inventario para consultar el stock guardado en los depósitos de ML.
+  logistic_type TEXT,
+  inventory_id TEXT,
+  -- Última foto conocida del stock guardado en Full (se actualiza en cada
+  -- Sincronizar para los productos que tienen inventory_id).
+  full_stock_qty INTEGER,
+  full_stock_unavailable_qty INTEGER,
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (account_id, id)
 );
 ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS category_name TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS thumbnail TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS logistic_type TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS inventory_id TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_qty INTEGER;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_unavailable_qty INTEGER;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'mercado_libre';
 
 CREATE TABLE IF NOT EXISTS product_costs (

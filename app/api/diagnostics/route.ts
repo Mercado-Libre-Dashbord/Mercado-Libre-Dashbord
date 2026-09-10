@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { missingMigrations } from "@/db/schema-capabilities";
 import { getCurrentUser, resolveCurrentAccount } from "@/lib/current-account";
-import { getAdvertiserId } from "@/mcp/tools";
+import { getAdvertiserId, probeAccountRestrictions } from "@/mcp/tools";
 
 export const runtime = "nodejs";
 
@@ -70,6 +70,40 @@ export async function GET() {
     );
     const ads = adsResult.rows[0];
 
+    // Full: cuántos productos tienen inventory_id (están en Full) y cuántos
+    // ya tienen una foto de stock sincronizada, más una valorización
+    // aproximada (cantidad × último costo cargado) — todavía sin confirmar
+    // que los nombres de campo de ML sean los correctos.
+    const fullPending = pending.some((m) => m.column === "inventory_id" || m.column === "full_stock_qty");
+    const full = fullPending
+      ? null
+      : (
+          await client.query<{ con_inventory: string; con_stock: string; capital: string }>(
+            `SELECT
+               COUNT(*) FILTER (WHERE inventory_id IS NOT NULL) as con_inventory,
+               COUNT(*) FILTER (WHERE full_stock_qty IS NOT NULL) as con_stock,
+               COALESCE(SUM(full_stock_qty * latest_cost.cost), 0) as capital
+             FROM products p
+             LEFT JOIN LATERAL (
+               SELECT cost FROM product_costs pc
+               WHERE pc.account_id = p.account_id AND pc.product_id = p.id
+               ORDER BY valid_from DESC LIMIT 1
+             ) latest_cost ON true
+             WHERE p.account_id = $1`,
+            [account.id]
+          )
+        ).rows[0];
+
+    // Facturas vencidas: sonda de un endpoint sin confirmar (ver comentario
+    // en probeAccountRestrictions). Nunca debería tirar abajo el resto del
+    // diagnóstico si no existe o el token no tiene permiso.
+    const restrictions = account.mlSellerId
+      ? await probeAccountRestrictions(account.id, account.mlSellerId).catch((err) => ({
+          ok: false as const,
+          error: (err as Error).message,
+        }))
+      : null;
+
     const row = health.rows[0];
     return {
       account: { id: account.id, name: account.name, mlSellerId: account.mlSellerId },
@@ -90,6 +124,12 @@ export async function GET() {
           desde: ads.min_date,
           hasta: ads.max_date,
         },
+        full: full && {
+          productosConInventoryId: Number(full.con_inventory ?? 0),
+          productosConStockSincronizado: Number(full.con_stock ?? 0),
+          capitalAproximado: Number(full.capital ?? 0),
+        },
+        facturasVencidas: restrictions,
       },
       comoLeerlo: {
         regimenFiscal:
@@ -102,6 +142,10 @@ export async function GET() {
           "null = falta correr db/postgres/migrations/002-iva-y-facturacion.sql. 0 = la migración está pero todavía no recalculaste el historial.",
         cargosDeFacturacion:
           "null = falta la tabla billing_charges (misma migración). 0 = la API de facturación no devolvió cargos (permisos, o el período todavía no cerró).",
+        full:
+          "productosConInventoryId es cuántas publicaciones están en Full (según shipping.logistic_type, sin confirmar el nombre del campo todavía). Si es 0 con productos en Full de verdad, avisa acá para revisar el nombre real.",
+        facturasVencidas:
+          "Sonda de /users/{id}/restrictions, sin confirmar contra la documentación oficial. 'ok: false' probablemente signifique que el endpoint no existe o no aplica — no asumas que la cuenta no tiene deuda solo por eso. Mandá el resultado completo para decidir si vale la pena construir algo sobre esto.",
       },
     };
   });

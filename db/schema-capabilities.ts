@@ -95,6 +95,26 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     table: "accounts",
     column: "tax_condition_confirmed",
     ddl: "-- Correr db/postgres/migrations/012-regimen-fiscal-confirmado.sql (para preguntarlo una sola vez).",
+  },
+  {
+    table: "products",
+    column: "logistic_type",
+    ddl: "-- Correr db/postgres/migrations/013-full-logistica.sql (para saber qué productos están en Full).",
+  },
+  {
+    table: "products",
+    column: "inventory_id",
+    ddl: "ALTER TABLE products ADD COLUMN IF NOT EXISTS inventory_id TEXT;",
+  },
+  {
+    table: "products",
+    column: "full_stock_qty",
+    ddl: "ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_qty INTEGER;",
+  },
+  {
+    table: "products",
+    column: "full_stock_unavailable_qty",
+    ddl: "ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_unavailable_qty INTEGER;",
   }
 ];
 

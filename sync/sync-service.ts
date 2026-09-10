@@ -1,5 +1,5 @@
 import type { QueryExecutor } from "@/db/client";
-import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds, getOrderItemTitles } from "@/mcp/tools";
+import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds, getOrderItemTitles, getFullStock } from "@/mcp/tools";
 import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit, calculateIva } from "./profitability";
 import { hasColumn } from "@/db/schema-capabilities";
 
@@ -17,6 +17,7 @@ export interface SyncResult {
   ordersSynced: number;
   adsRowsSynced: number;
   billingChargesSynced: number;
+  fullStockSynced: number;
 }
 
 /** Sincroniza el catálogo. Barato: una llamada paginada + un upsert por producto. */
@@ -24,21 +25,35 @@ export async function syncProducts(db: QueryExecutor, accountId: string, sellerI
   const now = new Date().toISOString();
   const hasCategory = await hasColumn(db, "products", "category_id");
   const hasThumbnail = await hasColumn(db, "products", "thumbnail");
+  const hasLogistics = await hasColumn(db, "products", "logistic_type");
   const products = await listProducts(accountId, sellerId);
   for (const p of products) {
+    const cols = ["account_id", "id", "title", "sku", "current_price", "stock", "permalink", "updated_at"];
+    const vals: unknown[] = [accountId, p.id, p.title, p.sku, p.price, p.stock, p.permalink, now];
+    const updateSet = [
+      "title = excluded.title", "sku = excluded.sku", "current_price = excluded.current_price",
+      "stock = excluded.stock", "permalink = excluded.permalink", "updated_at = excluded.updated_at",
+    ];
+    if (hasCategory) {
+      cols.push("category_id", "category_name");
+      vals.push(p.categoryId, p.categoryName);
+      updateSet.push("category_id = excluded.category_id", "category_name = excluded.category_name");
+    }
+    if (hasThumbnail) {
+      cols.push("thumbnail");
+      vals.push(p.thumbnail);
+      updateSet.push("thumbnail = excluded.thumbnail");
+    }
+    if (hasLogistics) {
+      cols.push("logistic_type", "inventory_id");
+      vals.push(p.logisticType, p.inventoryId);
+      updateSet.push("logistic_type = excluded.logistic_type", "inventory_id = excluded.inventory_id");
+    }
+    const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
     await db.query(
-      `INSERT INTO products (account_id, id, title, sku, current_price, stock, permalink, updated_at${hasCategory ? ", category_id, category_name" : ""}${hasThumbnail ? ", thumbnail" : ""})
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8${hasCategory ? ", $9, $10" : ""}${hasThumbnail ? `, $${hasCategory ? 11 : 9}` : ""})
-       ON CONFLICT (account_id, id) DO UPDATE SET
-         title = excluded.title, sku = excluded.sku, current_price = excluded.current_price,
-         stock = excluded.stock, permalink = excluded.permalink, updated_at = excluded.updated_at${
-           hasCategory ? ", category_id = excluded.category_id, category_name = excluded.category_name" : ""
-         }${hasThumbnail ? ", thumbnail = excluded.thumbnail" : ""}`,
-      [
-        accountId, p.id, p.title, p.sku, p.price, p.stock, p.permalink, now,
-        ...(hasCategory ? [p.categoryId, p.categoryName] : []),
-        ...(hasThumbnail ? [p.thumbnail] : []),
-      ]
+      `INSERT INTO products (${cols.join(", ")}) VALUES (${placeholders})
+       ON CONFLICT (account_id, id) DO UPDATE SET ${updateSet.join(", ")}`,
+      vals
     );
   }
   return products.length;
@@ -180,6 +195,37 @@ export async function syncAds(
 }
 
 /**
+ * Actualiza la foto de stock guardado en Full de los productos que tienen
+ * inventory_id. Corre al final, como syncAds: es informativo (valorización
+ * de stock), no afecta ninguna venta ni ganancia neta, así que si falla no
+ * tiene sentido tirar abajo el resto del sync.
+ */
+export async function syncFullStock(db: QueryExecutor, accountId: string): Promise<number> {
+  if (!(await hasColumn(db, "products", "inventory_id"))) return 0;
+  try {
+    const productsResult = await db.query<{ inventory_id: string }>(
+      `SELECT inventory_id FROM products WHERE account_id = $1 AND inventory_id IS NOT NULL`,
+      [accountId]
+    );
+    const inventoryIds = productsResult.rows.map((r) => r.inventory_id);
+    if (inventoryIds.length === 0) return 0;
+
+    const stock = await getFullStock(accountId, inventoryIds);
+    for (const s of stock) {
+      await db.query(
+        `UPDATE products SET full_stock_qty = $1, full_stock_unavailable_qty = $2
+         WHERE account_id = $3 AND inventory_id = $4`,
+        [s.availableQuantity, s.unavailableQuantity, accountId, s.inventoryId]
+      );
+    }
+    return stock.length;
+  } catch (err) {
+    console.error("No se pudo sincronizar el stock de Full, se continúa sin ese dato:", (err as Error).message);
+    return 0;
+  }
+}
+
+/**
  * Rehace los números de las ventas de UN producto.
  *
  * Existe porque cargar un costo no puede depender de que después alguien
@@ -232,6 +278,7 @@ export async function backfillMissingProducts(
 
   const hasCategory = await hasColumn(db, "products", "category_id");
   const hasThumbnail = await hasColumn(db, "products", "thumbnail");
+  const hasLogistics = await hasColumn(db, "products", "logistic_type");
   const now = new Date().toISOString();
 
   let saved = 0;
@@ -251,16 +298,19 @@ export async function backfillMissingProducts(
 
   for (const id of ids) {
     const p = byId.get(id);
+    const cols = ["account_id", "id", "title", "sku", "current_price", "stock", "permalink", "updated_at"];
+    const vals: unknown[] = [
+      accountId, id, p?.title ?? fallbackTitles.get(id) ?? id, p?.sku ?? null, p?.price ?? 0, p?.stock ?? 0, p?.permalink ?? null, now,
+    ];
+    if (hasCategory) { cols.push("category_id", "category_name"); vals.push(p?.categoryId ?? null, p?.categoryName ?? null); }
+    if (hasThumbnail) { cols.push("thumbnail"); vals.push(p?.thumbnail ?? null); }
+    if (hasLogistics) { cols.push("logistic_type", "inventory_id"); vals.push(p?.logisticType ?? null, p?.inventoryId ?? null); }
+    const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
     await db.query(
-      `INSERT INTO products (account_id, id, title, sku, current_price, stock, permalink, updated_at${hasCategory ? ", category_id, category_name" : ""}${hasThumbnail ? ", thumbnail" : ""})
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8${hasCategory ? ", $9, $10" : ""}${hasThumbnail ? `, $${hasCategory ? 11 : 9}` : ""})
+      `INSERT INTO products (${cols.join(", ")}) VALUES (${placeholders})
        ON CONFLICT (account_id, id) DO UPDATE SET
          title = CASE WHEN products.title = products.id THEN excluded.title ELSE products.title END`,
-      [
-        accountId, id, p?.title ?? fallbackTitles.get(id) ?? id, p?.sku ?? null, p?.price ?? 0, p?.stock ?? 0, p?.permalink ?? null, now,
-        ...(hasCategory ? [p?.categoryId ?? null, p?.categoryName ?? null] : []),
-        ...(hasThumbnail ? [p?.thumbnail ?? null] : []),
-      ]
+      vals
     );
     saved += 1;
   }
@@ -345,10 +395,11 @@ export async function runSync(
   const ordersSynced = await syncOrders(db, accountId, orderIds, hasIva, otherTaxRate, appliesIva);
   const adsRowsSynced = await syncAds(db, accountId, sellerId, sinceIso);
   await backfillMissingProducts(db, accountId, sellerId);
+  const fullStockSynced = await syncFullStock(db, accountId);
   await recalculate(db, accountId, hasIva, otherTaxRate, appliesIva);
   const billingChargesSynced = await syncBillingCharges(db, accountId);
 
-  return { productsSynced, ordersSynced, adsRowsSynced, billingChargesSynced };
+  return { productsSynced, ordersSynced, adsRowsSynced, billingChargesSynced, fullStockSynced };
 }
 
 /**

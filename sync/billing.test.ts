@@ -51,4 +51,13 @@ describe("classifyCharge", () => {
     expect(classifyCharge(null, "FULFILLMENT_STORAGE_FEE")).toBe("full");
     expect(classifyCharge("Cargo por stock antiguo")).toBe("full");
   });
+
+  it("reconoce los códigos cortos de detail_sub_type de Full, sin depender del texto", () => {
+    // Sin confirmar todavía contra una respuesta real de la API — si el
+    // nombre real es otro, este exact-match nunca dispara y el cargo sigue
+    // clasificándose por el detector de texto de siempre, sin romper nada.
+    expect(classifyCharge(null, "CHARGE", "FBM_STORAGE")).toBe("full");
+    expect(classifyCharge(null, "CHARGE", "fbm_long_term_storage")).toBe("full");
+    expect(classifyCharge(null, "CHARGE", "FBM_STOCK_REMOVAL")).toBe("full");
+  });
 });

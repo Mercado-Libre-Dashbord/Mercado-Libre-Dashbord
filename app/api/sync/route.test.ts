@@ -5,6 +5,7 @@ vi.mock("@/sync/sync-service", () => ({
   syncProducts: vi.fn().mockResolvedValue(0),
   syncOrders: vi.fn().mockResolvedValue(0),
   syncAds: vi.fn().mockResolvedValue(0),
+  syncFullStock: vi.fn().mockResolvedValue(0),
   syncBillingCharges: vi.fn().mockResolvedValue(0),
   recalculate: vi.fn(),
   backfillMissingProducts: vi.fn().mockResolvedValue(0),

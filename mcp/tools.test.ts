@@ -23,6 +23,7 @@ import {
   getProductsByIds,
   clampToAdsWindow,
   ADS_LOOKBACK_DAYS,
+  getFullStock,
 } from "./tools";
 import { mlFetch, MlApiError } from "./ml-client";
 
@@ -45,8 +46,36 @@ describe("listProducts", () => {
     expect(products).toHaveLength(2);
     expect(products[0]).toEqual({
       id: "MLA1", title: "Producto 1", sku: "SKU1", price: 1000, stock: 5, permalink: "url1",
-      categoryId: null, categoryName: null, thumbnail: null,
+      categoryId: null, categoryName: null, thumbnail: null, logisticType: null, inventoryId: null,
     });
+  });
+
+  it("reconoce un producto en Full por shipping.logistic_type, e ítems con variantes por variations[0].inventory_id", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: ["MLA1", "MLA2"] })
+      .mockResolvedValueOnce([
+        { body: { id: "MLA1", title: "A", price: 1, available_quantity: 1, permalink: "", shipping: { logistic_type: "fulfillment" }, inventory_id: "INV1" } },
+        { body: { id: "MLA2", title: "B", price: 1, available_quantity: 1, permalink: "", shipping: { logistic_type: "drop_off" }, variations: [{ inventory_id: "INV2" }] } },
+      ]);
+
+    const products = await listProducts("acc1", "123");
+
+    expect(products[0]).toMatchObject({ logisticType: "fulfillment", inventoryId: "INV1" });
+    expect(products[1]).toMatchObject({ logisticType: "drop_off", inventoryId: "INV2" });
+  });
+
+  it("avisa si ningún producto trae shipping.logistic_type reconocible", async () => {
+    // Sin confirmar todavía contra una respuesta real: si el campo cambió de
+    // nombre o de lugar, este aviso lo va a decir con las claves reales.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: ["MLA1"] })
+      .mockResolvedValueOnce([{ body: { id: "MLA1", title: "A", price: 1, available_quantity: 1, permalink: "" } }]);
+
+    await listProducts("acc1", "123");
+
+    const warned = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warned).toContain("logistic_type");
   });
 
   it("prefers the https thumbnail so the browser does not block it", async () => {
@@ -692,5 +721,56 @@ describe("getAdsSpend con campañas sin gasto reconocible", () => {
 
     expect(rows).toEqual([]);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("getFullStock", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns an empty array without calling the API when there are no inventory ids", async () => {
+    expect(await getFullStock("acc1", [])).toEqual([]);
+    expect(mlFetch).not.toHaveBeenCalled();
+  });
+
+  it("pide el stock de cada inventory_id por separado (sin multi-get)", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ available_quantity: 10, not_available_quantity: 2 })
+      .mockResolvedValueOnce({ available_quantity: 5, not_available_quantity: 0 });
+
+    const rows = await getFullStock("acc1", ["INV1", "INV2"]);
+
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { inventoryId: "INV1", availableQuantity: 10, unavailableQuantity: 2 },
+        { inventoryId: "INV2", availableQuantity: 5, unavailableQuantity: 0 },
+      ])
+    );
+    expect(vi.mocked(mlFetch).mock.calls.map((c) => c[0])).toEqual(
+      expect.arrayContaining(["/inventories/INV1/stock/fulfillment", "/inventories/INV2/stock/fulfillment"])
+    );
+  });
+
+  it("no cae de la sincronización si un inventory_id da 404 (todavía sin stock en Full)", async () => {
+    vi.mocked(mlFetch)
+      .mockRejectedValueOnce(new MlApiError(404, "not found"))
+      .mockResolvedValueOnce({ available_quantity: 3, not_available_quantity: 0 });
+
+    const rows = await getFullStock("acc1", ["INV1", "INV2"]);
+
+    expect(rows).toEqual([{ inventoryId: "INV2", availableQuantity: 3, unavailableQuantity: 0 }]);
+  });
+
+  it("avisa si ningún inventory_id trae 'available_quantity' reconocible", async () => {
+    // Sin confirmar todavía: si el nombre real es otro, este aviso lo va a
+    // decir con las claves reales de la respuesta.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(mlFetch).mockResolvedValueOnce({ total_quantity: 12 });
+
+    const rows = await getFullStock("acc1", ["INV1"]);
+
+    expect(rows).toEqual([]);
+    const warned = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warned).toContain("available_quantity");
+    expect(warned).toContain("total_quantity");
   });
 });

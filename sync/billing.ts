@@ -9,6 +9,22 @@ export const BUCKET_LABEL: Record<ChargeBucket, string> = {
   otro: "Otros cargos",
 };
 
+// Candidatos de `detail_sub_type` para cargos de Full, SIN confirmar contra
+// una respuesta real de la API — salieron de una investigación externa, no
+// de un log en vivo. Se buscan como código exacto (no como texto libre)
+// porque si son reales van a llegar así de cortos ("FBM_STORAGE"), no como
+// una frase que el detector de palabras clave de más abajo reconocería. Si
+// los nombres reales resultan ser otros, esto simplemente nunca matchea y el
+// cargo cae en el detector de texto de siempre — no rompe nada al estar mal.
+const FULL_DETAIL_SUB_TYPES = new Set([
+  "fbm_storage",
+  "fbm_long_term_storage",
+  "fbm_aged_stock",
+  "fbm_stock_removal",
+  "fbm_disposal",
+  "fbm_unplanned_reception",
+]);
+
 /**
  * Clasifica un cargo de la factura de Mercado Libre en un concepto legible.
  *
@@ -19,6 +35,8 @@ export const BUCKET_LABEL: Record<ChargeBucket, string> = {
  * cargo sin clasificar sigue siendo plata que salió y tiene que verse.
  */
 export function classifyCharge(...fields: (string | null | undefined)[]): ChargeBucket {
+  if (fields.some((f) => f && FULL_DETAIL_SUB_TYPES.has(f.trim().toLowerCase()))) return "full";
+
   const haystack = fields.filter(Boolean).join(" ").toLowerCase();
 
   // Va primero a propósito: "Incumplimiento de envíos" contiene la palabra
