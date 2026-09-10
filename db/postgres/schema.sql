@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS products (
   -- Sincronizar para los productos que tienen inventory_id).
   full_stock_qty INTEGER,
   full_stock_unavailable_qty INTEGER,
+  -- Opt-in por producto: NULL = sin alerta de stock bajo configurada.
+  low_stock_threshold INTEGER,
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (account_id, id)
 );
@@ -110,6 +112,7 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS logistic_type TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS inventory_id TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_qty INTEGER;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_unavailable_qty INTEGER;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS low_stock_threshold INTEGER;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'mercado_libre';
 
 CREATE TABLE IF NOT EXISTS product_costs (

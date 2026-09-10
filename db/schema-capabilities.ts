@@ -115,6 +115,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     table: "products",
     column: "full_stock_unavailable_qty",
     ddl: "ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_unavailable_qty INTEGER;",
+  },
+  {
+    table: "products",
+    column: "low_stock_threshold",
+    ddl: "-- Correr db/postgres/migrations/014-alerta-stock-bajo.sql (alertas de stock bajo por producto).",
   }
 ];
 

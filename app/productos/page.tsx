@@ -14,6 +14,45 @@ interface Product {
   unitsSold: number;
   totalProfit: number;
   marginPct: number | null;
+  logisticType: string | null;
+  fullStockQty: number | null;
+  fullStockUnavailableQty: number | null;
+  fullStockValue: number | null;
+  lowStockThreshold: number | null;
+  lowStock: boolean;
+}
+
+/**
+ * Avisa qué productos están por debajo del umbral de stock que el vendedor
+ * configuró. Mismo criterio que el aviso de costos faltantes: una lista de
+ * qué producto puntualmente hay que reponer, no solo un contador.
+ */
+function LowStockPanel({ products }: { products: Product[] }) {
+  const low = products.filter((p) => p.lowStock);
+  if (low.length === 0) return null;
+  return (
+    <div className="missing-cost-panel" role="status">
+      <p className="missing-cost-head">
+        <strong>{low.length} producto(s) con stock bajo el umbral configurado.</strong> Conviene reponerlos antes
+        de quedarte sin stock.
+      </p>
+      <ul className="missing-cost-list">
+        {low.slice(0, 10).map((p) => {
+          const inFull = p.logisticType === "fulfillment";
+          const current = inFull && p.fullStockQty !== null ? p.fullStockQty : p.stock;
+          return (
+            <li key={p.id}>
+              <span className="missing-cost-title">{p.title}</span>
+              <span className="missing-cost-units">
+                {current} / {p.lowStockThreshold}{inFull ? " (Full)" : ""}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {low.length > 10 && <p className="missing-cost-foot">Y {low.length - 10} más.</p>}
+    </div>
+  );
 }
 
 export default function ProductosPage() {
@@ -30,6 +69,11 @@ export default function ProductosPage() {
   const [mlEditing, setMlEditing] = useState<Record<string, { price: string; stock: string }>>({});
   const [mlErrors, setMlErrors] = useState<Record<string, string>>({});
   const [mlSavingId, setMlSavingId] = useState<string | null>(null);
+
+  // Umbral de alerta de stock bajo, por producto.
+  const [thresholdEditing, setThresholdEditing] = useState<Record<string, string>>({});
+  const [thresholdErrors, setThresholdErrors] = useState<Record<string, string>>({});
+  const [thresholdSavingId, setThresholdSavingId] = useState<string | null>(null);
 
   function load() {
     setLoadError("");
@@ -121,6 +165,32 @@ export default function ProductosPage() {
     }
   }
 
+  async function saveThreshold(productId: string) {
+    const draft = thresholdEditing[productId] ?? "";
+    const lowStockThreshold = draft.trim() === "" ? null : Number(draft);
+    if (lowStockThreshold !== null && (Number.isNaN(lowStockThreshold) || lowStockThreshold < 0 || !Number.isInteger(lowStockThreshold))) {
+      setThresholdErrors((prev) => ({ ...prev, [productId]: "Entero ≥ 0, o vacío para sacar la alerta." }));
+      return;
+    }
+    setThresholdErrors((prev) => ({ ...prev, [productId]: "" }));
+    setThresholdSavingId(productId);
+    try {
+      await fetch("/api/products", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, lowStockThreshold }),
+      });
+      setThresholdEditing((prev) => {
+        const next = { ...prev };
+        delete next[productId];
+        return next;
+      });
+      load();
+    } finally {
+      setThresholdSavingId(null);
+    }
+  }
+
   return (
     <div>
       <h1>Productos</h1>
@@ -129,6 +199,7 @@ export default function ProductosPage() {
         (IIBB, internos) se configura una sola vez en <a href="/configuracion">Configuración</a>.
       </p>
       {loadError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{loadError}</p>}
+      {products && <LowStockPanel products={products} />}
       {products === null ? (
         <p className="empty-state">Cargando productos…</p>
       ) : products.length === 0 ? (
@@ -147,11 +218,13 @@ export default function ProductosPage() {
                 <th>Producto</th>
                 <th className="num">Precio</th>
                 <th className="num">Stock</th>
+                <th className="num">Valor en Full</th>
                 <th className="num">Costo</th>
                 <th className="num">Margen</th>
                 <th className="num">Vendidas</th>
                 <th className="num">Rentabilidad</th>
                 <th>Actualizar costo</th>
+                <th>Alerta stock</th>
                 <th>ML</th>
               </tr>
             </thead>
@@ -187,7 +260,7 @@ export default function ProductosPage() {
                       p.currentPrice?.toFixed(2)
                     )}
                   </td>
-                  <td className="num">
+                  <td className={`num ${p.lowStock ? "missing-cost" : ""}`}>
                     {mlEditing[p.id] ? (
                       <input
                         type="number"
@@ -199,10 +272,15 @@ export default function ProductosPage() {
                         onChange={(e) => setMlEditing((prev) => ({ ...prev, [p.id]: { ...prev[p.id], stock: e.target.value } }))}
                         style={{ width: 54, padding: "5px" }}
                       />
+                    ) : p.logisticType === "fulfillment" && p.fullStockQty !== null ? (
+                      <>
+                        {p.fullStockQty} <span className="badge badge-other">Full</span>
+                      </>
                     ) : (
                       p.stock
                     )}
                   </td>
+                  <td className="num">{p.fullStockValue === null ? "—" : p.fullStockValue.toFixed(2)}</td>
                   <td className={`num ${p.currentCost === null ? "missing-cost" : ""}`}>
                     {p.currentCost === null ? "Sin costo cargado" : p.currentCost.toFixed(2)}
                   </td>
@@ -232,6 +310,32 @@ export default function ProductosPage() {
                         </button>
                       </div>
                       {errors[p.id] && <p className="field-error">{errors[p.id]}</p>}
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                      <div style={{ display: "flex", gap: "var(--space-1)", alignItems: "center" }}>
+                        <input
+                          id={`threshold-${p.id}`}
+                          type="number"
+                          min="0"
+                          step="1"
+                          inputMode="numeric"
+                          placeholder={p.lowStockThreshold === null ? "Sin alerta" : String(p.lowStockThreshold)}
+                          aria-label={`Umbral de stock bajo para ${p.title}`}
+                          aria-invalid={thresholdErrors[p.id] ? true : undefined}
+                          value={thresholdEditing[p.id] ?? ""}
+                          onChange={(e) => {
+                            setThresholdEditing((prev) => ({ ...prev, [p.id]: e.target.value }));
+                            if (thresholdErrors[p.id]) setThresholdErrors((prev) => ({ ...prev, [p.id]: "" }));
+                          }}
+                          style={{ width: 76, padding: "6px" }}
+                        />
+                        <button className="btn btn-secondary btn-sm" onClick={() => saveThreshold(p.id)} disabled={thresholdSavingId === p.id}>
+                          {thresholdSavingId === p.id ? "…" : "Guardar"}
+                        </button>
+                      </div>
+                      {thresholdErrors[p.id] && <p className="field-error">{thresholdErrors[p.id]}</p>}
                     </div>
                   </td>
                   <td>

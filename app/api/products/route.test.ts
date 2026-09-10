@@ -13,7 +13,12 @@ const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSel
 function queryMock() {
   return vi.fn().mockImplementation(async (sql: string) => {
     if (sql.includes("information_schema.columns")) {
-      return { rows: [{ table_name: "products", column_name: "thumbnail" }] };
+      return {
+        rows: [
+          { table_name: "products", column_name: "thumbnail" },
+          { table_name: "products", column_name: "low_stock_threshold" },
+        ],
+      };
     }
     return { rows: [] };
   });
@@ -90,6 +95,47 @@ describe("PATCH /api/products", () => {
       expect.stringContaining("UPDATE order_items SET cost_applied"),
       expect.arrayContaining([350, 7])
     );
+  });
+
+  it("returns 400 when neither cost nor lowStockThreshold is sent", async () => {
+    const request = { json: async () => ({ productId: "MLA1" }) } as any;
+    const res = await PATCH(request);
+    expect(res.status).toBe(400);
+  });
+
+  it("sets a low stock threshold without touching the cost", async () => {
+    const query = queryMock();
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+    const request = { json: async () => ({ productId: "MLA1", lowStockThreshold: 5 }) } as any;
+
+    const res = await PATCH(request);
+
+    expect(await res.json()).toEqual({ ok: true, itemsUpdated: 0 });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE products SET low_stock_threshold"),
+      [5, "acc1", "MLA1"]
+    );
+    expect(query).not.toHaveBeenCalledWith(expect.stringContaining("INSERT INTO product_costs"), expect.anything());
+  });
+
+  it("clears the low stock alert by sending null", async () => {
+    const query = queryMock();
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+    const request = { json: async () => ({ productId: "MLA1", lowStockThreshold: null }) } as any;
+
+    await PATCH(request);
+
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("UPDATE products SET low_stock_threshold"), [
+      null, "acc1", "MLA1",
+    ]);
+  });
+
+  it("returns 400 for a negative or non-integer lowStockThreshold", async () => {
+    const badRequest = { json: async () => ({ productId: "MLA1", lowStockThreshold: -1 }) } as any;
+    expect((await PATCH(badRequest)).status).toBe(400);
+
+    const floatRequest = { json: async () => ({ productId: "MLA1", lowStockThreshold: 2.5 }) } as any;
+    expect((await PATCH(floatRequest)).status).toBe(400);
   });
 
   it("ignores a per-product tax: taxes are an account-level rate now", async () => {
