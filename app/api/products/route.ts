@@ -66,10 +66,14 @@ export async function GET(request: NextRequest) {
       const inFull = r.logisticType === "fulfillment";
       // El stock "de verdad" de un producto en Full es el que tiene guardado
       // ahí, no el `stock` de la publicación (que ML también expone, pero no
-      // es lo que hay físicamente disponible para vender).
+      // es lo que hay físicamente disponible para vender). Se manda ya
+      // calculado (no cada consumidor del lado del cliente) para que el
+      // panel de alertas, el resaltado de la fila y el número mostrado nunca
+      // puedan quedar en desacuerdo entre sí.
       const effectiveStock = inFull && r.fullStockQty !== null ? r.fullStockQty : r.stock;
       return {
         ...r,
+        effectiveStock,
         fullStockValue: inFull && r.fullStockQty !== null && r.currentCost !== null ? r.fullStockQty * r.currentCost : null,
         marginPct:
           r.currentCost !== null && r.currentPrice > 0
@@ -108,14 +112,17 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "lowStockThreshold tiene que ser un entero >= 0, o null para sacar la alerta." }, { status: 400 });
   }
 
-  const itemsUpdated = await withScope({ accountId: account.id }, async (client) => {
-    if (hasThreshold && (await hasColumn(client, "products", "low_stock_threshold"))) {
+  const result = await withScope({ accountId: account.id }, async (client) => {
+    if (hasThreshold) {
+      if (!(await hasColumn(client, "products", "low_stock_threshold"))) {
+        return { error: "Falta correr la migración db/postgres/migrations/014-alerta-stock-bajo.sql." };
+      }
       await client.query(`UPDATE products SET low_stock_threshold = $1 WHERE account_id = $2 AND id = $3`, [
         lowStockThreshold, account.id, productId,
       ]);
     }
 
-    if (!hasCost) return 0;
+    if (!hasCost) return { itemsUpdated: 0 };
 
     // Los impuestos ya no se guardan por producto: son una alícuota de la
     // cuenta (ver /api/account/settings). La columna `tax` queda en 0.
@@ -131,8 +138,12 @@ export async function PATCH(request: NextRequest) {
     // cargado" para productos que acababa de completar, y parecía que la
     // carga no había tomado.
     const hasIva = await hasColumn(client, "order_items", "iva_applied");
-    return recalculateProduct(client, account.id, productId, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
+    const itemsUpdated = await recalculateProduct(client, account.id, productId, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
+    return { itemsUpdated };
   });
 
-  return NextResponse.json({ ok: true, itemsUpdated });
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: 503 });
+  }
+  return NextResponse.json({ ok: true, itemsUpdated: result.itemsUpdated });
 }

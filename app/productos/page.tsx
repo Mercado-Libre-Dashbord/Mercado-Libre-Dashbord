@@ -17,6 +17,10 @@ interface Product {
   logisticType: string | null;
   fullStockQty: number | null;
   fullStockUnavailableQty: number | null;
+  /** Stock guardado en Full si el producto está ahí; si no, el de la
+   * publicación. Ya calculado del lado del servidor para que el aviso, el
+   * resaltado de la fila y el número mostrado nunca puedan desacordar. */
+  effectiveStock: number;
   fullStockValue: number | null;
   lowStockThreshold: number | null;
   lowStock: boolean;
@@ -37,18 +41,14 @@ function LowStockPanel({ products }: { products: Product[] }) {
         de quedarte sin stock.
       </p>
       <ul className="missing-cost-list">
-        {low.slice(0, 10).map((p) => {
-          const inFull = p.logisticType === "fulfillment";
-          const current = inFull && p.fullStockQty !== null ? p.fullStockQty : p.stock;
-          return (
-            <li key={p.id}>
-              <span className="missing-cost-title">{p.title}</span>
-              <span className="missing-cost-units">
-                {current} / {p.lowStockThreshold}{inFull ? " (Full)" : ""}
-              </span>
-            </li>
-          );
-        })}
+        {low.slice(0, 10).map((p) => (
+          <li key={p.id}>
+            <span className="missing-cost-title">{p.title}</span>
+            <span className="missing-cost-units">
+              {p.effectiveStock} / {p.lowStockThreshold}{p.logisticType === "fulfillment" ? " (Full)" : ""}
+            </span>
+          </li>
+        ))}
       </ul>
       {low.length > 10 && <p className="missing-cost-foot">Y {low.length - 10} más.</p>}
     </div>
@@ -274,10 +274,10 @@ export default function ProductosPage() {
                       />
                     ) : p.logisticType === "fulfillment" && p.fullStockQty !== null ? (
                       <>
-                        {p.fullStockQty} <span className="badge badge-other">Full</span>
+                        {p.effectiveStock} <span className="badge badge-other">Full</span>
                       </>
                     ) : (
-                      p.stock
+                      p.effectiveStock
                     )}
                   </td>
                   <td className="num">{p.fullStockValue === null ? "—" : p.fullStockValue.toFixed(2)}</td>
@@ -321,10 +321,14 @@ export default function ProductosPage() {
                           min="0"
                           step="1"
                           inputMode="numeric"
-                          placeholder={p.lowStockThreshold === null ? "Sin alerta" : String(p.lowStockThreshold)}
+                          placeholder="Sin alerta"
                           aria-label={`Umbral de stock bajo para ${p.title}`}
                           aria-invalid={thresholdErrors[p.id] ? true : undefined}
-                          value={thresholdEditing[p.id] ?? ""}
+                          // Precargado con el valor guardado (no solo como
+                          // placeholder): así, si el vendedor aprieta
+                          // "Guardar" sin tocar nada, no manda un campo
+                          // vacío que borraría una alerta ya configurada.
+                          value={thresholdEditing[p.id] ?? (p.lowStockThreshold !== null ? String(p.lowStockThreshold) : "")}
                           onChange={(e) => {
                             setThresholdEditing((prev) => ({ ...prev, [p.id]: e.target.value }));
                             if (thresholdErrors[p.id]) setThresholdErrors((prev) => ({ ...prev, [p.id]: "" }));

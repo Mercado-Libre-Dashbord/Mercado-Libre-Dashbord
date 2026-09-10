@@ -138,6 +138,25 @@ describe("PATCH /api/products", () => {
     expect((await PATCH(floatRequest)).status).toBe(400);
   });
 
+  it("returns 503 instead of a silent no-op when migration 014 hasn't run", async () => {
+    // El bug real: sin la columna, el UPDATE se saltaba entero y la ruta
+    // igual contestaba {ok:true} — el vendedor creía que la alerta había
+    // quedado guardada cuando en realidad no se tocó nada.
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) {
+        return { rows: [{ table_name: "products", column_name: "thumbnail" }] };
+      }
+      return { rows: [] };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+    const request = { json: async () => ({ productId: "MLA1", lowStockThreshold: 5 }) } as any;
+
+    const res = await PATCH(request);
+
+    expect(res.status).toBe(503);
+    expect(query).not.toHaveBeenCalledWith(expect.stringContaining("UPDATE products SET low_stock_threshold"), expect.anything());
+  });
+
   it("ignores a per-product tax: taxes are an account-level rate now", async () => {
     const query = queryMock();
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
