@@ -39,4 +39,16 @@ describe("classifyCharge", () => {
     expect(classifyCharge("Incumplimiento Envíos Full")).toBe("otro");
     expect(classifyCharge("Penalidad por demora en despacho")).toBe("otro");
   });
+
+  it("separa los cargos de Mercado Envíos Full del flete de venta", () => {
+    // Mismo tipo de bug que el de incumplimiento: "Envío a Fulfillment" o
+    // "Retiro de stock Full" contienen la palabra "envío" y caían en el
+    // bucket de flete de venta, mezclando el costo de guardar stock con el
+    // de mandarle el pedido al comprador.
+    expect(classifyCharge("Envío a depósito Full")).toBe("full");
+    expect(classifyCharge("Retiro de stock Full")).toBe("full");
+    expect(classifyCharge("Almacenamiento Full - Septiembre")).toBe("full");
+    expect(classifyCharge(null, "FULFILLMENT_STORAGE_FEE")).toBe("full");
+    expect(classifyCharge("Cargo por stock antiguo")).toBe("full");
+  });
 });
