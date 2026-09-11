@@ -667,19 +667,21 @@ describe("getAdsSpend fuera de la ventana", () => {
 describe("getStoreVisits", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("manda el offset UTC estándar, no el -00:00 que ML rechaza con 400", async () => {
-    // Bug real, en producción: con "-00:00" (offset cero "desconocido", válido
-    // en RFC 3339 pero no en lo que acepta este endpoint) ML respondía
-    // "Invalid request unknown date format" y las visitas quedaban en null
-    // para siempre, sin que nada lo mostrara salvo un warning en los logs.
+  it("manda fecha simple YYYY-MM-DD, sin armar un timestamp encima", async () => {
+    // Bug real, en producción, dos veces: primero con "-00:00" y después con
+    // "Z" agregado a un timestamp completo — ambos rechazados por ML con
+    // "Invalid request unknown date format" (confirmado en logs reales). El
+    // problema nunca fue el offset: la documentación oficial de ML muestra
+    // el ejemplo con fecha simple ("date_from=2021-01-01"), sin hora.
     vi.mocked(mlFetch).mockResolvedValueOnce({ total_visits: 120 });
 
     await getStoreVisits("acc1", "123", "2026-08-01", "2026-08-31");
 
     const url = decodeURIComponent(vi.mocked(mlFetch).mock.calls[0][0] as string);
-    expect(url).toContain("date_from=2026-08-01T00:00:00.000Z");
-    expect(url).toContain("date_to=2026-08-31T23:59:59.999Z");
-    expect(url).not.toContain("-00:00");
+    expect(url).toContain("date_from=2026-08-01");
+    expect(url).toContain("date_to=2026-08-31");
+    expect(url).not.toContain("T00:00:00");
+    expect(url).not.toContain("T23:59:59");
   });
 
   it("devuelve null (no 0) si la API falla, para no mostrar una conversión imposible", async () => {

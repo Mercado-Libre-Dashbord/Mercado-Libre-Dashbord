@@ -636,16 +636,16 @@ export async function getStoreVisits(
   dateTo: string
 ): Promise<number | null> {
   const token = await getValidAccessToken(accountId);
-  // El endpoint espera timestamps completos con offset, no fechas sueltas.
-  // "-00:00" (offset cero pero "desconocido", válido en RFC 3339) es lo que
-  // se mandaba antes, y ML lo rechaza con 400 "unknown date format" — quiere
-  // el offset UTC estándar. Con "Z" nunca más se trajo un solo dato de
-  // visitas, silenciosamente, desde que se agregó esta función.
-  const from = `${dateFrom}T00:00:00.000Z`;
-  const to = `${dateTo}T23:59:59.999Z`;
+  // Iteración número dos de este mismo bug: primero se mandaba un timestamp
+  // completo con "-00:00" (rechazado), después con "Z" (rechazado
+  // IGUAL — confirmado en logs reales de producción). El problema nunca fue
+  // el offset: la documentación oficial de ML muestra el ejemplo con fecha
+  // simple ("date_from=2021-01-01"), no un timestamp con hora. El endpoint
+  // quiere YYYY-MM-DD a secas, que es exactamente lo que ya traen
+  // dateFrom/dateTo — no hay que armar nada encima.
   try {
     const res = await mlFetch(
-      `/users/${sellerId}/items_visits?date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}`,
+      `/users/${sellerId}/items_visits?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`,
       token
     );
     const total = Number(res?.total_visits);
