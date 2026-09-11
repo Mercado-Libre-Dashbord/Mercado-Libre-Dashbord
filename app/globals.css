@@ -94,6 +94,13 @@ body {
   color: var(--text);
 }
 
+/* Red de seguridad: nada en la página debería poder obligar a desplazar
+   horizontalmente todo el celular. Las tablas siguen scrolleando adentro de
+   su propia caja (.table-wrap tiene su propio overflow-x), así que esto no
+   les saca esa función; solo evita que un descuido en algún componente se
+   convierta en "toda la página se corre para el costado". */
+html, body { overflow-x: hidden; }
+
 .app-shell { display: flex; min-height: 100dvh; }
 main { flex: 1 1 auto; min-width: 0; max-width: 1320px; padding: var(--space-5) var(--space-6) var(--space-6); }
 
@@ -204,6 +211,11 @@ h2.section-title::after {
    viewport wide on small screens. */
 .table-wrap {
   overflow-x: auto;
+  /* Sin esto, iOS Safari a veces "encadena" el gesto de scroll horizontal
+     de la tabla hacia la página entera cuando llega al final de la tabla,
+     corriendo todo el layout de costado hasta que el usuario lo nota varias
+     tarjetas más abajo. */
+  overscroll-behavior-x: contain;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
@@ -252,7 +264,12 @@ h2.section-title::after {
 /* Con la foto al lado, el título necesita menos ancho para que la tabla
    entre entera sin scroll horizontal. */
 .table-compact .cell-title { max-width: 15ch; }
-table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 560px; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); }
+/* El mínimo de 560px solo tiene sentido con lugar de sobra: en celular obligaba
+   a desplazar de costado hasta tablas de 2-3 columnas que entrarían solas. */
+@media (min-width: 641px) {
+  table { min-width: 560px; }
+}
 th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border-soft); }
 tbody tr:last-child td { border-bottom: none; }
 /* Los encabezados envuelven en dos líneas en vez de obligar a cada columna a
@@ -636,7 +653,19 @@ tbody tr:hover { background: var(--bg); }
 .badge-other { background: rgba(89, 89, 89, 0.12); color: var(--text-dim); }
 
 .orders-table td, .orders-table th { padding: 12px 14px; }
-.orders-table .order-id { font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: 13px; }
+/* Es un solo número largo, sin espacios: sin esto, la única forma que tiene
+   el navegador de no desbordar la celda es agrandar la tabla entera. */
+.orders-table .order-id { font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: 13px; overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  /* Con menos aire por columna, una tabla de varias columnas entra sin
+     tener que desplazar de costado ni sacar información. */
+  th, td { padding: 8px 8px; font-size: 12.5px; }
+  th { font-size: 10.5px; }
+  .orders-table td, .orders-table th { padding: 8px 6px; }
+  .orders-table .order-id { font-size: 11px; }
+  .badge { padding: 2px 7px; font-size: 11px; }
+}
 
 .waterfall-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: var(--space-5); box-shadow: var(--shadow-sm); }
 .waterfall-row { display: grid; grid-template-columns: 110px 1fr 90px; align-items: center; gap: var(--space-3); margin: var(--space-2) 0; font-size: 13px; }

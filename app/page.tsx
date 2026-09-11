@@ -676,7 +676,25 @@ function BillingStatusPanel() {
   );
 }
 
+/**
+ * En celular, la fecha completa ("10/09/2026, 11:33 p. m.") es lo que más
+ * ancho le saca a la tabla de órdenes — con día y mes alcanza para no tener
+ * que desplazar de costado, y el orden cronológico ya lo da la lista.
+ */
+function useIsNarrowScreen() {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 640px)");
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return narrow;
+}
+
 export default function HomePage() {
+  const isNarrowScreen = useIsNarrowScreen();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[] | null>(null);
@@ -946,7 +964,11 @@ export default function HomePage() {
                   <td>
                     <span className={`badge ${estadoBadgeClass(o.estadoPago)}`}>{estadoLabel(o.estadoPago)}</span>
                   </td>
-                  <td>{new Date(o.dateCreated).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                  <td>
+                    {isNarrowScreen
+                      ? new Date(o.dateCreated).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" })
+                      : new Date(o.dateCreated).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </td>
                   <td className="num" style={countsAsRevenue(o.estadoPago) ? undefined : { color: "var(--text-dim)", textDecoration: "line-through" }}>{fmt(o.totalOrder)}</td>
                   {/* Una orden cancelada no dejó ganancia: mostrar su neto en
                       verde como si fuera plata ganada era directamente falso. */}
