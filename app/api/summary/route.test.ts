@@ -9,7 +9,7 @@ vi.mock("@/mcp/tools", () => ({ getStoreVisits: vi.fn().mockResolvedValue(null) 
 import { GET } from "./route";
 import { withScope } from "@/db/client";
 import { resolveCurrentAccount, getCurrentUser } from "@/lib/current-account";
-import { resetColumnCache } from "@/db/schema-capabilities";
+import { resetColumnCache, EXPECTED_COLUMNS } from "@/db/schema-capabilities";
 import { getStoreVisits } from "@/mcp/tools";
 
 const account = { id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" as const, taxConditionConfirmed: true, createdAt: "2026-01-01" };
@@ -265,7 +265,10 @@ describe("GET /api/summary", () => {
     resetColumnCache();
     vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
     const adminBody = await (await GET(request)).json();
-    expect(adminBody.pendingMigrations).toHaveLength(18);
+    // Contra la lista real y no contra un número escrito a mano: así agregar
+    // una migración nueva no rompe este test por una razón que no es la que
+    // el test vino a cuidar (que se reporten todas, y solo al admin).
+    expect(adminBody.pendingMigrations).toHaveLength(EXPECTED_COLUMNS.length);
     const sql = adminBody.pendingMigrations.join(" ");
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS tax");
     expect(sql).toContain("iva_applied");
@@ -274,6 +277,7 @@ describe("GET /api/summary", () => {
     expect(sql).toContain("thumbnail");
     expect(sql).toContain("other_tax_rate");
     expect(sql).toContain("sync_version");
+    expect(sql).toContain("016-notas-de-credito");
   });
 
   it("counts cancelled orders as refunds, separately from revenue", async () => {

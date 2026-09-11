@@ -110,6 +110,51 @@ filas de otra cuenta. Está probado en `db/rls-isolation.test.ts` con datos
 reales de dos cuentas distintas, incluyendo una query deliberadamente sin
 `WHERE account_id`.
 
+## Facturación de Mercado Libre
+
+La pantalla **Facturación** (`/facturacion`) tiene tres pestañas:
+
+1. **Estado de deuda** — qué facturó ML, cuánto está vencido, cuánto por
+   vencer y cuánto se está acumulando en el período todavía abierto, más los
+   avisos a 5 días, 1 día y al vencimiento.
+2. **Desglose por operación** — los cargos del período separados por concepto
+   (comisión, envío, impuestos, publicidad, Full, costo financiero) y el
+   recibo de cada venta: precio − comisión − envío − retenciones − costo =
+   margen neto real, con aviso cuando quedó en negativo.
+3. **Centro de exportación** — CSV de cargos y de ventas para el contador.
+
+Requiere correr `db/postgres/migrations/016-notas-de-credito.sql` para que las
+notas de crédito por devoluciones se resten de los conceptos (sin eso el saldo
+del período aparece inflado). Los cargos se guardan con el botón
+"Sincronizar", igual que el resto de los datos.
+
+### Qué confirma la API de ML y qué no
+
+Esto es lo que decide cómo se lee la pantalla, así que conviene tenerlo claro:
+
+- **Confirmado**: si un período está `OPEN` (sumando cargos) o `CLOSED`, y su
+  monto. El detalle de cargos, con el número de orden cuando lo trae.
+- **No confirmado**: si una factura está **pagada**. ML no expone ese estado.
+  Por eso una factura figura como *Pagada* solo cuando la API lo dice
+  explícitamente, y si no, se muestra el estado que sí se puede sostener.
+  Decirle a un vendedor que está al día sin respaldo es el peor error posible
+  en una pantalla que existe para evitarle una suspensión.
+- **A veces ausente**: la **fecha de vencimiento**. Cuando no viene, se
+  muestra "No informado" en vez de estimarla a partir del fin del período: una
+  fecha inventada se lee igual de firme que una real.
+- **No disponible**: el **PDF/XML** del comprobante. La API devuelve el detalle
+  de cargos (que es lo que se exporta) pero no el comprobante, así que esos
+  archivos se bajan desde Facturación en la cuenta de Mercado Libre.
+- **Códigos de cargo** (`CVFV`, `CVFF`, `CXD`, `CFF`, `CVFN`): salieron de
+  documentación de terceros, no de una respuesta en vivo. Si los reales
+  resultan ser otros, el cargo cae en el clasificador por texto de siempre y
+  no se rompe nada — solo se pierde precisión.
+
+Los avisos de vencimiento se **calculan** (`lib/billing-alerts.ts`) y se
+muestran en la pantalla. Mandarlos por push, mail o WhatsApp queda detrás de
+la interfaz `BillingNotifier`, sin implementación: hace falta contratar un
+servicio para eso, y la decisión no cambia nada de la lógica ya escrita.
+
 ## Tests
 
 `npm test` — corre contra una base Postgres real (no mocks para la capa de

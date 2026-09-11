@@ -699,6 +699,15 @@ export interface MlBillingPeriod {
   /** OPEN = todavía se están acumulando cargos; CLOSED = período cerrado.
    * No es lo mismo que "pagado": ML no expone ese estado acá. */
   periodStatus: string | null;
+  /**
+   * Vencimiento YYYY-MM-DD, si vino. Null cuando no se lo pudo leer — y se
+   * deja explícitamente en null en vez de estimarlo a partir del fin del
+   * período: una fecha inventada en una pantalla que existe para evitar una
+   * suspensión es peor que no tener fecha.
+   */
+  dueDate: string | null;
+  /** Solo si ML lo dice. Null = no se sabe, que no es lo mismo que "no". */
+  paid: boolean | null;
 }
 
 export interface MlBillingCharge {
@@ -712,13 +721,42 @@ export interface MlBillingCharge {
   chargedAt: string | null;
 }
 
-export async function listBillingPeriods(accountId: string): Promise<MlBillingPeriod[]> {
+/** BILL son los cargos; CREDIT_NOTE, las notas de crédito por devoluciones. */
+export type BillingDocumentType = "BILL" | "CREDIT_NOTE";
+
+/**
+ * Nombres candidatos del vencimiento y del estado de pago.
+ *
+ * Igual que el resto de lo que toca facturación en esta app: no están
+ * confirmados contra una respuesta real, salieron de documentación de
+ * terceros. Se prueban en orden y, si ninguno existe, el campo queda en null
+ * y la UI dice "no informado" — que es la verdad — en vez de rellenarlo con
+ * una estimación que el vendedor leería como un dato firme.
+ */
+function readDueDate(p: any): string | null {
+  const raw = firstDefined(p.expiration_date, p.due_date, p.debt?.expiration_date, p.payment?.due_date);
+  return raw ? raw.slice(0, 10) : null;
+}
+
+function readPaid(p: any): boolean | null {
+  const raw = firstDefined(p.payment_status, p.debt_status, p.status);
+  if (!raw) return null;
+  const value = raw.toUpperCase();
+  if (["PAID", "SETTLED", "PAGADO", "CANCELLED_DEBT"].includes(value)) return true;
+  if (["UNPAID", "PENDING", "OVERDUE", "DEBT", "IN_DEBT"].includes(value)) return false;
+  // Un estado que no sabemos leer es "no sabemos", no "no pagado".
+  return null;
+}
+
+export async function listBillingPeriods(
+  accountId: string,
+  documentType: BillingDocumentType = "BILL"
+): Promise<MlBillingPeriod[]> {
   const token = await getValidAccessToken(accountId);
   const res = await listOrEmpty(
     // document_type es obligatorio: sin él ML responde 422 y la conciliación
-    // quedaba vacía en silencio. BILL son los cargos; CREDIT_NOTE, las notas
-    // de crédito, que no entran en esta vista.
-    () => mlFetch(`/billing/integration/monthly/periods?group=ML&document_type=BILL&offset=0&limit=12`, token),
+    // quedaba vacía en silencio.
+    () => mlFetch(`/billing/integration/monthly/periods?group=ML&document_type=${documentType}&offset=0&limit=12`, token),
     { results: [] }
   );
   const rows = res.results ?? res.periods ?? [];
@@ -728,6 +766,8 @@ export async function listBillingPeriods(accountId: string): Promise<MlBillingPe
     dateTo: p.period?.date_to ?? null,
     amount: Number(p.amount ?? 0),
     periodStatus: p.period_status ?? null,
+    dueDate: readDueDate(p),
+    paid: readPaid(p),
   })).filter((p: MlBillingPeriod) => p.key);
 }
 
@@ -736,7 +776,11 @@ export async function listBillingPeriods(accountId: string): Promise<MlBillingPe
  * de devolver resultados; el tope de vueltas evita un loop infinito si la API
  * ignora el cursor.
  */
-export async function getBillingCharges(accountId: string, periodKey: string): Promise<MlBillingCharge[]> {
+export async function getBillingCharges(
+  accountId: string,
+  periodKey: string,
+  documentType: BillingDocumentType = "BILL"
+): Promise<MlBillingCharge[]> {
   const token = await getValidAccessToken(accountId);
   const PAGE_SIZE = 100;
   const MAX_PAGES = 50;
@@ -744,7 +788,7 @@ export async function getBillingCharges(accountId: string, periodKey: string): P
   let fromId: string | null = null;
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const query = new URLSearchParams({ document_type: "BILL", limit: String(PAGE_SIZE) });
+    const query = new URLSearchParams({ document_type: documentType, limit: String(PAGE_SIZE) });
     if (fromId) query.set("from_id", fromId);
     const res: any = await listOrEmpty(
       () => mlFetch(`/billing/integration/periods/key/${periodKey}/group/ML/details?${query}`, token),

@@ -1,0 +1,116 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("@/db/client", () => ({ withScope: vi.fn() }));
+vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
+
+import { GET } from "./route";
+import { withScope } from "@/db/client";
+import { resolveCurrentAccount } from "@/lib/current-account";
+import { resetColumnCache } from "@/db/schema-capabilities";
+
+const account = {
+  id: "acc1", name: "Cuenta", ownerEmail: "a@example.com", mlSellerId: "S1", otherTaxRate: 0,
+  taxCondition: "responsable_inscripto" as const, taxConditionConfirmed: true, createdAt: "2026-01-01",
+};
+
+function row(overrides: Record<string, unknown> = {}) {
+  return {
+    orderId: "200001", date: "2026-09-01", revenue: 10000, mlCommission: 1300, shippingCost: 1500,
+    adsCost: 0, productCost: 4000, otherTax: 0, iva: 900, itemsMissingCost: 0, realMlCharges: null,
+    ...overrides,
+  };
+}
+
+function client(rows: any[], { hasColumns = true } = {}) {
+  const seen: string[] = [];
+  const query = vi.fn().mockImplementation(async (sql: string) => {
+    if (sql.includes("information_schema.columns")) {
+      return {
+        rows: hasColumns
+          ? [
+              { table_name: "order_items", column_name: "tax_applied" },
+              { table_name: "order_items", column_name: "iva_applied" },
+              { table_name: "billing_charges", column_name: "detail_id" },
+            ]
+          : [],
+      };
+    }
+    seen.push(sql);
+    return { rows };
+  });
+  vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+  return { query, seen };
+}
+
+const request = (qs = "") => ({ nextUrl: { searchParams: new URLSearchParams(qs) } }) as any;
+
+describe("GET /api/billing/orders", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetColumnCache();
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
+  });
+
+  it("returns 401 without an active account", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(null);
+    expect((await GET(request())).status).toBe(401);
+  });
+
+  it("builds one receipt per order with the real net margin", async () => {
+    client([row()]);
+    const body = await (await GET(request())).json();
+    expect(body.receipts).toHaveLength(1);
+    expect(body.receipts[0].netMargin).toBe(2300);
+  });
+
+  it("flags the orders that lost money and counts them", async () => {
+    client([
+      row({ orderId: "1", revenue: 2500, mlCommission: 400, shippingCost: 1500, productCost: 900, iva: 0 }),
+      row({ orderId: "2" }),
+    ]);
+    const body = await (await GET(request())).json();
+    expect(body.negativeCount).toBe(1);
+    expect(body.negativeAmount).toBe(-300);
+  });
+
+  it("can show only the orders that lost money", async () => {
+    client([
+      row({ orderId: "1", revenue: 2500, mlCommission: 400, shippingCost: 1500, productCost: 900, iva: 0 }),
+      row({ orderId: "2" }),
+    ]);
+    const body = await (await GET(request("filter=negativo"))).json();
+    expect(body.receipts.map((r: any) => r.orderId)).toEqual(["1"]);
+  });
+
+  it("keeps counting every losing order even while the list is filtered", async () => {
+    // Si el contador mirara solo lo filtrado, el aviso desaparecería justo
+    // cuando el vendedor filtra por otra cosa.
+    client([row({ orderId: "1", revenue: 100, mlCommission: 400, shippingCost: 0, productCost: 0, iva: 0 })]);
+    const body = await (await GET(request("filter=todos"))).json();
+    expect(body.negativeCount).toBe(1);
+  });
+
+  it("compares against what ML billed, as a positive cost", async () => {
+    // En la factura los cargos vienen en negativo (es plata que sale); el
+    // costo estimado contra el que se comparan es positivo.
+    client([row({ realMlCharges: -3000 })]);
+    const body = await (await GET(request())).json();
+    expect(body.receipts[0].reconciliation).toEqual({ estimated: 2800, real: 3000, difference: 200 });
+  });
+
+  it("excludes cancelled orders from the receipts", async () => {
+    const { seen } = client([row()]);
+    await GET(request());
+    expect(seen[0]).toContain("o.status NOT IN ('cancelled', 'invalid')");
+  });
+
+  it("still builds the receipt when the optional migrations have not run", async () => {
+    // Sin las columnas de impuestos ni la tabla de cargos, el recibo sale
+    // igual: sin la línea de IVA y sin la conciliación, no en blanco.
+    const { seen } = client([row({ iva: 0, otherTax: 0 })], { hasColumns: false });
+    const body = await (await GET(request())).json();
+    expect(seen[0]).toContain("NULL::double precision");
+    expect(body.receipts[0].reconciliation).toBeNull();
+    expect(body.receipts[0].netMargin).toBe(3200);
+  });
+});

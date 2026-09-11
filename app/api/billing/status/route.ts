@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { listBillingPeriods, probeAccountRestrictions } from "@/mcp/tools";
+import { billingHealth } from "@/lib/billing-alerts";
 
 export const runtime = "nodejs";
 
@@ -34,10 +35,23 @@ export async function GET() {
   const restrictionsConfirmed = restrictions.ok && restrictions.isArray;
   const activeRestrictions = restrictionsConfirmed ? (restrictions as any).length : null;
 
+  const recent = periods.slice(0, 6);
+  // El estado de cada factura y cuánta plata hay en cada uno, calculado sobre
+  // la fecha de hoy del servidor: si se hiciera en el navegador, el reloj del
+  // cliente decidiría si una factura está vencida.
+  const health = billingHealth(recent, new Date().toISOString().slice(0, 10));
+
   return NextResponse.json({
-    periods: periods
-      .slice(0, 6)
-      .map((p) => ({ key: p.key, dateFrom: p.dateFrom, dateTo: p.dateTo, amount: p.amount, periodStatus: p.periodStatus })),
+    periods: recent.map((p) => ({
+      key: p.key,
+      dateFrom: p.dateFrom,
+      dateTo: p.dateTo,
+      amount: p.amount,
+      periodStatus: p.periodStatus,
+      dueDate: p.dueDate,
+      paid: p.paid,
+    })),
+    health,
     restrictions: {
       confirmed: restrictionsConfirmed,
       activeRestrictions,

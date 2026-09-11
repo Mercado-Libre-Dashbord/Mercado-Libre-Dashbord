@@ -28,14 +28,14 @@ describe("GET /api/billing/status", () => {
   it("marca las restricciones como confirmadas cuando la sonda devuelve un array (aunque esté vacío)", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
     vi.mocked(listBillingPeriods).mockResolvedValue([
-      { key: "2026-08-01", dateFrom: "2026-08-01", dateTo: "2026-08-31", amount: 1000, periodStatus: "CLOSED" },
+      { key: "2026-08-01", dateFrom: "2026-08-01", dateTo: "2026-08-31", amount: 1000, periodStatus: "CLOSED", dueDate: null, paid: null },
     ]);
     vi.mocked(probeAccountRestrictions).mockResolvedValue({ ok: true, isArray: true, length: 0, sampleKeys: [] });
 
     const body = await (await GET()).json();
 
     expect(body.periods).toEqual([
-      { key: "2026-08-01", dateFrom: "2026-08-01", dateTo: "2026-08-31", amount: 1000, periodStatus: "CLOSED" },
+      { key: "2026-08-01", dateFrom: "2026-08-01", dateTo: "2026-08-31", amount: 1000, periodStatus: "CLOSED", dueDate: null, paid: null },
     ]);
     expect(body.restrictions).toMatchObject({ confirmed: true, activeRestrictions: 0 });
   });

@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/full", label: "Full", icon: "warehouse" },
   { href: "/consultas", label: "Consultas", icon: "question" },
   { href: "/campanas", label: "Campañas", icon: "megaphone" },
+  { href: "/facturacion", label: "Facturación", icon: "invoice" },
   { href: "/tendencias", label: "Tendencias", icon: "trend" },
   { href: "/loyalty", label: "Fidelización", icon: "loyalty" },
   { href: "/configuracion", label: "Configuración", icon: "settings" },
@@ -60,6 +61,12 @@ function NavIcon({ name }: { name: string }) {
       <>
         <circle cx="9" cy="8" r="3.2" />
         <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 8.2A3.2 3.2 0 1 1 16 14.6M21.5 20c0-3-2-5.2-4.8-5.8" />
+      </>
+    ),
+    invoice: (
+      <>
+        <path d="M6 2.5h12v19l-2.4-1.6-2.4 1.6-2.4-1.6-2.4 1.6L6 21.5z" />
+        <path d="M9.5 8h5M9.5 12h5" />
       </>
     ),
     warehouse: (

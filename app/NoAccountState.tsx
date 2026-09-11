@@ -11,10 +11,10 @@ export function NoAccountState() {
       {isAdmin ? (
         <>
           Todavía no creaste ninguna cuenta. Andá a <a href="/admin">Cuentas</a> y creá la primera — puede ser la
-          tuya, con tu propio email de Google.
+          tuya, con tu propio email.
         </>
       ) : (
-        <>Todavía no tenés una cuenta activa. Pedile a tu administrador que te dé de alta con tu email de Google.</>
+        <>Todavía no tenés una cuenta activa. Pedile a tu administrador que te dé de alta con tu email.</>
       )}
     </div>
   );
