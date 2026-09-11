@@ -244,7 +244,7 @@ export default function ProductosPage() {
                 <th className="num">Costo</th>
                 <th className="num">Margen</th>
                 <th className="num">Vendidas</th>
-                <th className="num">Rentabilidad</th>
+                <th className="num">Beneficio</th>
                 <th>Actualizar costo</th>
                 <th>Alerta stock</th>
                 <th>ML</th>
