@@ -74,7 +74,9 @@ export async function GET() {
     // ya tienen una foto de stock sincronizada, más una valorización
     // aproximada (cantidad × último costo cargado) — todavía sin confirmar
     // que los nombres de campo de ML sean los correctos.
-    const fullPending = pending.some((m) => m.column === "inventory_id" || m.column === "full_stock_qty");
+    const fullPending = pending.some((m) =>
+      ["inventory_id", "full_stock_qty", "full_stock_unavailable_qty"].includes(m.column)
+    );
     const full = fullPending
       ? null
       : (

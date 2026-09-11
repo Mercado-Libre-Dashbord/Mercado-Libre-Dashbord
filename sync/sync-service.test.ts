@@ -278,4 +278,62 @@ describe("backfillMissingProducts", () => {
     });
     expect(title).toBe("Nombre recuperado");
   });
+
+  it("cuando una ficha mínima sí se resuelve contra /items, refresca todos los campos opcionales, no solo el título", async () => {
+    // El bug real: el UPDATE del ON CONFLICT solo tocaba `title`. Un producto
+    // backfilleado que después SÍ aparece en /items (con categoría, foto,
+    // logistic_type, inventory_id) se quedaba con esos campos en null para
+    // siempre, aunque getProductsByIds los hubiera traído bien.
+    const { getProductsByIds } = await import("@/mcp/tools");
+    const { withScope } = await import("@/db/client");
+    const { backfillMissingProducts } = await import("./sync-service");
+    const account = await makeAccount();
+
+    vi.mocked(getProductsByIds).mockResolvedValueOnce([
+      {
+        id: "MLA555", title: "Producto recuperado", sku: "SKU5", price: 5000, stock: 3,
+        permalink: "https://ml/p5", categoryId: "MLA1", categoryName: "Categoría",
+        thumbnail: "https://thumb5", logisticType: "fulfillment", inventoryId: "INV5",
+      },
+    ]);
+
+    await withScope({ accountId: account.id }, async (client) => {
+      // Ficha mínima de una corrida anterior: título = id, todo lo demás null.
+      await client.query(
+        `INSERT INTO products (account_id, id, title, current_price, stock, updated_at) VALUES ($1,'MLA555','MLA555',0,0,now())`,
+        [account.id]
+      );
+      await client.query(
+        `INSERT INTO orders (account_id, id, date_created, status, buyer_total) VALUES ($1,'O4',now(),'paid',100)`,
+        [account.id]
+      );
+      await client.query(
+        `INSERT INTO order_items (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated)
+         VALUES ($1,'O4','MLA555',100,1,0,0,0)`,
+        [account.id]
+      );
+      return backfillMissingProducts(client, account.id, "SELLER1");
+    });
+
+    const row = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query(
+        `SELECT title, sku, current_price as "currentPrice", stock, permalink, category_id as "categoryId",
+                thumbnail, logistic_type as "logisticType", inventory_id as "inventoryId"
+         FROM products WHERE account_id = $1 AND id = 'MLA555'`,
+        [account.id]
+      );
+      return r.rows[0];
+    });
+    expect(row).toMatchObject({
+      title: "Producto recuperado",
+      sku: "SKU5",
+      currentPrice: 5000,
+      stock: 3,
+      permalink: "https://ml/p5",
+      categoryId: "MLA1",
+      thumbnail: "https://thumb5",
+      logisticType: "fulfillment",
+      inventoryId: "INV5",
+    });
+  });
 });
