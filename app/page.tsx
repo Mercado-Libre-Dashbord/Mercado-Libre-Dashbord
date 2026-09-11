@@ -533,16 +533,32 @@ function StackedAreaTooltip({ active, payload, label }: any) {
     <div
       style={{
         background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8,
-        padding: "8px 12px", fontSize: 12, minWidth: 180,
+        padding: "8px 12px", fontSize: 12, minWidth: 220,
       }}
     >
       <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} style={{ display: "flex", justifyContent: "space-between", gap: 16, color: p.color, padding: "2px 0" }}>
-          <span>{p.name}</span>
-          <span>{fmt(Number(p.value) || 0)}</span>
-        </div>
-      ))}
+      {payload.map((p: any) => {
+        // Recharts saca el color de "stroke", no de "fill": acá el stroke es
+        // var(--surface) a propósito (el borde entre franjas), así que
+        // p.color quedaba igual al fondo del tooltip — texto blanco sobre
+        // blanco, invisible pero presente en el DOM (por eso nunca se veía
+        // ninguna fila, aunque el total sí se calculaba bien). Se busca el
+        // color real en STACK_SERIES en vez de confiar en p.color.
+        const serie = STACK_SERIES.find((s) => s.key === p.dataKey);
+        const value = Number(p.value) || 0;
+        const share = total > 0 ? (value / total) * 100 : 0;
+        return (
+          <div key={p.dataKey} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "2px 0" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text)" }}>
+              <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: serie?.color ?? "var(--text-dim)", flexShrink: 0 }} />
+              {p.name}
+            </span>
+            <span style={{ color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>
+              {fmt(value)} · {share.toFixed(0)}%
+            </span>
+          </div>
+        );
+      })}
       <div
         style={{
           display: "flex", justifyContent: "space-between", gap: 16, marginTop: 6, paddingTop: 6,
