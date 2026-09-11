@@ -88,7 +88,8 @@ describe("GET /api/full", () => {
     // 1 unidad/día => rotación de 1 día, y con 10 disponibles, 10 días de stock.
     expect(p.rotationDays).toBe(1);
     expect(p.daysUntilStockout).toBe(10);
-    expect(body.totals).toMatchObject({ capital: 1500, productos: 1, conStockBajo: 1, conRiesgoStockAntiguo: 1 });
+    // Unidades en Full: 10 disponibles + 5 no disponibles.
+    expect(body.totals).toMatchObject({ capital: 1500, productos: 1, unidades: 15, conStockBajo: 1 });
   });
 
   it("no calcula rotación ni previsión si no hubo ventas recientes", async () => {

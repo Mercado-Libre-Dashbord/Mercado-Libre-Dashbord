@@ -148,8 +148,8 @@ export async function GET(request: NextRequest) {
       totals: {
         capital: products.reduce((sum, p) => sum + (p.fullStockValue ?? 0), 0),
         productos: products.length,
+        unidades: products.reduce((sum, p) => sum + p.availableQty + p.unavailableQty, 0),
         conStockBajo: products.filter((p) => p.lowStock).length,
-        conRiesgoStockAntiguo: products.filter((p) => p.oldStockRisk).length,
       },
       costs,
       costsAvailable,

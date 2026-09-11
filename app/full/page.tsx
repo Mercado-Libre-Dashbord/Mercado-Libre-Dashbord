@@ -32,7 +32,7 @@ interface FullData {
   oldStockDaysThreshold?: number;
   salesVelocityDays?: number;
   products?: FullProduct[];
-  totals?: { capital: number; productos: number; conStockBajo: number; conRiesgoStockAntiguo: number };
+  totals?: { capital: number; productos: number; unidades: number; conStockBajo: number };
   costs?: FullCost[];
   costsAvailable?: boolean;
 }
@@ -130,8 +130,8 @@ export default function FullPage() {
               <div className="value"><KpiValue>{data ? String(data.totals?.conStockBajo ?? 0) : "-"}</KpiValue></div>
             </div>
             <div className="kpi-card">
-              <div className="label">Riesgo de stock antiguo</div>
-              <div className="value"><KpiValue>{data ? String(data.totals?.conRiesgoStockAntiguo ?? 0) : "-"}</KpiValue></div>
+              <div className="label">Unidades en Full</div>
+              <div className="value"><KpiValue>{data ? String(data.totals?.unidades ?? 0) : "-"}</KpiValue></div>
             </div>
           </div>
 
