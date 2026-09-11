@@ -36,6 +36,7 @@ interface Summary {
   totalIva: number;
   totalCommission: number;
   totalShipping: number;
+  adSpend: number;
   previous: PreviousTotals | null;
   /** SQL de migraciones pendientes — solo llega si sos admin. */
   pendingMigrations?: string[];
@@ -150,6 +151,12 @@ const KPI_ICON_PATHS: Record<string, React.ReactNode> = {
     <>
       <path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z" />
       <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  ads: (
+    <>
+      <path d="m3 11 18-5v12L3 14v-3z" />
+      <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
     </>
   ),
 };
@@ -410,7 +417,7 @@ function TopProductsCard({ rows }: { rows: ProductRow[] }) {
  * No es decoración: reservan el alto real, así la página no salta cuando
  * responde la API, y dicen qué está por aparecer sin escribir "Cargando…".
  */
-function KpiSkeleton({ count = 8 }: { count?: number }) {
+function KpiSkeleton({ count = 9 }: { count?: number }) {
   return (
     <div className="kpi-grid" aria-hidden="true">
       {Array.from({ length: count }, (_, i) => (
@@ -842,6 +849,10 @@ export default function HomePage() {
         <div className="kpi-card">
           <div className="kpi-card-head"><KpiIcon name="net" /><span className="label">Facturación neta</span><KpiInfo>Facturación − comisión de Mercado Libre − envío. No descuenta el costo del producto ni los impuestos.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? fmt(summary.netRevenue) : "-"}</KpiValue></div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head"><KpiIcon name="ads" /><span className="label">Costos en Ads</span><KpiInfo>Lo que gastaste en publicidad en el período: Mercado Ads más lo que cargaste a mano de Meta, Google o TikTok. Ya está descontado de la Ganancia neta. Detalle por campaña en <a href="/campanas">Campañas</a>.</KpiInfo></div>
+          <div className="value"><KpiValue>{summary ? fmt(summary.adSpend) : "-"}</KpiValue></div>
         </div>
         <div className="kpi-card">
           <div className="kpi-card-head">
