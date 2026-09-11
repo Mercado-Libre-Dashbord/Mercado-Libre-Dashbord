@@ -1085,16 +1085,7 @@ export default function HomePage() {
 
       <BillingStatusPanel />
 
-      <div className="kpi-grid kpi-grid-3">
-        <div className="kpi-card">
-          <div className="kpi-card-head">
-            <KpiIcon name="visits" /><span className="label">Visitas a la tienda</span>
-            <KpiInfo>Cuánta gente entró a ver tus publicaciones en el período elegido arriba, según Mercado Libre.</KpiInfo>
-          </div>
-          <div className="value">
-            <KpiValue>{summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}</KpiValue>
-          </div>
-        </div>
+      <div className="kpi-grid kpi-grid-2">
         <div className="kpi-card">
           <div className="kpi-card-head">
             <KpiIcon name="question" /><span className="label">Preguntas sin responder</span>
