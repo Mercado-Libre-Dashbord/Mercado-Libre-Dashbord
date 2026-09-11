@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area,
@@ -711,7 +711,7 @@ const PERIOD_STATUS_LABEL: Record<string, string> = { OPEN: "En curso", CLOSED: 
  * documentado; si no da una respuesta reconocible, se dice explícitamente
  * que no se pudo confirmar en vez de mostrar "todo bien" sin sustento.
  */
-function BillingStatusPanel() {
+function BillingStatusPanel({ sideContent }: { sideContent?: ReactNode }) {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [error, setError] = useState(false);
 
@@ -724,13 +724,20 @@ function BillingStatusPanel() {
       .catch(() => setError(true));
   }, []);
 
-  if (error || (status && status.periods.length === 0 && !status.restrictions.confirmed)) return null;
-  if (!status) return null;
+  const hasBillingCard = !error && status && !(status.periods.length === 0 && !status.restrictions.confirmed);
+
+  if (!hasBillingCard) {
+    // Sin tabla de facturación para mostrar (todavía cargando, sin permiso,
+    // o cuenta sin historial en ML todavía) — las tarjetas de al lado no
+    // dependen de esto, así que igual se muestran, solo que en su propia fila.
+    return sideContent ? <div className="kpi-grid kpi-grid-3">{sideContent}</div> : null;
+  }
 
   return (
     <>
       <h2 className="section-title">Estado de facturación con Mercado Libre</h2>
-      <div className="day-card" style={{ maxWidth: 620 }}>
+      <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", alignItems: "flex-start" }}>
+      <div className="day-card" style={{ flex: "1 1 420px", maxWidth: 620 }}>
         {status.restrictions.confirmed ? (
           <p className="field-hint" style={{ marginTop: 0 }}>
             {status.restrictions.activeRestrictions === 0
@@ -776,6 +783,12 @@ function BillingStatusPanel() {
           "Cerrado" es un período que ML ya facturó, no necesariamente uno que quedó sin pagar: el cobro es
           automático contra tu saldo de Mercado Pago.
         </p>
+      </div>
+      {sideContent && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", flex: "1 1 260px", minWidth: 220 }}>
+          {sideContent}
+        </div>
+      )}
       </div>
     </>
   );
@@ -1062,45 +1075,47 @@ export default function HomePage() {
         </>
       )}
 
-      <BillingStatusPanel />
-
-      <div className="kpi-grid kpi-grid-3">
-        <div className="kpi-card">
-          <div className="kpi-card-head">
-            <KpiIcon name="visits" /><span className="label">Visitas a la tienda</span>
-            <KpiInfo>
-              Cuánta gente entró a ver tus publicaciones en el período elegido arriba, según Mercado Libre. Debajo
-              va la conversión: de cada 100 visitas, cuántas terminaron en venta.
-            </KpiInfo>
-          </div>
-          <div className="value">
-            <KpiValue>{summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}</KpiValue>
-          </div>
-          {summary?.conversionRate != null && (
-            <div className="kpi-delta">
-              <span className="kpi-delta-caption">
-                {(summary.conversionRate * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}% de conversión
-              </span>
+      <BillingStatusPanel
+        sideContent={
+          <>
+            <div className="kpi-card">
+              <div className="kpi-card-head">
+                <KpiIcon name="visits" /><span className="label">Visitas a la tienda</span>
+                <KpiInfo>
+                  Cuánta gente entró a ver tus publicaciones en el período elegido arriba, según Mercado Libre.
+                  Debajo va la conversión: de cada 100 visitas, cuántas terminaron en venta.
+                </KpiInfo>
+              </div>
+              <div className="value">
+                <KpiValue>{summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}</KpiValue>
+              </div>
+              {summary?.conversionRate != null && (
+                <div className="kpi-delta">
+                  <span className="kpi-delta-caption">
+                    {(summary.conversionRate * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}% de conversión
+                  </span>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-card-head">
-            <KpiIcon name="question" /><span className="label">Preguntas sin responder</span>
-            <KpiInfo>Consultas de compradores en Mercado Libre que todavía no tienen respuesta enviada. Se responden en <a href="/consultas">Consultas</a>.</KpiInfo>
-          </div>
-          <div className="value"><KpiValue>{unansweredQuestions === null ? "-" : unansweredQuestions}</KpiValue></div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-card-head">
-            <KpiIcon name="lossAlert" /><span className="label">Vendiendo a pérdida</span>
-            <KpiInfo>Productos cuya ganancia neta real promedio por unidad vendida es negativa (con comisión, envío e impuestos ya descontados). Detalle en <a href="/productos">Productos</a>.</KpiInfo>
-          </div>
-          <div className="value">
-            <KpiValue>{products === null ? "-" : products.filter((p) => p.negativeMargin).length}</KpiValue>
-          </div>
-        </div>
-      </div>
+            <div className="kpi-card">
+              <div className="kpi-card-head">
+                <KpiIcon name="question" /><span className="label">Preguntas sin responder</span>
+                <KpiInfo>Consultas de compradores en Mercado Libre que todavía no tienen respuesta enviada. Se responden en <a href="/consultas">Consultas</a>.</KpiInfo>
+              </div>
+              <div className="value"><KpiValue>{unansweredQuestions === null ? "-" : unansweredQuestions}</KpiValue></div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-card-head">
+                <KpiIcon name="lossAlert" /><span className="label">Vendiendo a pérdida</span>
+                <KpiInfo>Productos cuya ganancia neta real promedio por unidad vendida es negativa (con comisión, envío e impuestos ya descontados). Detalle en <a href="/productos">Productos</a>.</KpiInfo>
+              </div>
+              <div className="value">
+                <KpiValue>{products === null ? "-" : products.filter((p) => p.negativeMargin).length}</KpiValue>
+              </div>
+            </div>
+          </>
+        }
+      />
 
       <h2 className="section-title">Últimas órdenes</h2>
       {orders && orders.length === 0 ? (
