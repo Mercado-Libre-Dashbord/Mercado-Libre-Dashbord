@@ -973,27 +973,6 @@ export default function HomePage() {
           <div className="kpi-card-head"><KpiIcon name="ads" /><span className="label">Costos en Ads</span><KpiInfo>Lo que gastaste en publicidad en el período: Mercado Ads más lo que cargaste a mano de Meta, Google o TikTok. Ya está descontado de la Ganancia neta. Detalle por campaña en <a href="/campanas">Campañas</a>.</KpiInfo></div>
           <div className="value"><KpiValue>{summary ? fmt(summary.adSpend) : "-"}</KpiValue></div>
         </div>
-        <div className="kpi-card">
-          <div className="kpi-card-head">
-            <KpiIcon name="visits" /><span className="label">Visitas</span>
-            <KpiInfo>
-              Cuánta gente entró a ver tus publicaciones en el período, según Mercado Libre. Debajo va la
-              conversión: de cada 100 visitas, cuántas terminaron en venta.
-            </KpiInfo>
-          </div>
-          <div className="value">
-            <KpiValue>
-              {summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}
-            </KpiValue>
-          </div>
-          {summary?.conversionRate != null && (
-            <div className="kpi-delta">
-              <span className="kpi-delta-caption">
-                {(summary.conversionRate * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}% de conversión
-              </span>
-            </div>
-          )}
-        </div>
       </div>
       )}
 
@@ -1085,7 +1064,26 @@ export default function HomePage() {
 
       <BillingStatusPanel />
 
-      <div className="kpi-grid kpi-grid-2">
+      <div className="kpi-grid kpi-grid-3">
+        <div className="kpi-card">
+          <div className="kpi-card-head">
+            <KpiIcon name="visits" /><span className="label">Visitas a la tienda</span>
+            <KpiInfo>
+              Cuánta gente entró a ver tus publicaciones en el período elegido arriba, según Mercado Libre. Debajo
+              va la conversión: de cada 100 visitas, cuántas terminaron en venta.
+            </KpiInfo>
+          </div>
+          <div className="value">
+            <KpiValue>{summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}</KpiValue>
+          </div>
+          {summary?.conversionRate != null && (
+            <div className="kpi-delta">
+              <span className="kpi-delta-caption">
+                {(summary.conversionRate * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}% de conversión
+              </span>
+            </div>
+          )}
+        </div>
         <div className="kpi-card">
           <div className="kpi-card-head">
             <KpiIcon name="question" /><span className="label">Preguntas sin responder</span>
