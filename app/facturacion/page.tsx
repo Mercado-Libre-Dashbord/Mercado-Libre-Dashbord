@@ -126,7 +126,10 @@ function DebtTab({ status }: { status: BillingStatus | null }) {
         <div className="kpi-card">
           <div className="kpi-card-head"><span className="label">Por vencer</span></div>
           <div className="value">{fmt(health.dueSoonAmount)}</div>
-          <div className="kpi-delta"><span className="kpi-delta-caption">Cerradas, todavía en fecha</span></div>
+          {/* Incluye las cerradas cuyo vencimiento ML no informó: son deuda
+              que existe, y ponerlas en "vencido" sería afirmar una fecha que
+              no tenemos. */}
+          <div className="kpi-delta"><span className="kpi-delta-caption">Cerradas, sin vencer o sin fecha</span></div>
         </div>
         <div className="kpi-card">
           <div className="kpi-card-head"><span className="label">Acumulando</span></div>

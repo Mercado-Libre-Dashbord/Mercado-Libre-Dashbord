@@ -75,9 +75,11 @@ function LoginCard() {
   useEffect(() => {
     getProviders()
       .then((providers) => setAvailable(providers ? Object.keys(providers) : []))
-      // Si la consulta falla, se cae al default de siempre —Google— en vez de
-      // dejar la pantalla sin ningún botón para entrar.
-      .catch(() => setAvailable(["google"]));
+      // Si la consulta falla se muestran los dos, no uno elegido a dedo: con
+      // el peor caso de mostrar uno que no está configurado, el usuario
+      // igual tiene el otro para entrar. Cayendo a un único proveedor, una
+      // instalación que sólo tenga el otro se queda sin forma de entrar.
+      .catch(() => setAvailable(null));
   }, []);
 
   function handleSignIn(providerId: string) {

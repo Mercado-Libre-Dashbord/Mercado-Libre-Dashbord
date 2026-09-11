@@ -4,6 +4,7 @@ import { hasColumn } from "@/db/schema-capabilities";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { revenueStatusFilter } from "@/lib/order-status";
 import { buildOrderReceipt, type OrderReceipt } from "@/lib/order-receipt";
+import { classifyCharge } from "@/sync/billing";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,14 @@ interface OrderRow {
   otherTax: string | number;
   iva: string | number;
   itemsMissingCost: string | number;
-  realMlCharges: string | number | null;
+}
+
+interface OrderChargeRow {
+  orderId: string;
+  concept: string | null;
+  detailType: string | null;
+  detailSubType: string | null;
+  amount: string | number;
 }
 
 /**
@@ -57,12 +65,8 @@ export async function GET(request: NextRequest) {
       ? "COALESCE(SUM(oi.iva_applied), 0)"
       : "0::double precision";
     // La tabla de cargos llega por migración manual; sin ella el recibo se
-    // arma igual, solo que sin la columna de conciliación.
+    // arma igual, solo que sin la conciliación.
     const hasCharges = await hasColumn(client, "billing_charges", "detail_id");
-    const realCharges = hasCharges
-      ? `(SELECT SUM(bc.amount) FROM billing_charges bc
-           WHERE bc.account_id = oi.account_id AND bc.order_id = o.id)`
-      : "NULL::double precision";
 
     const result = await client.query<OrderRow>(
       `SELECT o.id as "orderId",
@@ -74,17 +78,39 @@ export async function GET(request: NextRequest) {
               COALESCE(SUM(oi.cost_applied * oi.quantity), 0) as "productCost",
               ${taxSum} as "otherTax",
               ${ivaSum} as iva,
-              SUM(CASE WHEN oi.cost_applied IS NULL THEN 1 ELSE 0 END) as "itemsMissingCost",
-              ${realCharges} as "realMlCharges"
+              SUM(CASE WHEN oi.cost_applied IS NULL THEN 1 ELSE 0 END) as "itemsMissingCost"
          FROM order_items oi
          JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
         WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
           AND ${revenueStatusFilter()}
-        GROUP BY o.id, o.date_created, oi.account_id
+        GROUP BY o.id, o.date_created
         ORDER BY o.date_created DESC
         LIMIT ${MAX_ROWS}`,
       [account.id, from, to]
     );
+
+    // Lo que ML facturó por cada orden, pero solo comisión y envío: son los
+    // dos conceptos que la estimación del panel tiene con qué comparar.
+    // Sumar el total de cargos de la orden metía adentro las retenciones
+    // impositivas y la publicidad, y entonces la conciliación mostraba una
+    // diferencia aunque la comisión y el envío hubieran coincidido exacto.
+    const realByOrder = new Map<string, number>();
+    if (hasCharges && result.rows.length > 0) {
+      const charges = await client.query<OrderChargeRow>(
+        `SELECT order_id as "orderId", concept, detail_type as "detailType",
+                detail_sub_type as "detailSubType", amount
+           FROM billing_charges
+          WHERE account_id = $1 AND order_id = ANY($2::text[])`,
+        [account.id, result.rows.map((r) => r.orderId)]
+      );
+      for (const c of charges.rows) {
+        const bucket = classifyCharge(c.concept, c.detailType, c.detailSubType);
+        if (bucket !== "comision" && bucket !== "envio") continue;
+        // En la factura los cargos vienen en negativo (es plata que sale); el
+        // costo estimado contra el que se comparan es positivo.
+        realByOrder.set(c.orderId, (realByOrder.get(c.orderId) ?? 0) + Math.abs(Number(c.amount)));
+      }
+    }
 
     return result.rows.map((r) =>
       buildOrderReceipt({
@@ -98,9 +124,10 @@ export async function GET(request: NextRequest) {
         otherTax: Number(r.otherTax),
         iva: Number(r.iva),
         costMissing: Number(r.itemsMissingCost) > 0,
-        // Los cargos de ML son negativos en la factura (es plata que sale);
-        // acá se comparan contra un costo estimado, que es positivo.
-        realMlCharges: r.realMlCharges === null ? null : Math.abs(Number(r.realMlCharges)),
+        // `undefined` cuando la orden no tiene cargos sincronizados: sin
+        // factura todavía no hay nada contra qué conciliar, y un 0 ahí diría
+        // que ML no cobró nada, que es otra cosa.
+        realMlCharges: realByOrder.has(r.orderId) ? realByOrder.get(r.orderId)! : null,
       })
     );
   });

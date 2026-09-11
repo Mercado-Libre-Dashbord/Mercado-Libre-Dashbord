@@ -16,12 +16,12 @@ const account = {
 function row(overrides: Record<string, unknown> = {}) {
   return {
     orderId: "200001", date: "2026-09-01", revenue: 10000, mlCommission: 1300, shippingCost: 1500,
-    adsCost: 0, productCost: 4000, otherTax: 0, iva: 900, itemsMissingCost: 0, realMlCharges: null,
+    adsCost: 0, productCost: 4000, otherTax: 0, iva: 900, itemsMissingCost: 0,
     ...overrides,
   };
 }
 
-function client(rows: any[], { hasColumns = true } = {}) {
+function client(rows: any[], { hasColumns = true, charges = [] as any[] } = {}) {
   const seen: string[] = [];
   const query = vi.fn().mockImplementation(async (sql: string) => {
     if (sql.includes("information_schema.columns")) {
@@ -36,6 +36,7 @@ function client(rows: any[], { hasColumns = true } = {}) {
       };
     }
     seen.push(sql);
+    if (sql.includes("FROM billing_charges")) return { rows: charges };
     return { rows };
   });
   vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
@@ -93,9 +94,39 @@ describe("GET /api/billing/orders", () => {
   it("compares against what ML billed, as a positive cost", async () => {
     // En la factura los cargos vienen en negativo (es plata que sale); el
     // costo estimado contra el que se comparan es positivo.
-    client([row({ realMlCharges: -3000 })]);
+    client([row()], {
+      charges: [
+        { orderId: "200001", concept: "Comisión por venta", detailType: "CVFV", detailSubType: null, amount: -1500 },
+        { orderId: "200001", concept: "Costo de envío", detailType: "CXD", detailSubType: null, amount: -1500 },
+      ],
+    });
     const body = await (await GET(request())).json();
     expect(body.receipts[0].reconciliation).toEqual({ estimated: 2800, real: 3000, difference: 200 });
+  });
+
+  it("only reconciles commission and shipping, not every charge on the order", async () => {
+    // Sumando todo, una retención impositiva o la publicidad de esa orden
+    // aparecían como "diferencia" aunque la comisión y el envío hubieran
+    // coincidido exacto — un descuadre inventado en la única columna que
+    // existe para detectar descuadres reales.
+    client([row()], {
+      charges: [
+        { orderId: "200001", concept: "Comisión por venta", detailType: "CVFV", detailSubType: null, amount: -1300 },
+        { orderId: "200001", concept: "Costo de envío", detailType: "CXD", detailSubType: null, amount: -1500 },
+        { orderId: "200001", concept: "Percepción IVA RG 4310", detailType: null, detailSubType: null, amount: -420 },
+        { orderId: "200001", concept: "Product Ads", detailType: null, detailSubType: null, amount: -180 },
+      ],
+    });
+    const body = await (await GET(request())).json();
+    expect(body.receipts[0].reconciliation).toEqual({ estimated: 2800, real: 2800, difference: 0 });
+  });
+
+  it("does not reconcile an order whose invoice has not arrived yet", async () => {
+    // Un 0 ahí diría que ML no cobró nada, que es otra cosa que "todavía no
+    // se sabe".
+    client([row()], { charges: [] });
+    const body = await (await GET(request())).json();
+    expect(body.receipts[0].reconciliation).toBeNull();
   });
 
   it("excludes cancelled orders from the receipts", async () => {
@@ -109,7 +140,11 @@ describe("GET /api/billing/orders", () => {
     // igual: sin la línea de IVA y sin la conciliación, no en blanco.
     const { seen } = client([row({ iva: 0, otherTax: 0 })], { hasColumns: false });
     const body = await (await GET(request())).json();
-    expect(seen[0]).toContain("NULL::double precision");
+    // Las columnas de impuestos se reemplazan por cero en la query en vez de
+    // nombrarlas y fallar con "column does not exist".
+    expect(seen[0]).toContain("0::double precision");
+    // Y sin la tabla de cargos no se consulta la conciliación en absoluto.
+    expect(seen.some((sql) => sql.includes("FROM billing_charges"))).toBe(false);
     expect(body.receipts[0].reconciliation).toBeNull();
     expect(body.receipts[0].netMargin).toBe(3200);
   });
