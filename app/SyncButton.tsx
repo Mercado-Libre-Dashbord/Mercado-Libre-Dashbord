@@ -18,13 +18,36 @@ export function SyncButton() {
   const [message, setMessage] = useState("");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
-  async function call(offset: number): Promise<SyncResponse> {
-    const res = await fetch("/api/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ offset }),
-    });
-    const data = (await res.json()) as SyncResponse;
+  async function call(offset: number, attempt = 0): Promise<SyncResponse> {
+    let res: Response;
+    try {
+      res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offset }),
+      });
+    } catch {
+      // El fetch se cortó a nivel de red (señal débil, timeout, el servidor
+      // cerró la conexión) — en Safari esto llega como el genérico "Load
+      // failed", sin ningún detalle útil. Es justo el tipo de error
+      // transitorio que un reintento suele resolver solo, así que se
+      // reintenta un par de veces con espera creciente antes de rendirse.
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        return call(offset, attempt + 1);
+      }
+      throw new Error("Se cortó la conexión con el servidor (señal débil o tardó demasiado). Probá de nuevo.");
+    }
+
+    let data: SyncResponse;
+    try {
+      data = (await res.json()) as SyncResponse;
+    } catch {
+      // Una respuesta que no es JSON (por ejemplo, una página de error de
+      // Vercel por timeout) daría un error de parseo ilegible en vez de
+      // decir lo que realmente pasó.
+      throw new Error(`El servidor no respondió bien (${res.status}). Probá de nuevo en un momento.`);
+    }
     if (!res.ok) throw new Error(data.error ?? "Error desconocido");
     return data;
   }
