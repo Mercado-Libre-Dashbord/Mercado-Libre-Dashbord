@@ -570,8 +570,60 @@ describe("listBillingPeriods", () => {
     const periods = await listBillingPeriods("acc1");
 
     expect(periods).toEqual([
-      { key: "2026-07-01", dateFrom: "2026-07-01", dateTo: "2026-07-31", amount: 1234.5, periodStatus: "CLOSED" },
+      {
+        key: "2026-07-01", dateFrom: "2026-07-01", dateTo: "2026-07-31", amount: 1234.5,
+        periodStatus: "CLOSED", dueDate: null, paid: null,
+      },
     ]);
+  });
+
+  it("lee el vencimiento y el estado de pago cuando ML los manda", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({
+      results: [
+        {
+          key: "2026-08-01",
+          period: { date_from: "2026-08-01", date_to: "2026-08-31" },
+          amount: 5000,
+          period_status: "CLOSED",
+          expiration_date: "2026-09-20T00:00:00.000-03:00",
+          payment_status: "UNPAID",
+        },
+      ],
+    });
+
+    const [period] = await listBillingPeriods("acc1");
+
+    expect(period.dueDate).toBe("2026-09-20");
+    expect(period.paid).toBe(false);
+  });
+
+  it("deja el vencimiento en null en vez de estimarlo a partir del período", async () => {
+    // Una fecha inventada en la pantalla que existe para evitar una
+    // suspensión es peor que no tener fecha.
+    vi.mocked(mlFetch).mockResolvedValueOnce({
+      results: [{ key: "2026-08-01", period: { date_from: "2026-08-01", date_to: "2026-08-31" }, amount: 5000 }],
+    });
+
+    const [period] = await listBillingPeriods("acc1");
+
+    expect(period.dueDate).toBeNull();
+    expect(period.paid).toBeNull();
+  });
+
+  it("no traduce un estado desconocido a 'no pagado'", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({
+      results: [{ key: "2026-08-01", amount: 5000, payment_status: "ALGO_NUEVO" }],
+    });
+
+    expect((await listBillingPeriods("acc1"))[0].paid).toBeNull();
+  });
+
+  it("puede pedir las notas de crédito en vez de los cargos", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [] });
+
+    await listBillingPeriods("acc1", "CREDIT_NOTE");
+
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("document_type=CREDIT_NOTE");
   });
 });
 

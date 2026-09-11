@@ -1,4 +1,11 @@
-export type ChargeBucket = "comision" | "envio" | "impuesto" | "publicidad" | "full" | "otro";
+export type ChargeBucket =
+  | "comision"
+  | "envio"
+  | "impuesto"
+  | "publicidad"
+  | "full"
+  | "financiacion"
+  | "otro";
 
 export const BUCKET_LABEL: Record<ChargeBucket, string> = {
   comision: "Comisiones de venta",
@@ -6,8 +13,61 @@ export const BUCKET_LABEL: Record<ChargeBucket, string> = {
   impuesto: "Impuestos y percepciones",
   publicidad: "Publicidad",
   full: "Mercado Envíos Full (almacenamiento y retiros)",
+  financiacion: "Costo financiero (cuotas sin interés)",
   otro: "Otros cargos",
 };
+
+/**
+ * Los códigos con los que Mercado Libre nombra cada tipo de cargo en la
+ * factura.
+ *
+ * Mismo criterio que los `detail_sub_type` de Full de más abajo: son
+ * candidatos que salieron de documentación de terceros, NO de una respuesta
+ * real de la API en vivo. Se buscan como código exacto porque así es como
+ * llegan si son reales (cortos y en mayúscula, "CVFV"), no como una frase.
+ * Si el nombre real resulta ser otro, esto nunca matchea y el cargo cae en el
+ * detector de texto de siempre — estar equivocado acá no rompe nada, solo
+ * deja de aportar precisión.
+ *
+ * Lo que sí aportan cuando aciertan: separar la comisión variable de la fija,
+ * el flete del cargo por despacho, y sobre todo el costo financiero de las
+ * cuotas sin interés, que hoy cae en "otro" y es plata que el vendedor está
+ * poniendo sin verla en ningún lado.
+ */
+const CHARGE_CODE_BUCKET: Record<string, ChargeBucket> = {
+  // Cargo por venta: la parte porcentual y la parte fija por unidad.
+  cvfv: "comision",
+  cvff: "comision",
+  // Logística: despacho y flete absorbidos por el vendedor.
+  cxd: "envio",
+  cff: "envio",
+  // Recargo por ofrecer cuotas sin interés.
+  cvfn: "financiacion",
+};
+
+/** Cómo se llama cada código en pantalla, cuando se lo puede identificar. */
+export const CHARGE_CODE_LABEL: Record<string, string> = {
+  cvfv: "Comisión por venta (variable)",
+  cvff: "Costo fijo por unidad vendida",
+  cxd: "Cargo por despacho",
+  cff: "Costo de envío",
+  cvfn: "Costo financiero (cuotas sin interés)",
+};
+
+/**
+ * El código de cargo de Mercado Libre, si alguno de los campos lo trae.
+ *
+ * Devuelve el código en minúscula para poder usarlo como clave; null si
+ * ninguno de los campos parece ser uno.
+ */
+export function chargeCode(...fields: (string | null | undefined)[]): string | null {
+  for (const f of fields) {
+    if (!f) continue;
+    const code = f.trim().toLowerCase();
+    if (CHARGE_CODE_BUCKET[code]) return code;
+  }
+  return null;
+}
 
 // Candidatos de `detail_sub_type` para cargos de Full, SIN confirmar contra
 // una respuesta real de la API — salieron de una investigación externa, no
@@ -35,6 +95,12 @@ const FULL_DETAIL_SUB_TYPES = new Set([
  * cargo sin clasificar sigue siendo plata que salió y tiene que verse.
  */
 export function classifyCharge(...fields: (string | null | undefined)[]): ChargeBucket {
+  // El código exacto de ML gana sobre el texto: "CVFN" es costo financiero
+  // aunque el concepto que lo acompaña diga "venta en 12 cuotas" y el
+  // detector de texto de más abajo lo fuera a mandar a "comision".
+  const code = chargeCode(...fields);
+  if (code) return CHARGE_CODE_BUCKET[code];
+
   if (fields.some((f) => f && FULL_DETAIL_SUB_TYPES.has(f.trim().toLowerCase()))) return "full";
 
   const haystack = fields.filter(Boolean).join(" ").toLowerCase();
@@ -52,6 +118,11 @@ export function classifyCharge(...fields: (string | null | undefined)[]): Charge
   // distinta y hay que poder verlos separados.
   if (/\bfull\b|fulfillment|almacenamiento|stock antiguo|permanencia en dep[oó]sito|retiro de stock/.test(haystack)) return "full";
   if (/percep|retenc|impuesto|iva|iibb|ingresos brutos|ganancias|tax/.test(haystack)) return "impuesto";
+  // Antes que "comision" y que "envio": "costo financiero por venta en cuotas"
+  // contiene "venta" y caía en comisión, mezclando lo que cuesta vender con lo
+  // que cuesta ofrecer cuotas — que es una decisión comercial aparte y se
+  // puede dejar de pagar sin dejar de vender.
+  if (/financ|cuotas sin inter[eé]s|interest free|installment/.test(haystack)) return "financiacion";
   if (/env[ií]o|envios|shipping|mercado envios|flete|logisti/.test(haystack)) return "envio";
   if (/product ads|publicidad|advertis|campaign|ads/.test(haystack)) return "publicidad";
   if (/comisi[oó]n|comision|sale fee|selling fee|sales charge|cargo por venta|venta/.test(haystack)) return "comision";

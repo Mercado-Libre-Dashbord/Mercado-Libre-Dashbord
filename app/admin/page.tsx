@@ -67,7 +67,10 @@ export default function AdminAccountsPage() {
           />
         </div>
         <div className="field-group">
-          <label htmlFor="acc-email">Email del cliente (Google)</label>
+          {/* Ya no dice "(Google)": desde que también se entra con Microsoft,
+              aclarar un proveedor hacía dudar de si el otro sirve. Lo que
+              importa es que sea el mismo email con el que va a entrar. */}
+          <label htmlFor="acc-email">Email del cliente</label>
           <input
             id="acc-email"
             type="email"

@@ -387,6 +387,15 @@ tbody tr:hover { background: var(--bg); }
 @media (max-width: 1180px) { .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 860px)  { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px)  { .kpi-grid { grid-template-columns: 1fr; } }
+
+/* Variante para grillas donde la fila importa: las de Campañas se leen de a
+   cuatro (inversión → retorno → eficiencia → costo), y el escalón intermedio
+   de tres columnas del `.kpi-grid` común partía esa lectura en 3 + 1, con la
+   cuarta tarjeta colgando sola abajo. Acá se pasa de cuatro a dos —que sigue
+   siendo media fila entera— y recién en el teléfono a una. */
+.kpi-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1180px) { .kpi-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px)  { .kpi-grid-4 { grid-template-columns: 1fr; } }
 .kpi-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -732,7 +741,7 @@ input[type="text"], input[type="number"], input[type="date"], input[type="email"
 }
 .login-card {
   width: 100%;
-  max-width: 380px;
+  max-width: 420px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -760,13 +769,68 @@ input[type="text"], input[type="number"], input[type="date"], input[type="email"
   margin: 0 0 var(--space-5);
   max-width: 30ch;
 }
-.google-btn {
+/* Los dos logins van lado a lado y con el mismo peso visual: cuál usar lo
+   decide con cuál se dio de alta el vendedor, no una jerarquía nuestra. Por
+   eso ninguno de los dos es el botón primario negro. */
+.login-providers-caption {
+  align-self: flex-start;
+  margin: 0 0 var(--space-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+}
+.login-providers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
   width: 100%;
+}
+/* Con un solo proveedor configurado, el botón ocupa el ancho entero en vez
+   de quedar la mitad vacía al costado. */
+.login-providers:has(> :only-child) { grid-template-columns: 1fr; }
+.provider-btn {
+  /* En columna —ícono, nombre, aclaración— entran los dos al lado sin que el
+     texto se parta: en fila, "Continuar con Microsoft" no entraba en media
+     tarjeta a ningún tamaño razonable. */
+  flex-direction: column;
+  gap: var(--space-2);
+  height: auto;
+  padding: var(--space-4) var(--space-3);
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
+  text-align: center;
 }
-.google-btn:hover:not(:disabled) { border-color: var(--accent-strong); background: var(--surface-2); }
+.provider-btn:hover:not(:disabled) { border-color: var(--accent-strong); background: var(--surface-2); }
+.provider-btn-icon { display: flex; align-items: center; justify-content: center; height: 20px; }
+.provider-btn-label { font-size: 14px; font-weight: 600; line-height: 1.2; }
+.provider-btn-hint {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-dim);
+  line-height: 1.3;
+}
+/* Sin esto, el botón que no se tocó se apaga igual que el que está cargando
+   y parece que fallaron los dos. */
+.provider-btn:disabled:not([aria-busy="true"]) { opacity: 0.45; }
+/* Abajo de esto los dos botones en fila dejan de ser legibles: el nombre del
+   proveedor entra, pero la aclaración de abajo se parte en tres líneas. */
+@media (max-width: 360px) {
+  .login-providers { grid-template-columns: 1fr; }
+}
+.login-error {
+  align-self: stretch;
+  text-align: left;
+  margin: 0 0 var(--space-4);
+}
+.login-linknote {
+  margin: var(--space-3) 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
 .google-btn-spinner {
   width: 16px;
   height: 16px;
@@ -1041,3 +1105,114 @@ table th.num { font-variant-numeric: tabular-nums; }
 /* La caja de explicación deja de parecer un bloque de código y pasa a ser una
    nota al pie: está para quien la busca, no para competir con los datos. */
 .explain-box { border-radius: var(--radius-md); }
+
+/* ── Módulo de Facturación ──────────────────────────────────────────────── */
+
+/* Mismo lenguaje visual que la barra de períodos: en una app donde ya hay una
+   fila de botones para elegir, una segunda con otra forma se lee como otro
+   control distinto. */
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
+}
+.tab-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-3) var(--space-4);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+.tab-btn:hover:not(.active) { color: var(--text); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--accent-strong); }
+
+.alert-stack { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-4); }
+.billing-alert {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+/* Un vencimiento pasado no es una notificación más: si se ve igual que un
+   aviso a cinco días, se lee con la misma urgencia que no tiene. */
+.billing-alert.urgent {
+  border-color: var(--negative);
+  background: rgba(168, 50, 50, 0.08);
+  color: var(--negative);
+  font-weight: 600;
+}
+
+.text-negative { color: var(--negative); }
+/* La fila entera teñida, no solo el número: en una tabla de ocho columnas, un
+   número rojo al final pasa desapercibido justo cuando es lo que hay que ver. */
+.row-negative td { background: rgba(168, 50, 50, 0.05); }
+
+/* El id de orden abre el recibo: es un botón, pero tiene que verse como el
+   dato que es, no como un control suelto en medio de la tabla. */
+.link-button {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.receipt-cell { background: var(--surface-2); }
+.receipt {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  max-width: 460px;
+  font-size: 13px;
+}
+.receipt li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: 1px dashed var(--border);
+}
+.receipt-in { font-weight: 600; }
+.receipt-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.receipt-share { color: var(--text-dim); margin-left: var(--space-2); font-size: 11.5px; }
+/* La línea de abajo es la que contesta la pregunta; el resto es cómo se llegó. */
+.receipt-total {
+  border-bottom: none;
+  border-top: 2px solid var(--text);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: var(--space-3);
+  cursor: pointer;
+}
+
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: var(--space-3);
+}
+.export-grid .day-card { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.export-grid .chart-card-title { margin: 0; }

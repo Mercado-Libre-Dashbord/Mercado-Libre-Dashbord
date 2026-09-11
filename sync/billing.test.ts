@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyCharge, classifyFullChargeDetail } from "./billing";
+import { classifyCharge, classifyFullChargeDetail, chargeCode } from "./billing";
 
 describe("classifyCharge", () => {
   it("recognises tax perceptions and withholdings", () => {
@@ -59,6 +59,49 @@ describe("classifyCharge", () => {
     expect(classifyCharge(null, "CHARGE", "FBM_STORAGE")).toBe("full");
     expect(classifyCharge(null, "CHARGE", "fbm_long_term_storage")).toBe("full");
     expect(classifyCharge(null, "CHARGE", "FBM_STOCK_REMOVAL")).toBe("full");
+  });
+});
+
+describe("códigos de cargo de Mercado Libre", () => {
+  it("splits the sale charge into its variable and fixed halves", () => {
+    expect(classifyCharge(null, "CVFV", null)).toBe("comision");
+    expect(classifyCharge(null, "CVFF", null)).toBe("comision");
+  });
+
+  it("recognises the shipping codes", () => {
+    expect(classifyCharge(null, "CXD", null)).toBe("envio");
+    expect(classifyCharge(null, "CFF", null)).toBe("envio");
+  });
+
+  it("pulls the financing cost out of 'otro', donde era plata invisible", () => {
+    expect(classifyCharge(null, "CVFN", null)).toBe("financiacion");
+  });
+
+  it("recognises financing from free text when no code came through", () => {
+    expect(classifyCharge("Costo financiero por cuotas sin interés")).toBe("financiacion");
+  });
+
+  it("does not let the word 'venta' drag a financing charge into commission", () => {
+    // "Costo financiero por venta en 12 cuotas" tiene la palabra "venta" y
+    // caía en comisión: mezclaba lo que cuesta vender con lo que cuesta
+    // ofrecer cuotas, que se puede dejar de pagar sin dejar de vender.
+    expect(classifyCharge("Costo financiero por venta en 12 cuotas")).toBe("financiacion");
+  });
+
+  it("lets the exact code win over the surrounding text", () => {
+    expect(classifyCharge("Venta en 12 cuotas", "CVFN", null)).toBe("financiacion");
+  });
+
+  it("falls back to the text detector when the code is not one it knows", () => {
+    // Si los códigos reales resultan ser otros, esto no rompe nada: el cargo
+    // sigue clasificándose por su texto como siempre.
+    expect(classifyCharge("Comisión por venta", "XYZ", null)).toBe("comision");
+  });
+
+  it("identifies the code itself for the per-order breakdown", () => {
+    expect(chargeCode(null, "CVFV", null)).toBe("cvfv");
+    expect(chargeCode(null, "  cvff ", null)).toBe("cvff");
+    expect(chargeCode("Comisión por venta")).toBeNull();
   });
 });
 

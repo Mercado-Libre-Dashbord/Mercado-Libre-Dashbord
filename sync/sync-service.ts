@@ -1,5 +1,5 @@
 import type { QueryExecutor } from "@/db/client";
-import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds, getOrderItemTitles, getFullStock } from "@/mcp/tools";
+import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds, getOrderItemTitles, getFullStock, type BillingDocumentType } from "@/mcp/tools";
 import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit, calculateIva } from "./profitability";
 import { hasColumn } from "@/db/schema-capabilities";
 
@@ -460,23 +460,39 @@ export async function syncBillingCharges(db: QueryExecutor, accountId: string): 
   try {
     if (!(await hasColumn(db, "billing_charges", "detail_id"))) return 0;
 
-    const periods = await listBillingPeriods(accountId);
-    // Los últimos 3 meses alcanzan para conciliar y acotan el volumen: los
-    // períodos viejos ya están cerrados y no cambian.
+    // La columna que separa cargos de notas de crédito llega por migración
+    // (016). Sin ella se sincronizan solo los cargos, como antes: traer las
+    // notas sin poder distinguirlas las mezclaría con la deuda.
+    const hasDocumentType = await hasColumn(db, "billing_charges", "document_type");
+    const documentTypes: BillingDocumentType[] = hasDocumentType ? ["BILL", "CREDIT_NOTE"] : ["BILL"];
+
     let saved = 0;
-    for (const period of periods.slice(0, 3)) {
-      for (const c of await getBillingCharges(accountId, period.key)) {
-        await db.query(
-          `INSERT INTO billing_charges
-             (account_id, detail_id, period_key, detail_type, detail_sub_type, concept, order_id, amount, charged_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (account_id, detail_id) DO UPDATE SET
-             period_key = excluded.period_key, detail_type = excluded.detail_type,
-             detail_sub_type = excluded.detail_sub_type, concept = excluded.concept,
-             order_id = excluded.order_id, amount = excluded.amount, charged_at = excluded.charged_at`,
-          [accountId, c.detailId, c.periodKey, c.detailType, c.detailSubType, c.concept, c.orderId, c.amount, c.chargedAt]
-        );
-        saved += 1;
+    for (const documentType of documentTypes) {
+      const periods = await listBillingPeriods(accountId, documentType);
+      // Los últimos 3 meses alcanzan para conciliar y acotan el volumen: los
+      // períodos viejos ya están cerrados y no cambian.
+      for (const period of periods.slice(0, 3)) {
+        for (const c of await getBillingCharges(accountId, period.key, documentType)) {
+          const columns = ["account_id", "detail_id", "period_key", "detail_type", "detail_sub_type", "concept", "order_id", "amount", "charged_at"];
+          const values: unknown[] = [accountId, c.detailId, c.periodKey, c.detailType, c.detailSubType, c.concept, c.orderId, c.amount, c.chargedAt];
+          const updates = [
+            "period_key = excluded.period_key", "detail_type = excluded.detail_type",
+            "detail_sub_type = excluded.detail_sub_type", "concept = excluded.concept",
+            "order_id = excluded.order_id", "amount = excluded.amount", "charged_at = excluded.charged_at",
+          ];
+          if (hasDocumentType) {
+            columns.push("document_type");
+            values.push(documentType);
+            updates.push("document_type = excluded.document_type");
+          }
+          await db.query(
+            `INSERT INTO billing_charges (${columns.join(", ")})
+             VALUES (${columns.map((_, i) => `$${i + 1}`).join(", ")})
+             ON CONFLICT (account_id, detail_id) DO UPDATE SET ${updates.join(", ")}`,
+            values
+          );
+          saved += 1;
+        }
       }
     }
     return saved;

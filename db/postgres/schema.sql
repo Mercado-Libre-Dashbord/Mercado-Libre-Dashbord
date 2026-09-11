@@ -200,6 +200,10 @@ CREATE TABLE IF NOT EXISTS billing_charges (
   order_id TEXT,
   amount DOUBLE PRECISION NOT NULL,
   charged_at TIMESTAMPTZ,
+  -- BILL = cargo; CREDIT_NOTE = reintegro por una devolución. Sin
+  -- distinguirlos, el saldo del período muestra la comisión cobrada pero no
+  -- la que volvió, y el vendedor cree que debe más de lo que debe.
+  document_type TEXT NOT NULL DEFAULT 'BILL',
   PRIMARY KEY (account_id, detail_id)
 );
 
@@ -287,6 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_account_date ON orders(account_id, date_cr
 CREATE INDEX IF NOT EXISTS idx_question_drafts_account_status ON question_drafts(account_id, status);
 CREATE INDEX IF NOT EXISTS idx_billing_charges_account_period ON billing_charges(account_id, period_key);
 CREATE INDEX IF NOT EXISTS idx_billing_charges_account_order ON billing_charges(account_id, order_id);
+CREATE INDEX IF NOT EXISTS idx_billing_charges_account_doc ON billing_charges(account_id, document_type);
 CREATE INDEX IF NOT EXISTS idx_invoices_account_status ON invoices(account_id, status);
 CREATE INDEX IF NOT EXISTS idx_products_account_channel ON products(account_id, channel);
 CREATE INDEX IF NOT EXISTS idx_orders_account_channel ON orders(account_id, channel);

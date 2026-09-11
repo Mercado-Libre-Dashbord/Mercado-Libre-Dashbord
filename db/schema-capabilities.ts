@@ -125,6 +125,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     table: "products",
     column: "full_since",
     ddl: "-- Correr db/postgres/migrations/015-full-antiguedad.sql (antigüedad estimada en Full).",
+  },
+  {
+    table: "billing_charges",
+    column: "document_type",
+    ddl: "-- Correr db/postgres/migrations/016-notas-de-credito.sql (notas de crédito por devoluciones).",
   }
 ];
 

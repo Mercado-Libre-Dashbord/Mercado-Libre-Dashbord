@@ -53,6 +53,32 @@ describe("GET /api/billing", () => {
   it("reports unavailable instead of failing when the billing table is not migrated yet", async () => {
     client([], { hasTable: false });
     const body = await (await GET(request)).json();
-    expect(body).toEqual({ available: false, buckets: [], total: 0 });
+    expect(body).toEqual({ available: false, buckets: [], total: 0, creditNotes: { count: 0, amount: 0 } });
+  });
+
+  it("nets a credit note against the charge it refunds", async () => {
+    // Una devolución reintegra la comisión. Sin restarla, "Comisiones de
+    // venta" muestra lo que ML cobró antes de las devoluciones y el vendedor
+    // cree que debe más de lo que debe.
+    client([
+      { concept: "Comisión por venta", detailType: null, detailSubType: null, amount: -1000, documentType: "BILL" },
+      { concept: "Comisión por venta", detailType: null, detailSubType: null, amount: 400, documentType: "CREDIT_NOTE" },
+    ]);
+
+    const body = await (await GET(request)).json();
+
+    expect(body.buckets).toEqual([{ bucket: "comision", label: "Comisiones de venta", amount: -600 }]);
+  });
+
+  it("counts the credit notes apart, porque el neto justamente las esconde", async () => {
+    client([
+      { concept: "Comisión por venta", detailType: null, detailSubType: null, amount: -1000, documentType: "BILL" },
+      { concept: "Comisión por venta", detailType: null, detailSubType: null, amount: 400, documentType: "CREDIT_NOTE" },
+      { concept: "Comisión por venta", detailType: null, detailSubType: null, amount: 250, documentType: "CREDIT_NOTE" },
+    ]);
+
+    const body = await (await GET(request)).json();
+
+    expect(body.creditNotes).toEqual({ count: 2, amount: 650 });
   });
 });
