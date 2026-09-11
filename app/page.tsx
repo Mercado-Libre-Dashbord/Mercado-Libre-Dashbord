@@ -513,6 +513,44 @@ const STACK_SERIES = [
   { key: "ads", name: "Publicidad", color: "var(--chart-ads)" },
 ] as const;
 
+/**
+ * Reemplaza el tooltip automático de Recharts (formatter + contentStyle):
+ * con muchos días sin ninguna venta —esta app no rellena esos huecos, el
+ * gráfico salta directo al próximo día CON datos— el tooltip por defecto a
+ * veces mostraba el día pero ninguna fila con el detalle. Armar el
+ * contenido a mano garantiza que siempre liste las seis franjas y el total,
+ * que es justamente lo que hay que ver acá.
+ */
+function StackedAreaTooltip({ active, payload, label }: any) {
+  if (!active || !payload || payload.length === 0) return null;
+  const total = payload.reduce((sum: number, p: any) => sum + (Number(p.value) || 0), 0);
+  return (
+    <div
+      style={{
+        background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8,
+        padding: "8px 12px", fontSize: 12, minWidth: 180,
+      }}
+    >
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} style={{ display: "flex", justifyContent: "space-between", gap: 16, color: p.color, padding: "2px 0" }}>
+          <span>{p.name}</span>
+          <span>{fmt(Number(p.value) || 0)}</span>
+        </div>
+      ))}
+      <div
+        style={{
+          display: "flex", justifyContent: "space-between", gap: 16, marginTop: 6, paddingTop: 6,
+          borderTop: "1px solid var(--border)", fontWeight: 600,
+        }}
+      >
+        <span>Total facturado</span>
+        <span>{fmt(total)}</span>
+      </div>
+    </div>
+  );
+}
+
 function RevenueStackedArea({ daily }: { daily: DailyBreakdown[] }) {
   // "Otros impuestos" se suma a IVA en vez de ser su propia franja: casi
   // siempre es cero y una franja de altura cero es ruido con leyenda.
@@ -530,10 +568,7 @@ function RevenueStackedArea({ daily }: { daily: DailyBreakdown[] }) {
           <CartesianGrid stroke="var(--border)" vertical={false} />
           <XAxis dataKey="day" tick={{ fontSize: 11, fill: "var(--text-dim)" }} tickLine={false} axisLine={false} minTickGap={24} />
           <YAxis tick={{ fontSize: 11, fill: "var(--text-dim)" }} tickLine={false} axisLine={false} width={78} tickFormatter={(v) => fmt(Number(v))} />
-          <Tooltip
-            formatter={(value: number, name: string) => [fmt(value), name]}
-            contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-          />
+          <Tooltip content={<StackedAreaTooltip />} />
           <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="square" />
           {STACK_SERIES.map((serie) => (
             <Area
