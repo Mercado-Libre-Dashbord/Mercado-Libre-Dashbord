@@ -33,7 +33,7 @@ function mapUser(row: CredentialUserRow): CredentialUser {
 export async function getCredentialUserByEmail(db: QueryExecutor, email: string): Promise<CredentialUser | null> {
   const result = await db.query<CredentialUserRow>(
     `SELECT email, password_hash, failed_attempts, locked_until FROM credential_users WHERE email = $1`,
-    [email]
+    [email.trim().toLowerCase()]
   );
   return result.rows[0] ? mapUser(result.rows[0]) : null;
 }
@@ -52,7 +52,7 @@ export async function setCredentialPassword(db: QueryExecutor, email: string, pa
        VALUES ($1, $2)
        ON CONFLICT (email) DO UPDATE SET password_hash = $2, failed_attempts = 0, locked_until = NULL
        RETURNING email`,
-      [email, passwordHash]
+      [email.trim().toLowerCase(), passwordHash]
     );
     return result.rows.length > 0;
   } catch (err) {
@@ -78,11 +78,11 @@ export async function setCredentialPassword(db: QueryExecutor, email: string, pa
  * estas tres columnas — no es una puerta trasera para cambiar la contraseña.
  */
 export async function recordFailedLogin(db: QueryExecutor, email: string): Promise<void> {
-  await db.query(`SELECT credential_record_failed_login($1, $2, $3)`, [email, MAX_FAILED_ATTEMPTS, LOCKOUT_MINUTES]);
+  await db.query(`SELECT credential_record_failed_login($1, $2, $3)`, [email.trim().toLowerCase(), MAX_FAILED_ATTEMPTS, LOCKOUT_MINUTES]);
 }
 
 export async function recordSuccessfulLogin(db: QueryExecutor, email: string): Promise<void> {
-  await db.query(`SELECT credential_record_successful_login($1)`, [email]);
+  await db.query(`SELECT credential_record_successful_login($1)`, [email.trim().toLowerCase()]);
 }
 
 export interface CredentialInvite {
@@ -122,7 +122,7 @@ export async function createInvite(
 ): Promise<void> {
   await db.query(
     `INSERT INTO credential_invites (token_hash, email, expires_at) VALUES ($1, $2, $3)`,
-    [tokenHash, email, expiresAt]
+    [tokenHash, email.trim().toLowerCase(), expiresAt]
   );
 }
 
