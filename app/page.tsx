@@ -88,6 +88,7 @@ interface ProductRow {
   marginPct: number | null;
   stock: number;
   thumbnail: string | null;
+  negativeMargin: boolean;
 }
 
 function fmt(n: number) {
@@ -225,6 +226,19 @@ const KPI_ICON_PATHS: Record<string, React.ReactNode> = {
     <>
       <path d="m3 11 18-5v12L3 14v-3z" />
       <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+    </>
+  ),
+  question: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </>
+  ),
+  lossAlert: (
+    <>
+      <path d="M23 18l-9.5-9.5-5 5L1 6" />
+      <path d="M17 18h6v-6" />
     </>
   ),
 };
@@ -799,6 +813,7 @@ export default function HomePage() {
   const [loadError, setLoadError] = useState("");
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [orderDetails, setOrderDetails] = useState<Record<string, OrderLineDetail[] | "loading" | "error">>({});
+  const [unansweredQuestions, setUnansweredQuestions] = useState<number | null>(null);
 
   function toggleOrder(order: OrderSummaryRow) {
     if (expandedOrder === order.orderId) {
@@ -854,6 +869,19 @@ export default function HomePage() {
       if (r.status === 401) { setNoAccount(true); return; }
       r.json().then((data) => setMlConnected(Boolean(data.mlConnected)));
     });
+  }, []);
+  // Preguntas sin responder: no depende del período elegido arriba (son las
+  // que hay ahora, no las de un rango de fechas), así que se pide una sola
+  // vez al entrar. Si falla, queda en "-" sin disparar el aviso general de
+  // error: es un dato extra, no algo de lo que dependa el resto de la página.
+  useEffect(() => {
+    fetch("/api/questions")
+      .then(async (r) => {
+        if (!r.ok) return;
+        const rows = await r.json();
+        setUnansweredQuestions(Array.isArray(rows) ? rows.length : 0);
+      })
+      .catch(() => {});
   }, []);
 
   if (noAccount) {
@@ -1055,7 +1083,38 @@ export default function HomePage() {
         </>
       )}
 
-      <BillingStatusPanel />
+      <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div style={{ flex: "0 1 620px", minWidth: 280 }}>
+          <BillingStatusPanel />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", flex: "0 1 220px", minWidth: 200 }}>
+          <div className="kpi-card">
+            <div className="kpi-card-head">
+              <KpiIcon name="visits" /><span className="label">Visitas a la tienda</span>
+              <KpiInfo>Cuánta gente entró a ver tus publicaciones en el período elegido arriba, según Mercado Libre.</KpiInfo>
+            </div>
+            <div className="value">
+              <KpiValue>{summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}</KpiValue>
+            </div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-card-head">
+              <KpiIcon name="question" /><span className="label">Preguntas sin responder</span>
+              <KpiInfo>Consultas de compradores en Mercado Libre que todavía no tienen respuesta enviada. Se responden en <a href="/consultas">Consultas</a>.</KpiInfo>
+            </div>
+            <div className="value"><KpiValue>{unansweredQuestions === null ? "-" : unansweredQuestions}</KpiValue></div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-card-head">
+              <KpiIcon name="lossAlert" /><span className="label">Vendiendo a pérdida</span>
+              <KpiInfo>Productos cuya ganancia neta real promedio por unidad vendida es negativa (con comisión, envío e impuestos ya descontados). Detalle en <a href="/productos">Productos</a>.</KpiInfo>
+            </div>
+            <div className="value">
+              <KpiValue>{products === null ? "-" : products.filter((p) => p.negativeMargin).length}</KpiValue>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <h2 className="section-title">Últimas órdenes</h2>
       {orders && orders.length === 0 ? (
