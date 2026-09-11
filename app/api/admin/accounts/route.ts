@@ -27,10 +27,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "name y ownerEmail son requeridos" }, { status: 400 });
   }
 
-  const account = await withScope({ isAdmin: true, userEmail: user.email }, (client) =>
-    createAccount(client, name, ownerEmail)
-  );
-  return NextResponse.json(account, { status: 201 });
+  try {
+    const account = await withScope({ isAdmin: true, userEmail: user.email }, (client) =>
+      createAccount(client, name, ownerEmail)
+    );
+    return NextResponse.json(account, { status: 201 });
+  } catch (err) {
+    if ((err as { code?: string }).code === "23505") {
+      return NextResponse.json({ error: "Ya existe una cuenta con ese email." }, { status: 409 });
+    }
+    throw err;
+  }
 }
 
 export async function PATCH(request: NextRequest) {
@@ -50,11 +57,18 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "El email no puede quedar vacío." }, { status: 400 });
   }
 
-  const updated = await withScope({ isAdmin: true, userEmail: user.email }, (client) =>
-    updateAccountDetails(client, accountId, { name, ownerEmail })
-  );
-  if (!updated) return NextResponse.json({ error: "No se encontró esa cuenta." }, { status: 404 });
-  return NextResponse.json(updated);
+  try {
+    const updated = await withScope({ isAdmin: true, userEmail: user.email }, (client) =>
+      updateAccountDetails(client, accountId, { name, ownerEmail })
+    );
+    if (!updated) return NextResponse.json({ error: "No se encontró esa cuenta." }, { status: 404 });
+    return NextResponse.json(updated);
+  } catch (err) {
+    if ((err as { code?: string }).code === "23505") {
+      return NextResponse.json({ error: "Ya existe una cuenta con ese email." }, { status: 409 });
+    }
+    throw err;
+  }
 }
 
 export async function DELETE(request: NextRequest) {

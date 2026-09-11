@@ -1083,35 +1083,32 @@ export default function HomePage() {
         </>
       )}
 
-      <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ flex: "0 1 620px", minWidth: 280 }}>
-          <BillingStatusPanel />
+      <BillingStatusPanel />
+
+      <div className="kpi-grid kpi-grid-3">
+        <div className="kpi-card">
+          <div className="kpi-card-head">
+            <KpiIcon name="visits" /><span className="label">Visitas a la tienda</span>
+            <KpiInfo>Cuánta gente entró a ver tus publicaciones en el período elegido arriba, según Mercado Libre.</KpiInfo>
+          </div>
+          <div className="value">
+            <KpiValue>{summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}</KpiValue>
+          </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", flex: "0 1 220px", minWidth: 200 }}>
-          <div className="kpi-card">
-            <div className="kpi-card-head">
-              <KpiIcon name="visits" /><span className="label">Visitas a la tienda</span>
-              <KpiInfo>Cuánta gente entró a ver tus publicaciones en el período elegido arriba, según Mercado Libre.</KpiInfo>
-            </div>
-            <div className="value">
-              <KpiValue>{summary ? (summary.visits === null ? "Sin dato" : summary.visits.toLocaleString("es-AR")) : "-"}</KpiValue>
-            </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head">
+            <KpiIcon name="question" /><span className="label">Preguntas sin responder</span>
+            <KpiInfo>Consultas de compradores en Mercado Libre que todavía no tienen respuesta enviada. Se responden en <a href="/consultas">Consultas</a>.</KpiInfo>
           </div>
-          <div className="kpi-card">
-            <div className="kpi-card-head">
-              <KpiIcon name="question" /><span className="label">Preguntas sin responder</span>
-              <KpiInfo>Consultas de compradores en Mercado Libre que todavía no tienen respuesta enviada. Se responden en <a href="/consultas">Consultas</a>.</KpiInfo>
-            </div>
-            <div className="value"><KpiValue>{unansweredQuestions === null ? "-" : unansweredQuestions}</KpiValue></div>
+          <div className="value"><KpiValue>{unansweredQuestions === null ? "-" : unansweredQuestions}</KpiValue></div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-card-head">
+            <KpiIcon name="lossAlert" /><span className="label">Vendiendo a pérdida</span>
+            <KpiInfo>Productos cuya ganancia neta real promedio por unidad vendida es negativa (con comisión, envío e impuestos ya descontados). Detalle en <a href="/productos">Productos</a>.</KpiInfo>
           </div>
-          <div className="kpi-card">
-            <div className="kpi-card-head">
-              <KpiIcon name="lossAlert" /><span className="label">Vendiendo a pérdida</span>
-              <KpiInfo>Productos cuya ganancia neta real promedio por unidad vendida es negativa (con comisión, envío e impuestos ya descontados). Detalle en <a href="/productos">Productos</a>.</KpiInfo>
-            </div>
-            <div className="value">
-              <KpiValue>{products === null ? "-" : products.filter((p) => p.negativeMargin).length}</KpiValue>
-            </div>
+          <div className="value">
+            <KpiValue>{products === null ? "-" : products.filter((p) => p.negativeMargin).length}</KpiValue>
           </div>
         </div>
       </div>

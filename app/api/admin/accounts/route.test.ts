@@ -9,9 +9,9 @@ vi.mock("@/db/accounts", () => ({
 }));
 vi.mock("@/lib/current-account", () => ({ getCurrentUser: vi.fn(), resolveCurrentAccount: vi.fn() }));
 
-import { PATCH, DELETE } from "./route";
+import { POST, PATCH, DELETE } from "./route";
 import { withScope } from "@/db/client";
-import { updateAccountDetails, deleteAccount } from "@/db/accounts";
+import { createAccount, updateAccountDetails, deleteAccount } from "@/db/accounts";
 import { getCurrentUser } from "@/lib/current-account";
 
 const req = (body: unknown) => ({ json: async () => body }) as any;
@@ -19,6 +19,36 @@ const account = {
   id: "acc1", name: "Cuenta", ownerEmail: "cliente@example.com", mlSellerId: null, otherTaxRate: 0,
   taxCondition: "responsable_inscripto" as const, taxConditionConfirmed: true, createdAt: "2026-01-01",
 };
+
+describe("POST /api/admin/accounts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({}));
+  });
+
+  it("returns 409 with a friendly message when the owner email is already in use", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
+    const dupError = Object.assign(new Error('duplicate key value violates unique constraint "accounts_owner_email_key"'), {
+      code: "23505",
+    });
+    vi.mocked(createAccount).mockRejectedValue(dupError);
+
+    const res = await POST(req({ name: "Cuenta nueva", ownerEmail: "cliente@example.com" }));
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toContain("Ya existe una cuenta");
+  });
+
+  it("re-throws unrelated database errors instead of masking them as a duplicate email", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
+    vi.mocked(createAccount).mockRejectedValue(new Error("connection lost"));
+
+    await expect(POST(req({ name: "Cuenta nueva", ownerEmail: "cliente@example.com" }))).rejects.toThrow(
+      "connection lost"
+    );
+  });
+});
 
 describe("PATCH /api/admin/accounts", () => {
   beforeEach(() => {
@@ -65,6 +95,27 @@ describe("PATCH /api/admin/accounts", () => {
 
     expect(res.status).toBe(200);
     expect(updateAccountDetails).toHaveBeenCalledWith(expect.anything(), "acc1", { name: "Nuevo nombre", ownerEmail: undefined });
+  });
+
+  it("returns 409 with a friendly message when the new owner email belongs to another account", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
+    const dupError = Object.assign(new Error('duplicate key value violates unique constraint "accounts_owner_email_key"'), {
+      code: "23505",
+    });
+    vi.mocked(updateAccountDetails).mockRejectedValue(dupError);
+
+    const res = await PATCH(req({ accountId: "acc1", ownerEmail: "otra-cuenta@example.com" }));
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toContain("Ya existe una cuenta");
+  });
+
+  it("re-throws unrelated database errors instead of masking them as a duplicate email", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue({ email: "admin@example.com", isAdmin: true });
+    vi.mocked(updateAccountDetails).mockRejectedValue(new Error("connection lost"));
+
+    await expect(PATCH(req({ accountId: "acc1", name: "X" }))).rejects.toThrow("connection lost");
   });
 });
 
