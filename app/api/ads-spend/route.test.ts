@@ -61,3 +61,60 @@ describe("GET /api/ads-spend", () => {
     expect(await res.json()).toEqual([{ id: 1, date: "2026-01-10", amount: 500, channel: "google" }]);
   });
 });
+
+describe("GET /api/ads-spend?groupBy=channel", () => {
+  function channelClient(rows: any[]) {
+    const query = vi.fn().mockResolvedValue({ rows });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+    return query;
+  }
+
+  const request = {
+    nextUrl: { searchParams: new URLSearchParams("groupBy=channel&from=2026-08-01&to=2026-08-31") },
+  } as any;
+
+  beforeEach(() => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
+  });
+
+  it("breaks the spend down by platform, biggest first, with its share of the total", async () => {
+    channelClient([
+      { channel: "meta", amount: 2500, attributed: false },
+      { channel: "mercado_ads", amount: 7500, attributed: true },
+    ]);
+
+    const body = await (await GET(request)).json();
+
+    expect(body.total).toBe(10000);
+    expect(body.channels).toEqual([
+      { channel: "mercado_ads", label: "Mercado Ads", amount: 7500, attributed: true, share: 0.75 },
+      { channel: "meta", label: "Meta", amount: 2500, attributed: false, share: 0.25 },
+    ]);
+  });
+
+  it("includes Mercado Ads — el canal más grande no puede faltar del desglose", async () => {
+    channelClient([{ channel: "mercado_ads", amount: 1000, attributed: true }]);
+    const body = await (await GET(request)).json();
+    expect(body.channels.map((c: any) => c.channel)).toContain("mercado_ads");
+  });
+
+  it("leaves out channels with nothing spent instead of listing them in zero", async () => {
+    channelClient([
+      { channel: "meta", amount: 1000, attributed: false },
+      { channel: "tiktok", amount: 0, attributed: false },
+    ]);
+    const body = await (await GET(request)).json();
+    expect(body.channels).toHaveLength(1);
+  });
+
+  it("reports 0% instead of NaN when nothing was spent at all", async () => {
+    channelClient([]);
+    const body = await (await GET(request)).json();
+    expect(body).toEqual({ total: 0, channels: [] });
+  });
+
+  it("returns 401 without an active account", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(null);
+    expect((await GET(request)).status).toBe(401);
+  });
+});

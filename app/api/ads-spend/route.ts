@@ -1,14 +1,54 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
+import { adChannelLabel, isManualAdChannel } from "@/lib/ad-channels";
 
 export const runtime = "nodejs";
 
-const MANUAL_CHANNELS = ["meta", "google", "tiktok"] as const;
-type ManualChannel = (typeof MANUAL_CHANNELS)[number];
+/**
+ * Gasto en publicidad abierto por plataforma.
+ *
+ * Las tarjetas de Campañas muestran un Ad Spend solo: útil para saber cuánto
+ * se gastó, inútil para decidir dónde recortar. Este desglose contesta la
+ * otra pregunta — qué parte se fue a cada canal — y de paso deja ver cuánto
+ * de Mercado Ads pudo atribuirse a una venta puntual y cuánto no.
+ *
+ * Solo reparte el gasto, no los ingresos: Mercado Libre no dice qué venta
+ * vino de qué anuncio, así que un ROAS por canal sería inventado. Se muestra
+ * el % del total invertido, que sí es un dato real.
+ */
+async function spendByChannel(accountId: string, from: string, to: string) {
+  return withScope({ accountId }, async (client) => {
+    const result = await client.query<{ channel: string; amount: string | number; attributed: boolean }>(
+      `SELECT channel,
+              COALESCE(SUM(amount), 0) as amount,
+              -- Mercado Ads es el único canal que a veces llega atado a un
+              -- producto; el resto se carga siempre a nivel cuenta.
+              bool_or(product_id IS NOT NULL) as attributed
+         FROM ads_spend
+        WHERE account_id = $1 AND date BETWEEN $2::date AND $3::date
+        GROUP BY channel`,
+      [accountId, from, to]
+    );
 
-function isManualChannel(value: unknown): value is ManualChannel {
-  return typeof value === "string" && (MANUAL_CHANNELS as readonly string[]).includes(value);
+    const rows = result.rows
+      .map((r) => ({
+        channel: r.channel,
+        label: adChannelLabel(r.channel),
+        amount: Number(r.amount),
+        attributed: r.attributed === true,
+      }))
+      .filter((r) => r.amount !== 0)
+      .sort((a, b) => b.amount - a.amount);
+
+    const total = rows.reduce((sum, r) => sum + r.amount, 0);
+    return {
+      total,
+      // Con total 0 no hay porcentaje que calcular; mostrar 0% es más honesto
+      // que dividir por cero y pintar un NaN en la tabla.
+      channels: rows.map((r) => ({ ...r, share: total > 0 ? r.amount / total : 0 })),
+    };
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -18,6 +58,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const from = searchParams.get("from") ?? "1970-01-01";
   const to = searchParams.get("to") ?? "9999-12-31";
+
+  if (searchParams.get("groupBy") === "channel") {
+    return NextResponse.json(await spendByChannel(account.id, from, to));
+  }
 
   const rows = await withScope({ accountId: account.id }, async (client) => {
     const result = await client.query(
@@ -38,7 +82,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { channel, date, amount } = body as { channel: unknown; date: unknown; amount: unknown };
 
-  if (!isManualChannel(channel)) {
+  if (!isManualAdChannel(channel)) {
     return NextResponse.json({ error: "channel debe ser 'meta', 'google' o 'tiktok'" }, { status: 400 });
   }
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {

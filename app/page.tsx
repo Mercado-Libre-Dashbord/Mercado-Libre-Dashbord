@@ -6,6 +6,7 @@ import {
   PieChart, Pie, Cell, AreaChart, Area,
 } from "recharts";
 import { SyncButton } from "./SyncButton";
+import { DeltaPill } from "./DeltaPill";
 import { NoAccountState } from "./NoAccountState";
 import { PeriodBar } from "./PeriodBar";
 import { Period, rangeForPeriod, toDateStr } from "@/lib/period";
@@ -178,23 +179,6 @@ function KpiIcon({ name }: { name: string }) {
         {KPI_ICON_PATHS[name]}
       </svg>
     </span>
-  );
-}
-
-function DeltaPill({ current, previous }: { current: number; previous: number | null | undefined }) {
-  if (previous === null || previous === undefined || previous <= 0) return null;
-  const change = (current - previous) / previous;
-  if (!Number.isFinite(change)) return null;
-  const up = change >= 0;
-  // El "vs. período anterior" va afuera de la píldora: adentro obligaba a la
-  // píldora redondeada a partirse en dos líneas en las tarjetas angostas.
-  return (
-    <div className="kpi-delta">
-      <span className={`delta-pill ${up ? "up" : "down"}`}>
-        {up ? "↑" : "↓"} {Math.abs(change * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%
-      </span>
-      <span className="kpi-delta-caption">vs. período anterior</span>
-    </div>
   );
 }
 

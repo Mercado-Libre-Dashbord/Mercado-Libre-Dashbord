@@ -21,12 +21,55 @@ function previousRange(from: string, to: string): { from: string; to: string } |
   return { from: prevFrom.toISOString().slice(0, 10), to: prevTo.toISOString().slice(0, 10) };
 }
 
-async function totalsFor(client: { query: (sql: string, args: unknown[]) => Promise<{ rows: Record<string, string | number>[] }> }, accountId: string, from: string, to: string) {
+type Client = { query: (sql: string, args: unknown[]) => Promise<{ rows: Record<string, string | number>[] }> };
+
+/**
+ * Gasto en publicidad del período: lo que se pudo atar a una venta puntual
+ * más lo que quedó a nivel cuenta. Son conjuntos disjuntos — la condición de
+ * la segunda query es exactamente la negación de la primera — así que nunca
+ * se cuenta dos veces.
+ *
+ * Vive en su propia función porque lo necesitan los dos períodos: el actual
+ * y el anterior, contra el que se comparan las tarjetas de Campañas.
+ */
+async function unallocatedAdSpendFor(client: Client, accountId: string, from: string, to: string): Promise<number> {
+  const result = await client.query(
+    `SELECT COALESCE(SUM(amount), 0) as total FROM ads_spend
+      WHERE account_id = $1 AND (channel != 'mercado_ads' OR product_id IS NULL)
+        AND date BETWEEN $2::date AND $3::date`,
+    [accountId, from, to]
+  );
+  return Number(result.rows[0].total);
+}
+
+async function adSpendFor(client: Client, accountId: string, from: string, to: string): Promise<number> {
+  const allocated = await client.query(
+    `SELECT COALESCE(SUM(oi.ads_cost_allocated), 0) as total
+       FROM order_items oi
+       JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
+      WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
+        AND ${revenueStatusFilter()}`,
+    [accountId, from, to]
+  );
+  return Number(allocated.rows[0].total) + (await unallocatedAdSpendFor(client, accountId, from, to));
+}
+
+/**
+ * Los totales de un período, con las mismas métricas derivadas que devuelve
+ * el resumen del período actual.
+ *
+ * Que incluya también las de publicidad no es de más: las ocho tarjetas de
+ * Campañas muestran "+12% vs. período anterior", y sin ROAS, MER, CPA,
+ * True CPA y Net AOV acá, la mitad de esa grilla no tendría contra qué
+ * compararse.
+ */
+async function totalsFor(client: Client, accountId: string, from: string, to: string) {
   const totalsResult = await client.query(
     `SELECT
        COUNT(DISTINCT o.id) as orders,
        COALESCE(SUM(oi.unit_price * oi.quantity), 0) as "grossSales",
-       COALESCE(SUM(oi.net_profit), 0) as "netProfit"
+       COALESCE(SUM(oi.net_profit), 0) as "netProfit",
+       COUNT(DISTINCT CASE WHEN oi.cost_applied IS NOT NULL THEN o.id END) as "ordersWithCost"
      FROM order_items oi
      JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
      WHERE oi.account_id = $1 AND o.date_created::date BETWEEN $2::date AND $3::date
@@ -37,7 +80,9 @@ async function totalsFor(client: { query: (sql: string, args: unknown[]) => Prom
   const orders = Number(row.orders);
   const grossSales = Number(row.grossSales);
   const netProfit = Number(row.netProfit);
+  const ordersWithCost = Number(row.ordersWithCost);
   const refunds = await refundsFor(client, accountId, from, to);
+  const adSpend = await adSpendFor(client, accountId, from, to);
   return {
     orders,
     grossSales,
@@ -45,6 +90,14 @@ async function totalsFor(client: { query: (sql: string, args: unknown[]) => Prom
     profitPct: grossSales > 0 ? netProfit / grossSales : 0,
     refundOrders: refunds.orders,
     refundAmount: refunds.amount,
+    adSpend,
+    // Mismas fórmulas que el período actual, a propósito: si una cambia,
+    // tiene que cambiar en los dos lados o la comparación miente.
+    mer: adSpend > 0 ? grossSales / adSpend : 0,
+    roas: adSpend > 0 ? grossSales / adSpend : 0,
+    cpa: orders > 0 ? adSpend / orders : 0,
+    netAov: orders > 0 ? netProfit / orders : 0,
+    trueCpa: ordersWithCost > 0 ? adSpend / ordersWithCost : 0,
   };
 }
 
@@ -56,12 +109,7 @@ async function totalsFor(client: { query: (sql: string, args: unknown[]) => Prom
  * y una tasa que sube es una señal temprana de un problema de producto,
  * stock o envío.
  */
-async function refundsFor(
-  client: { query: (sql: string, args: unknown[]) => Promise<{ rows: Record<string, string | number>[] }> },
-  accountId: string,
-  from: string,
-  to: string
-) {
+async function refundsFor(client: Client, accountId: string, from: string, to: string) {
   const result = await client.query(
     `SELECT COUNT(DISTINCT o.id) as orders,
             COALESCE(SUM(oi.unit_price * oi.quantity), 0) as amount
@@ -204,13 +252,7 @@ export async function GET(request: NextRequest) {
     // producto) y, desde que Mercado Ads dejó de dar el gasto por
     // publicación, también el total de Product Ads sin poder repartirse por
     // producto— entra acá. Son conjuntos disjuntos: nunca se cuenta dos veces.
-    const unallocatedAdsResult = await client.query(
-      `SELECT COALESCE(SUM(amount), 0) as total FROM ads_spend
-       WHERE account_id = $1 AND (channel != 'mercado_ads' OR product_id IS NULL)
-         AND date BETWEEN $2::date AND $3::date`,
-      [account.id, from, to]
-    );
-    const unallocatedAdsTotal = Number(unallocatedAdsResult.rows[0].total);
+    const unallocatedAdsTotal = await unallocatedAdSpendFor(client, account.id, from, to);
 
     const adSpend = Number(totals.totalMercadoAds) + unallocatedAdsTotal;
     const revenue = Number(totals.grossSales);

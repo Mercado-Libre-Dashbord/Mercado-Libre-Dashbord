@@ -120,9 +120,11 @@ describe("GET /api/summary", () => {
       }
       // El detalle de qué productos no tienen costo no es un total.
       if (sql.includes("GROUP BY oi.product_id")) return { rows: [] };
+      // Lo gastado en Mercado Ads y atado a una venta, del período anterior.
+      if (sql.includes("SUM(oi.ads_cost_allocated)")) return { rows: [{ total: 500 }] };
       // Totales del período anterior (2026-07-22..2026-07-31, mismos 10 días).
       totalsCalls += 1;
-      return { rows: [{ orders: 2, grossSales: 2000, netProfit: 1000 }] };
+      return { rows: [{ orders: 2, grossSales: 2000, netProfit: 1000, ordersWithCost: 2 }] };
     });
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
 
@@ -131,6 +133,38 @@ describe("GET /api/summary", () => {
 
     expect(totalsCalls).toBe(1);
     expect(body.previous).toMatchObject({ orders: 2, grossSales: 2000, netProfit: 1000, profitPct: 0.5 });
+  });
+
+  it("includes the previous period's ad metrics so Campañas can show every badge", async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      if (sql.includes("ads_spend")) return { rows: [{ total: 0 }] };
+      if (sql.includes("NOT (o.status NOT IN")) return { rows: [{ orders: 0, amount: 0 }] };
+      if (sql.includes("totalCommission")) {
+        return {
+          rows: [
+            {
+              orders: 4, grossSales: 4000, totalCommission: 0, totalShipping: 0, totalMercadoAds: 0,
+              totalCost: 0, netProfit: 2400, itemsMissingCost: 0, ordersWithCost: 4,
+            },
+          ],
+        };
+      }
+      if (sql.includes("GROUP BY oi.product_id")) return { rows: [] };
+      if (sql.includes("SUM(oi.ads_cost_allocated)")) return { rows: [{ total: 500 }] };
+      return { rows: [{ orders: 2, grossSales: 2000, netProfit: 1000, ordersWithCost: 1 }] };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const request = { nextUrl: { searchParams: new URLSearchParams("from=2026-08-01&to=2026-08-10") } } as any;
+    const body = await (await GET(request)).json();
+
+    // Las mismas fórmulas que el período actual, sobre los totales anteriores:
+    // 2000/500 de MER y ROAS, 500/2 de CPA, 1000/2 de Net AOV, y el True CPA
+    // sobre la única orden que ya tiene costo cargado.
+    expect(body.previous).toMatchObject({
+      adSpend: 500, mer: 4, roas: 4, cpa: 250, netAov: 500, trueCpa: 500,
+    });
   });
 
   it("excludes cancelled orders from every financial aggregate", async () => {
@@ -144,6 +178,13 @@ describe("GET /api/summary", () => {
       // El detalle de costos faltantes también filtra canceladas, y por eso
       // entra en la lista de arriba — pero devuelve filas de otra forma.
       if (sql.includes("GROUP BY oi.product_id")) return { rows: [] };
+      // La query de totales también suma ads_cost_allocated (como
+      // "totalMercadoAds"), así que no alcanza con buscar esa columna: sin
+      // descartarla, los totales del período se respondían con la fila de la
+      // publicidad y el test pasaba mirando otra cosa.
+      if (sql.includes("SUM(oi.ads_cost_allocated)") && !sql.includes("totalCommission")) {
+        return { rows: [{ total: 0 }] };
+      }
       return {
         rows: [
           {
@@ -158,9 +199,11 @@ describe("GET /api/summary", () => {
     const request = { nextUrl: { searchParams: new URLSearchParams("from=2026-08-01&to=2026-08-10") } } as any;
     await GET(request);
 
-    // Totales del período, del período anterior, y el detalle de productos sin
-    // costo: los tres tienen que dejar afuera las canceladas.
-    expect(seen).toHaveLength(3);
+    // Totales del período, del período anterior, el detalle de productos sin
+    // costo y la publicidad atribuida del período anterior: los cuatro tienen
+    // que dejar afuera las canceladas. Una orden cancelada no gastó publicidad
+    // que haya que comparar contra la del período actual.
+    expect(seen).toHaveLength(4);
     for (const sql of seen) expect(sql).toContain("o.status NOT IN ('cancelled', 'invalid')");
   });
 

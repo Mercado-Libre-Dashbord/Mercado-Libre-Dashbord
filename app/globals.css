@@ -387,6 +387,15 @@ tbody tr:hover { background: var(--bg); }
 @media (max-width: 1180px) { .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 860px)  { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px)  { .kpi-grid { grid-template-columns: 1fr; } }
+
+/* Variante para grillas donde la fila importa: las de Campañas se leen de a
+   cuatro (inversión → retorno → eficiencia → costo), y el escalón intermedio
+   de tres columnas del `.kpi-grid` común partía esa lectura en 3 + 1, con la
+   cuarta tarjeta colgando sola abajo. Acá se pasa de cuatro a dos —que sigue
+   siendo media fila entera— y recién en el teléfono a una. */
+.kpi-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1180px) { .kpi-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px)  { .kpi-grid-4 { grid-template-columns: 1fr; } }
 .kpi-card {
   background: var(--surface);
   border: 1px solid var(--border);
