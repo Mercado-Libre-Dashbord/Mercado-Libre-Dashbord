@@ -17,6 +17,13 @@ export default function AdminAccountsPage() {
   const [invitingId, setInvitingId] = useState<string | null>(null);
   const [inviteLinks, setInviteLinks] = useState<Record<string, { url: string; hadPasswordAlready: boolean }>>({});
   const [inviteError, setInviteError] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", ownerEmail: "" });
+  const [editError, setEditError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<Record<string, string>>({});
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   function load() {
     fetch("/api/admin/accounts")
@@ -80,6 +87,70 @@ export default function AdminAccountsPage() {
     }
   }
 
+  function startEdit(a: AccountRow) {
+    setEditingId(a.id);
+    setEditForm({ name: a.name, ownerEmail: a.ownerEmail });
+    setEditError("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditError("");
+  }
+
+  async function saveEdit(accountId: string) {
+    if (!editForm.name.trim() || !editForm.ownerEmail.trim()) {
+      setEditError("Nombre y email no pueden quedar vacíos.");
+      return;
+    }
+    setEditError("");
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId, name: editForm.name, ownerEmail: editForm.ownerEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setEditError(data.error ?? "No se pudo guardar.");
+        return;
+      }
+      setEditingId(null);
+      load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * Confirmación en dos pasos (no un window.confirm nativo, para poder
+   * mostrar el motivo si Postgres rechaza el borrado). Solo borra cuentas
+   * genuinamente vacías: las foreign keys de products/orders/etc. rechazan
+   * el borrado si la cuenta tiene historial real (ver migración 017).
+   */
+  async function confirmDelete(accountId: string) {
+    setDeletingId(accountId);
+    setDeleteError((prev) => ({ ...prev, [accountId]: "" }));
+    try {
+      const res = await fetch("/api/admin/accounts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError((prev) => ({ ...prev, [accountId]: data.error ?? "No se pudo borrar la cuenta." }));
+        setConfirmingDeleteId(null);
+        return;
+      }
+      setConfirmingDeleteId(null);
+      load();
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div>
       <h1>Cuentas</h1>
@@ -133,13 +204,38 @@ export default function AdminAccountsPage() {
                 <th>Email</th>
                 <th>Mercado Libre</th>
                 <th>Login sin Google</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {accounts.map((a) => (
                 <tr key={a.id}>
-                  <td>{a.name}</td>
-                  <td>{a.ownerEmail}</td>
+                  {editingId === a.id ? (
+                    <>
+                      <td>
+                        <input
+                          value={editForm.name}
+                          onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
+                          style={{ width: 140 }}
+                          aria-label={`Nombre de ${a.name}`}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="email"
+                          value={editForm.ownerEmail}
+                          onChange={(e) => setEditForm((p) => ({ ...p, ownerEmail: e.target.value }))}
+                          style={{ width: 180 }}
+                          aria-label={`Email de ${a.name}`}
+                        />
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>{a.name}</td>
+                      <td>{a.ownerEmail}</td>
+                    </>
+                  )}
                   <td>
                     {a.mlSellerId ? (
                       <span className="badge badge-paid">Conectado (seller {a.mlSellerId})</span>
@@ -180,6 +276,56 @@ export default function AdminAccountsPage() {
                       </button>
                     )}
                     {inviteError[a.id] && <p className="field-error">{inviteError[a.id]}</p>}
+                  </td>
+                  <td>
+                    {editingId === a.id ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                        <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={() => saveEdit(a.id)} disabled={saving}>
+                            {saving ? "…" : "Guardar"}
+                          </button>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={cancelEdit} disabled={saving}>
+                            Cancelar
+                          </button>
+                        </div>
+                        {editError && <p className="field-error">{editError}</p>}
+                      </div>
+                    ) : confirmingDeleteId === a.id ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                        <p className="field-hint" style={{ margin: 0 }}>¿Borrar &quot;{a.name}&quot;?</p>
+                        <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ color: "var(--negative)" }}
+                            onClick={() => confirmDelete(a.id)}
+                            disabled={deletingId === a.id}
+                          >
+                            {deletingId === a.id ? "Borrando…" : "Sí, borrar"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => setConfirmingDeleteId(null)}
+                            disabled={deletingId === a.id}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                        <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => startEdit(a)}>
+                            Editar
+                          </button>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmingDeleteId(a.id)}>
+                            Borrar
+                          </button>
+                        </div>
+                        {deleteError[a.id] && <p className="field-error">{deleteError[a.id]}</p>}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

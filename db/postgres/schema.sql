@@ -344,6 +344,12 @@ DROP POLICY IF EXISTS accounts_update ON accounts;
 CREATE POLICY accounts_update ON accounts FOR UPDATE
   USING (app_is_admin() OR owner_email = app_current_user_email())
   WITH CHECK (app_is_admin() OR owner_email = app_current_user_email());
+-- Solo admin, y solo Postgres deja borrar de verdad: las foreign keys de
+-- todas las tablas de datos (sin ON DELETE CASCADE) rechazan borrar una
+-- cuenta con historial real (ver migración 017).
+DROP POLICY IF EXISTS accounts_delete ON accounts;
+CREATE POLICY accounts_delete ON accounts FOR DELETE
+  USING (app_is_admin());
 
 ALTER TABLE credential_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credential_users FORCE ROW LEVEL SECURITY;

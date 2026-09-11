@@ -95,4 +95,81 @@ describe("accounts", () => {
     expect(updated?.taxCondition).toBe("monotributo");
     expect(updated?.taxConditionConfirmed).toBe(true);
   });
+
+  it("an admin can edit the name and owner email of an account", async () => {
+    const { withScope } = await import("./client");
+    const { createAccount, updateAccountDetails } = await import("./accounts");
+    const email = `editar.${nanoid(6)}@example.com`;
+    const account = await withScope({ isAdmin: true }, (client) => createAccount(client, "Nombre viejo", email));
+
+    const newEmail = `nuevo.${nanoid(6)}@Example.com`;
+    const updated = await withScope({ isAdmin: true }, (client) =>
+      updateAccountDetails(client, account.id, { name: "Nombre nuevo", ownerEmail: newEmail })
+    );
+
+    expect(updated?.name).toBe("Nombre nuevo");
+    // Se normaliza a minúsculas, igual que createAccount.
+    expect(updated?.ownerEmail).toBe(newEmail.toLowerCase());
+  });
+
+  it("a non-admin cannot edit an account they don't own (RLS, not just app logic)", async () => {
+    const { withScope } = await import("./client");
+    const { createAccount, updateAccountDetails, getAccountById } = await import("./accounts");
+    const email = `dueño.${nanoid(6)}@example.com`;
+    const account = await withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta ajena", email));
+
+    const updated = await withScope({ isAdmin: false, userEmail: "otro@example.com" }, (client) =>
+      updateAccountDetails(client, account.id, { name: "Robado" })
+    );
+
+    // RLS deja el UPDATE en 0 filas en vez de tirar error: se refleja en null.
+    expect(updated).toBeNull();
+    const stillOriginal = await withScope({ isAdmin: true }, (client) => getAccountById(client, account.id));
+    expect(stillOriginal?.name).toBe("Cuenta ajena");
+  });
+
+  it("an admin can delete an account that has no data yet", async () => {
+    const { withScope } = await import("./client");
+    const { createAccount, deleteAccount, getAccountById } = await import("./accounts");
+    const email = `borrar.${nanoid(6)}@example.com`;
+    const account = await withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta vacía", email));
+
+    const deleted = await withScope({ isAdmin: true }, (client) => deleteAccount(client, account.id));
+
+    expect(deleted).toBe(true);
+    const gone = await withScope({ isAdmin: true }, (client) => getAccountById(client, account.id));
+    expect(gone).toBeNull();
+  });
+
+  it("a non-admin cannot delete any account (RLS, not just app logic)", async () => {
+    const { withScope } = await import("./client");
+    const { createAccount, deleteAccount, getAccountById } = await import("./accounts");
+    const email = `protegida.${nanoid(6)}@example.com`;
+    const account = await withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta protegida", email));
+
+    const deleted = await withScope({ isAdmin: false, userEmail: email.toLowerCase() }, (client) =>
+      deleteAccount(client, account.id)
+    );
+
+    expect(deleted).toBe(false);
+    const stillThere = await withScope({ isAdmin: true }, (client) => getAccountById(client, account.id));
+    expect(stillThere).not.toBeNull();
+  });
+
+  it("deleting an account with real data (a product) fails on a foreign key, not silently cascading", async () => {
+    const { withScope } = await import("./client");
+    const { createAccount, deleteAccount } = await import("./accounts");
+    const email = `condata.${nanoid(6)}@example.com`;
+    const account = await withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta con datos", email));
+    await withScope({ accountId: account.id }, (client) =>
+      client.query(
+        `INSERT INTO products (account_id, id, title, current_price, stock, updated_at) VALUES ($1, 'MLA1', 'Producto', 1000, 5, now())`,
+        [account.id]
+      )
+    );
+
+    await expect(withScope({ isAdmin: true }, (client) => deleteAccount(client, account.id))).rejects.toMatchObject({
+      code: "23503",
+    });
+  });
 });

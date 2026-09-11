@@ -86,6 +86,45 @@ export async function getAccountById(db: QueryExecutor, id: string): Promise<Acc
   return row ? mapRow(row) : null;
 }
 
+/** Edita nombre y/o email del dueño. Ninguno de los dos es obligatorio para
+ * poder cambiar solo el otro. */
+export async function updateAccountDetails(
+  db: QueryExecutor,
+  id: string,
+  fields: { name?: string; ownerEmail?: string }
+): Promise<Account | null> {
+  const sets: string[] = [];
+  const args: unknown[] = [];
+  if (fields.name !== undefined) {
+    args.push(fields.name);
+    sets.push(`name = $${args.length}`);
+  }
+  if (fields.ownerEmail !== undefined) {
+    args.push(fields.ownerEmail.trim().toLowerCase());
+    sets.push(`owner_email = $${args.length}`);
+  }
+  if (sets.length === 0) return getAccountById(db, id);
+
+  args.push(id);
+  const result = await db.query<AccountRow>(
+    `UPDATE accounts SET ${sets.join(", ")} WHERE id = $${args.length} RETURNING *`,
+    args
+  );
+  return result.rows[0] ? mapRow(result.rows[0]) : null;
+}
+
+/**
+ * Borra una cuenta. Devuelve false si RLS no dejó (no admin), o si la
+ * cuenta no existe. Las foreign keys de todas las tablas de datos (sin
+ * ON DELETE CASCADE) rechazan el borrado si la cuenta tiene historial real
+ * — a propósito: no hay forma de voltear de un click el negocio de un
+ * cliente real, solo cuentas genuinamente vacías.
+ */
+export async function deleteAccount(db: QueryExecutor, id: string): Promise<boolean> {
+  const result = await db.query<{ id: string }>(`DELETE FROM accounts WHERE id = $1 RETURNING id`, [id]);
+  return result.rows.length > 0;
+}
+
 export async function getAccountByOwnerEmail(db: QueryExecutor, email: string): Promise<Account | null> {
   const result = await db.query<AccountRow>("SELECT * FROM accounts WHERE owner_email = $1", [
     email.trim().toLowerCase(),
