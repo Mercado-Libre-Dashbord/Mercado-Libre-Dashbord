@@ -166,7 +166,12 @@ export default function ProductosPage() {
   }
 
   async function saveThreshold(productId: string) {
-    const draft = thresholdEditing[productId] ?? "";
+    // Mismo fallback que el `value` del input (precargado con lo ya
+    // guardado): si no, apretar "Guardar" sin tocar el campo mandaba "" —
+    // que significa "sacar la alerta"— y borraba en silencio un umbral que
+    // seguía viéndose en pantalla.
+    const current = products?.find((p) => p.id === productId)?.lowStockThreshold ?? null;
+    const draft = thresholdEditing[productId] ?? (current !== null ? String(current) : "");
     const lowStockThreshold = draft.trim() === "" ? null : Number(draft);
     if (lowStockThreshold !== null && (Number.isNaN(lowStockThreshold) || lowStockThreshold < 0 || !Number.isInteger(lowStockThreshold))) {
       setThresholdErrors((prev) => ({ ...prev, [productId]: "Entero ≥ 0, o vacío para sacar la alerta." }));

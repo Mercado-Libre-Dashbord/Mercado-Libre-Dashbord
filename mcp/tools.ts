@@ -865,13 +865,21 @@ export async function getFullStock(accountId: string, inventoryIds: string[]): P
   let unrecognized = 0;
   let sample: any = null;
 
+  // Por ítem, no por tanda: un solo inventory_id que falle (rate limit, 500
+  // pasajero) no puede tirar abajo el stock de los otros 49 que sí
+  // contestaron bien. Un 404 es normal (todavía no tiene stock ahí); otro
+  // error se loguea, pero tampoco frena al resto.
   await Promise.all(
     inventoryIds.map(async (inventoryId) => {
-      const res = await listOrEmpty(
-        () => mlFetch(`/inventories/${inventoryId}/stock/fulfillment`, token),
-        null
-      );
-      if (!res) return;
+      let res: any;
+      try {
+        res = await mlFetch(`/inventories/${inventoryId}/stock/fulfillment`, token);
+      } catch (err) {
+        if (!(err instanceof MlApiError && err.status === 404)) {
+          console.warn(`No se pudo traer el stock de Full de ${inventoryId}:`, (err as Error).message);
+        }
+        return;
+      }
       if (typeof res.available_quantity !== "number") {
         unrecognized += 1;
         sample = sample ?? res;

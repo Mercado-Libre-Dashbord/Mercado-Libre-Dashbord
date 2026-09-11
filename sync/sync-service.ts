@@ -20,12 +20,54 @@ export interface SyncResult {
   fullStockSynced: number;
 }
 
+interface ProductColumnFlags {
+  hasCategory: boolean;
+  hasThumbnail: boolean;
+  hasLogistics: boolean;
+}
+
+/**
+ * Columnas opcionales de `products` (llegan por migración manual), armadas
+ * en un solo lugar en vez de en cada función que hace upsert. Repetir esta
+ * lista en dos lugares es exactamente cómo se coló el bug real: al agregar
+ * logistic_type/inventory_id acá, la otra copia se quedó actualizando
+ * nomás el título y descartando esos campos cuando el producto ya existía
+ * como ficha mínima de una corrida anterior.
+ */
+function buildOptionalProductColumns(
+  p: { categoryId?: string | null; categoryName?: string | null; thumbnail?: string | null; logisticType?: string | null; inventoryId?: string | null } | undefined,
+  flags: ProductColumnFlags,
+  updateOnConflict: boolean
+): { cols: string[]; vals: unknown[]; updateSet: string[] } {
+  const cols: string[] = [];
+  const vals: unknown[] = [];
+  const updateSet: string[] = [];
+  if (flags.hasCategory) {
+    cols.push("category_id", "category_name");
+    vals.push(p?.categoryId ?? null, p?.categoryName ?? null);
+    if (updateOnConflict) updateSet.push("category_id = excluded.category_id", "category_name = excluded.category_name");
+  }
+  if (flags.hasThumbnail) {
+    cols.push("thumbnail");
+    vals.push(p?.thumbnail ?? null);
+    if (updateOnConflict) updateSet.push("thumbnail = excluded.thumbnail");
+  }
+  if (flags.hasLogistics) {
+    cols.push("logistic_type", "inventory_id");
+    vals.push(p?.logisticType ?? null, p?.inventoryId ?? null);
+    if (updateOnConflict) updateSet.push("logistic_type = excluded.logistic_type", "inventory_id = excluded.inventory_id");
+  }
+  return { cols, vals, updateSet };
+}
+
 /** Sincroniza el catálogo. Barato: una llamada paginada + un upsert por producto. */
 export async function syncProducts(db: QueryExecutor, accountId: string, sellerId: string): Promise<number> {
   const now = new Date().toISOString();
-  const hasCategory = await hasColumn(db, "products", "category_id");
-  const hasThumbnail = await hasColumn(db, "products", "thumbnail");
-  const hasLogistics = await hasColumn(db, "products", "logistic_type");
+  const flags: ProductColumnFlags = {
+    hasCategory: await hasColumn(db, "products", "category_id"),
+    hasThumbnail: await hasColumn(db, "products", "thumbnail"),
+    hasLogistics: await hasColumn(db, "products", "logistic_type"),
+  };
   const products = await listProducts(accountId, sellerId);
   for (const p of products) {
     const cols = ["account_id", "id", "title", "sku", "current_price", "stock", "permalink", "updated_at"];
@@ -34,21 +76,10 @@ export async function syncProducts(db: QueryExecutor, accountId: string, sellerI
       "title = excluded.title", "sku = excluded.sku", "current_price = excluded.current_price",
       "stock = excluded.stock", "permalink = excluded.permalink", "updated_at = excluded.updated_at",
     ];
-    if (hasCategory) {
-      cols.push("category_id", "category_name");
-      vals.push(p.categoryId, p.categoryName);
-      updateSet.push("category_id = excluded.category_id", "category_name = excluded.category_name");
-    }
-    if (hasThumbnail) {
-      cols.push("thumbnail");
-      vals.push(p.thumbnail);
-      updateSet.push("thumbnail = excluded.thumbnail");
-    }
-    if (hasLogistics) {
-      cols.push("logistic_type", "inventory_id");
-      vals.push(p.logisticType, p.inventoryId);
-      updateSet.push("logistic_type = excluded.logistic_type", "inventory_id = excluded.inventory_id");
-    }
+    const extra = buildOptionalProductColumns(p, flags, true);
+    cols.push(...extra.cols);
+    vals.push(...extra.vals);
+    updateSet.push(...extra.updateSet);
     const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
     await db.query(
       `INSERT INTO products (${cols.join(", ")}) VALUES (${placeholders})
@@ -276,9 +307,11 @@ export async function backfillMissingProducts(
   const ids = missing.rows.map((r) => r.product_id);
   if (ids.length === 0) return 0;
 
-  const hasCategory = await hasColumn(db, "products", "category_id");
-  const hasThumbnail = await hasColumn(db, "products", "thumbnail");
-  const hasLogistics = await hasColumn(db, "products", "logistic_type");
+  const flags: ProductColumnFlags = {
+    hasCategory: await hasColumn(db, "products", "category_id"),
+    hasThumbnail: await hasColumn(db, "products", "thumbnail"),
+    hasLogistics: await hasColumn(db, "products", "logistic_type"),
+  };
   const now = new Date().toISOString();
 
   let saved = 0;
@@ -302,14 +335,20 @@ export async function backfillMissingProducts(
     const vals: unknown[] = [
       accountId, id, p?.title ?? fallbackTitles.get(id) ?? id, p?.sku ?? null, p?.price ?? 0, p?.stock ?? 0, p?.permalink ?? null, now,
     ];
-    if (hasCategory) { cols.push("category_id", "category_name"); vals.push(p?.categoryId ?? null, p?.categoryName ?? null); }
-    if (hasThumbnail) { cols.push("thumbnail"); vals.push(p?.thumbnail ?? null); }
-    if (hasLogistics) { cols.push("logistic_type", "inventory_id"); vals.push(p?.logisticType ?? null, p?.inventoryId ?? null); }
+    const updateSet = ["title = CASE WHEN products.title = products.id THEN excluded.title ELSE products.title END"];
+    // Esta corrida sí resolvió el producto de verdad contra /items: los
+    // campos opcionales se refrescan. Si NO lo resolvió (p es undefined),
+    // no se tocan — "excluded.*" traería nulls y borraría datos buenos que
+    // una corrida anterior sí había conseguido.
+    const extra = buildOptionalProductColumns(p, flags, p !== undefined);
+    cols.push(...extra.cols);
+    vals.push(...extra.vals);
+    updateSet.push(...extra.updateSet);
+    if (p) updateSet.push("sku = excluded.sku", "current_price = excluded.current_price", "stock = excluded.stock", "permalink = excluded.permalink");
     const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
     await db.query(
       `INSERT INTO products (${cols.join(", ")}) VALUES (${placeholders})
-       ON CONFLICT (account_id, id) DO UPDATE SET
-         title = CASE WHEN products.title = products.id THEN excluded.title ELSE products.title END`,
+       ON CONFLICT (account_id, id) DO UPDATE SET ${updateSet.join(", ")}`,
       vals
     );
     saved += 1;

@@ -71,10 +71,20 @@ export async function GET(request: NextRequest) {
       // panel de alertas, el resaltado de la fila y el número mostrado nunca
       // puedan quedar en desacuerdo entre sí.
       const effectiveStock = inFull && r.fullStockQty !== null ? r.fullStockQty : r.stock;
+      // El valor de "capital inmovilizado" suma TODO lo guardado físicamente
+      // (disponible + no disponible: dañado, en revisión, en tránsito) — esa
+      // plata sigue inmovilizada aunque no se pueda vender ahora mismo. El
+      // stock "efectivo" de arriba, en cambio, se queda solo con lo
+      // disponible a propósito: para la alerta de stock bajo importa lo que
+      // se puede vender, no lo que hay guardado sin poder despacharse.
+      const fullStockValue =
+        inFull && r.fullStockQty !== null && r.currentCost !== null
+          ? (r.fullStockQty + (r.fullStockUnavailableQty ?? 0)) * r.currentCost
+          : null;
       return {
         ...r,
         effectiveStock,
-        fullStockValue: inFull && r.fullStockQty !== null && r.currentCost !== null ? r.fullStockQty * r.currentCost : null,
+        fullStockValue,
         marginPct:
           r.currentCost !== null && r.currentPrice > 0
             ? (r.currentPrice * (1 - account.otherTaxRate) - r.currentCost) / r.currentPrice
@@ -113,16 +123,21 @@ export async function PATCH(request: NextRequest) {
   }
 
   const result = await withScope({ accountId: account.id }, async (client) => {
+    // El costo y el umbral son dos cosas independientes: si falta la
+    // migración del umbral, no tiene por qué frenar el guardado del costo
+    // (que no depende de ella) cuando alguien manda los dos juntos.
+    let thresholdError: string | null = null;
     if (hasThreshold) {
-      if (!(await hasColumn(client, "products", "low_stock_threshold"))) {
-        return { error: "Falta correr la migración db/postgres/migrations/014-alerta-stock-bajo.sql." };
+      if (await hasColumn(client, "products", "low_stock_threshold")) {
+        await client.query(`UPDATE products SET low_stock_threshold = $1 WHERE account_id = $2 AND id = $3`, [
+          lowStockThreshold, account.id, productId,
+        ]);
+      } else {
+        thresholdError = "Falta correr la migración db/postgres/migrations/014-alerta-stock-bajo.sql.";
       }
-      await client.query(`UPDATE products SET low_stock_threshold = $1 WHERE account_id = $2 AND id = $3`, [
-        lowStockThreshold, account.id, productId,
-      ]);
     }
 
-    if (!hasCost) return { itemsUpdated: 0 };
+    if (!hasCost) return { itemsUpdated: 0, thresholdError };
 
     // Los impuestos ya no se guardan por producto: son una alícuota de la
     // cuenta (ver /api/account/settings). La columna `tax` queda en 0.
@@ -139,11 +154,17 @@ export async function PATCH(request: NextRequest) {
     // carga no había tomado.
     const hasIva = await hasColumn(client, "order_items", "iva_applied");
     const itemsUpdated = await recalculateProduct(client, account.id, productId, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
-    return { itemsUpdated };
+    return { itemsUpdated, thresholdError };
   });
 
-  if ("error" in result) {
-    return NextResponse.json({ error: result.error }, { status: 503 });
+  // Pedido solo del umbral y sin la migración: no hay nada más que reportar,
+  // es un error de verdad.
+  if (result.thresholdError && !hasCost) {
+    return NextResponse.json({ error: result.thresholdError }, { status: 503 });
   }
-  return NextResponse.json({ ok: true, itemsUpdated: result.itemsUpdated });
+  return NextResponse.json({
+    ok: true,
+    itemsUpdated: result.itemsUpdated,
+    ...(result.thresholdError ? { warning: result.thresholdError } : {}),
+  });
 }

@@ -157,6 +157,32 @@ describe("PATCH /api/products", () => {
     expect(query).not.toHaveBeenCalledWith(expect.stringContaining("UPDATE products SET low_stock_threshold"), expect.anything());
   });
 
+  it("still saves the cost when the threshold migration is missing, but flags the threshold as not saved", async () => {
+    // Costo y umbral son independientes: si falta la migración 014, no
+    // tiene por qué frenar el guardado del costo cuando se mandan juntos.
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) {
+        return {
+          rows: [
+            { table_name: "products", column_name: "thumbnail" },
+            { table_name: "order_items", column_name: "iva_applied" },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+    const request = { json: async () => ({ productId: "MLA1", cost: 350, lowStockThreshold: 5 }) } as any;
+
+    const res = await PATCH(request);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true, warning: expect.stringContaining("014-alerta-stock-bajo.sql") });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO product_costs"), expect.anything());
+    expect(query).not.toHaveBeenCalledWith(expect.stringContaining("UPDATE products SET low_stock_threshold"), expect.anything());
+  });
+
   it("ignores a per-product tax: taxes are an account-level rate now", async () => {
     const query = queryMock();
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));

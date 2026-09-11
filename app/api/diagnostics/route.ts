@@ -82,7 +82,7 @@ export async function GET() {
             `SELECT
                COUNT(*) FILTER (WHERE inventory_id IS NOT NULL) as con_inventory,
                COUNT(*) FILTER (WHERE full_stock_qty IS NOT NULL) as con_stock,
-               COALESCE(SUM(full_stock_qty * latest_cost.cost), 0) as capital
+               COALESCE(SUM((full_stock_qty + COALESCE(full_stock_unavailable_qty, 0)) * latest_cost.cost), 0) as capital
              FROM products p
              LEFT JOIN LATERAL (
                SELECT cost FROM product_costs pc
