@@ -24,6 +24,46 @@ interface Product {
   fullStockValue: number | null;
   lowStockThreshold: number | null;
   lowStock: boolean;
+  /** Ganancia real por unidad de las ventas ya hechas (con la comisión,
+   * envío e impuestos que se cobraron en cada caso) — null si todavía no
+   * vendió nada, para no acusar pérdida sin ninguna venta real de fondo. */
+  avgProfitPerUnit: number | null;
+  negativeMargin: boolean;
+}
+
+function fmt(n: number) {
+  return n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+}
+
+/**
+ * A diferencia del margen de arriba (precio de hoy − costo − impuesto de la
+ * cuenta, en teoría), esto mira lo que YA pasó: la comisión y el envío reales
+ * de cada venta. Un producto puede tener margen teórico positivo y aun así
+ * estar perdiendo plata en la práctica si el envío gratis o la comisión real
+ * se comieron más de lo esperado — eso es lo que esta alerta agarra.
+ */
+function NegativeMarginPanel({ products }: { products: Product[] }) {
+  const losing = products
+    .filter((p) => p.negativeMargin)
+    .sort((a, b) => (a.avgProfitPerUnit ?? 0) - (b.avgProfitPerUnit ?? 0));
+  if (losing.length === 0) return null;
+  return (
+    <div className="missing-cost-panel" role="status">
+      <p className="missing-cost-head">
+        <strong>{losing.length} producto(s) vendiéndose a pérdida real.</strong> En promedio, cada unidad vendida
+        dejó una ganancia neta negativa (ya con comisión, envío e impuestos reales descontados).
+      </p>
+      <ul className="missing-cost-list">
+        {losing.slice(0, 10).map((p) => (
+          <li key={p.id}>
+            <span className="missing-cost-title">{p.title}</span>
+            <span className="missing-cost-units missing-cost">{fmt(p.avgProfitPerUnit ?? 0)} / unidad</span>
+          </li>
+        ))}
+      </ul>
+      {losing.length > 10 && <p className="missing-cost-foot">Y {losing.length - 10} más.</p>}
+    </div>
+  );
 }
 
 /**
@@ -221,6 +261,7 @@ export default function ProductosPage() {
         (IIBB, internos) se configura una sola vez en <a href="/configuracion">Configuración</a>.
       </p>
       {loadError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{loadError}</p>}
+      {products && <NegativeMarginPanel products={products} />}
       {products && <LowStockPanel products={products} />}
       {products === null ? (
         <p className="empty-state">Cargando productos…</p>
@@ -308,7 +349,17 @@ export default function ProductosPage() {
                   </td>
                   <td className="num">{p.marginPct === null ? "-" : `${(p.marginPct * 100).toFixed(1)}%`}</td>
                   <td className="num">{p.unitsSold}</td>
-                  <td className="num">{p.totalProfit.toFixed(2)}</td>
+                  <td className={`num ${p.negativeMargin ? "missing-cost" : ""}`}>
+                    {p.totalProfit.toFixed(2)}
+                    {p.negativeMargin && (
+                      <>
+                        {" "}
+                        <span className="badge badge-cancelled" title={`${fmt(p.avgProfitPerUnit ?? 0)} por unidad, en promedio`}>
+                          pérdida
+                        </span>
+                      </>
+                    )}
+                  </td>
                   <td>
                     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
                       <div style={{ display: "flex", gap: "var(--space-1)", alignItems: "center" }}>

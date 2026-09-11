@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   const productId = searchParams.get("productId");
   const status = searchParams.get("status");
   const groupBy = searchParams.get("groupBy");
+  const orderId = searchParams.get("orderId");
 
   const rows = await withScope({ accountId: account.id }, async (client) => {
     if (groupBy === "order") {
@@ -42,19 +43,27 @@ export async function GET(request: NextRequest) {
       args.push(status);
       conditions.push(`o.status = $${args.length}`);
     }
+    if (orderId) {
+      args.push(orderId);
+      conditions.push(`o.id = $${args.length}`);
+    }
 
     // Degrada a null si falta la migración de impuestos, en vez de tirar 500
     // y dejar la página entera en blanco (ver db/schema-capabilities.ts).
     const taxColumn = (await hasColumn(client, "order_items", "tax_applied"))
       ? "oi.tax_applied"
       : "NULL::double precision";
+    const ivaColumn = (await hasColumn(client, "order_items", "iva_applied"))
+      ? "oi.iva_applied"
+      : "NULL::double precision";
 
     const result = await client.query(
       `SELECT oi.id, o.id as "orderId", o.date_created as "dateCreated", oi.product_id as "productId",
-              p.title as "productTitle", oi.unit_price as "unitPrice", oi.quantity,
+              p.title as "productTitle", ${(await hasColumn(client, "products", "thumbnail")) ? "p.thumbnail" : "NULL::text"} as thumbnail,
+              oi.unit_price as "unitPrice", oi.quantity,
               oi.ml_commission as "mlCommission", oi.shipping_cost as "shippingCost",
               oi.ads_cost_allocated as "adsCostAllocated", oi.cost_applied as "costApplied",
-              ${taxColumn} as "taxApplied",
+              ${taxColumn} as "taxApplied", ${ivaColumn} as "ivaApplied",
               oi.net_profit as "netProfit", o.status as "estadoPago",
               -- El costo aplicado puede venir de un registro cargado *después* de esta
               -- venta (fallback al costo más viejo conocido, ver getCostAtDate) — acá

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/db/client", () => ({ withScope: vi.fn((ctx: unknown, fn: (client: unknown) => unknown) => fn({ query: vi.fn() })) }));
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 
-import { PATCH } from "./route";
+import { GET, PATCH } from "./route";
 import { withScope } from "@/db/client";
 import { resolveCurrentAccount } from "@/lib/current-account";
 import { resetColumnCache } from "@/db/schema-capabilities";
@@ -193,5 +193,43 @@ describe("PATCH /api/products", () => {
     const insert = query.mock.calls.find((c) => String(c[0]).includes("INSERT INTO product_costs"));
     expect(insert?.[0]).not.toContain("tax");
     expect(insert?.[1]).toEqual(["acc1", "MLA1", 350, expect.any(String)]);
+  });
+});
+
+describe("GET /api/products", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetColumnCache();
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(account);
+  });
+
+  it("returns 401 when there is no active account", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue(null);
+    const res = await GET({ nextUrl: new URL("http://x/api/products") } as any);
+    expect(res.status).toBe(401);
+  });
+
+  it("marca negativeMargin cuando la ganancia real promedio por unidad vendida es negativa", async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      return {
+        rows: [
+          // Vendió 4 unidades y en total perdió $200 (comisión + envío reales
+          // superaron el precio) => -50 de ganancia real por unidad.
+          { id: "MLA1", title: "Producto perdedor", sku: null, currentPrice: 1000, stock: 10, currentCost: 900, unitsSold: 4, totalProfit: -200 },
+          // Ganó plata de verdad: no debe marcarse.
+          { id: "MLA2", title: "Producto sano", sku: null, currentPrice: 1000, stock: 10, currentCost: 500, unitsSold: 4, totalProfit: 800 },
+          // Sin ventas todavía: no hay señal real para juzgar, no se marca.
+          { id: "MLA3", title: "Sin ventas", sku: null, currentPrice: 1000, stock: 10, currentCost: 500, unitsSold: 0, totalProfit: 0 },
+        ],
+      };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const body = await (await GET({ nextUrl: new URL("http://x/api/products") } as any)).json();
+
+    expect(body.find((p: any) => p.id === "MLA1")).toMatchObject({ avgProfitPerUnit: -50, negativeMargin: true });
+    expect(body.find((p: any) => p.id === "MLA2")).toMatchObject({ avgProfitPerUnit: 200, negativeMargin: false });
+    expect(body.find((p: any) => p.id === "MLA3")).toMatchObject({ avgProfitPerUnit: null, negativeMargin: false });
   });
 });

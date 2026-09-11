@@ -81,6 +81,12 @@ export async function GET(request: NextRequest) {
         inFull && r.fullStockQty !== null && r.currentCost !== null
           ? (r.fullStockQty + (r.fullStockUnavailableQty ?? 0)) * r.currentCost
           : null;
+      // Ganancia neta real, por unidad, de las ventas que de verdad pasaron —
+      // ya con la comisión, el envío y los impuestos que se cobraron en cada
+      // caso (no una estimación con la comisión/envío de hoy). Es una señal
+      // más dura que el margen de arriba: dice si el producto YA te está
+      // dejando pérdida en la práctica, no si en teoría podría.
+      const avgProfitPerUnit = r.unitsSold > 0 ? r.totalProfit / r.unitsSold : null;
       return {
         ...r,
         effectiveStock,
@@ -90,6 +96,8 @@ export async function GET(request: NextRequest) {
             ? (r.currentPrice * (1 - account.otherTaxRate) - r.currentCost) / r.currentPrice
             : null,
         lowStock: r.lowStockThreshold !== null && effectiveStock <= r.lowStockThreshold,
+        avgProfitPerUnit,
+        negativeMargin: avgProfitPerUnit !== null && avgProfitPerUnit < 0,
       };
     });
   });

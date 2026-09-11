@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area,
@@ -110,6 +110,74 @@ function estadoBadgeClass(estado: string) {
 function KpiValue({ children }: { children: React.ReactNode }) {
   if (children === "-") return <span className="skeleton" aria-hidden="true" />;
   return <>{children}</>;
+}
+
+interface OrderLineDetail {
+  id: string;
+  productId: string;
+  productTitle: string;
+  thumbnail: string | null;
+  unitPrice: number;
+  quantity: number;
+  mlCommission: number;
+  shippingCost: number;
+  adsCostAllocated: number;
+  costApplied: number | null;
+  taxApplied: number | null;
+  ivaApplied: number | null;
+  netProfit: number | null;
+}
+
+/**
+ * "Rentabilidad real por venta": el recibo de en qué se fue cada venta,
+ * línea por línea. Todos los números ya salen de order_items — no se estima
+ * nada acá, es lo que de verdad se descontó en esa operación puntual.
+ */
+function OrderReceipt({ items }: { items: OrderLineDetail[] | "loading" | "error" }) {
+  if (items === "loading") return <p className="empty-state" style={{ padding: "var(--space-3)" }}>Cargando el detalle…</p>;
+  if (items === "error") return <p className="field-error" style={{ padding: "var(--space-3)" }}>No se pudo traer el detalle de esta orden.</p>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", padding: "var(--space-3) var(--space-4)" }}>
+      {items.map((it) => {
+        const revenue = it.unitPrice * it.quantity;
+        const rows: { label: string; value: number | null }[] = [
+          { label: "Precio de venta", value: revenue },
+          { label: "− Comisión ML", value: -it.mlCommission },
+          { label: "− Envío", value: -it.shippingCost },
+          { label: "− Publicidad asignada", value: it.adsCostAllocated > 0 ? -it.adsCostAllocated : null },
+          { label: "− IVA", value: it.ivaApplied !== null ? -it.ivaApplied : null },
+          { label: "− Otros impuestos", value: it.taxApplied !== null ? -it.taxApplied : null },
+          { label: "− Costo de producto", value: it.costApplied !== null ? -(it.costApplied * it.quantity) : null },
+        ];
+        return (
+          <div key={it.id} style={{ fontSize: 13, maxWidth: 360 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: 6, fontWeight: 600 }}>
+              {it.thumbnail && <img src={it.thumbnail} alt="" className="cell-thumb" loading="lazy" />}
+              <span>{it.productTitle} × {it.quantity}</span>
+            </div>
+            {rows.map((r) => (
+              <div key={r.label} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", color: "var(--text-dim)" }}>
+                <span>{r.label}</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>{r.value === null ? "—" : fmt(r.value)}</span>
+              </div>
+            ))}
+            <div
+              style={{
+                display: "flex", justifyContent: "space-between", marginTop: 4, paddingTop: 4,
+                borderTop: "1px solid var(--border)", fontWeight: 700,
+              }}
+            >
+              <span>= Ganancia neta real</span>
+              <span style={{ color: it.netProfit === null ? "var(--text-dim)" : it.netProfit >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                {it.netProfit === null ? "Sin costo cargado" : fmt(it.netProfit)}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 const KPI_ICON_PATHS: Record<string, React.ReactNode> = {
@@ -729,6 +797,29 @@ export default function HomePage() {
   const [mlConnected, setMlConnected] = useState<boolean | null>(null);
   const [noAccount, setNoAccount] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [orderDetails, setOrderDetails] = useState<Record<string, OrderLineDetail[] | "loading" | "error">>({});
+
+  function toggleOrder(order: OrderSummaryRow) {
+    if (expandedOrder === order.orderId) {
+      setExpandedOrder(null);
+      return;
+    }
+    setExpandedOrder(order.orderId);
+    if (orderDetails[order.orderId]) return;
+    setOrderDetails((prev) => ({ ...prev, [order.orderId]: "loading" }));
+    // El detalle de una orden puntual no depende del rango elegido arriba —
+    // se pide con la fecha exacta de esa orden, así siempre entra sea cual
+    // sea el período que esté mirando la tabla.
+    const day = order.dateCreated.slice(0, 10);
+    fetch(`/api/orders?orderId=${order.orderId}&from=${day}&to=${day}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        const detail = (await r.json()) as OrderLineDetail[];
+        setOrderDetails((prev) => ({ ...prev, [order.orderId]: detail }));
+      })
+      .catch(() => setOrderDetails((prev) => ({ ...prev, [order.orderId]: "error" })));
+  }
 
   const { from, to } = rangeForPeriod(period, customFrom, customTo);
 
@@ -986,23 +1077,41 @@ export default function HomePage() {
             </thead>
             <tbody>
               {(orders ?? []).map((o) => (
-                <tr key={o.orderId}>
-                  <td className="order-id">{o.orderId}</td>
-                  <td>
-                    <span className={`badge ${estadoBadgeClass(o.estadoPago)}`}>{estadoLabel(o.estadoPago)}</span>
-                  </td>
-                  <td>
-                    {isNarrowScreen
-                      ? new Date(o.dateCreated).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" })
-                      : new Date(o.dateCreated).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  </td>
-                  <td className="num" style={countsAsRevenue(o.estadoPago) ? undefined : { color: "var(--text-dim)", textDecoration: "line-through" }}>{fmt(o.totalOrder)}</td>
-                  {/* Una orden cancelada no dejó ganancia: mostrar su neto en
-                      verde como si fuera plata ganada era directamente falso. */}
-                  <td className="num" style={countsAsRevenue(o.estadoPago) ? { color: o.totalNeto >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 } : { color: "var(--text-dim)" }}>
-                    {countsAsRevenue(o.estadoPago) ? fmt(o.totalNeto) : "—"}
-                  </td>
-                </tr>
+                <Fragment key={o.orderId}>
+                  <tr
+                    onClick={() => toggleOrder(o)}
+                    style={{ cursor: "pointer" }}
+                    aria-expanded={expandedOrder === o.orderId}
+                  >
+                    <td className="order-id">
+                      <span aria-hidden="true" style={{ display: "inline-block", marginRight: 4, transform: expandedOrder === o.orderId ? "rotate(90deg)" : undefined, transition: "transform var(--duration-fast) var(--ease-out)" }}>
+                        ›
+                      </span>
+                      {o.orderId}
+                    </td>
+                    <td>
+                      <span className={`badge ${estadoBadgeClass(o.estadoPago)}`}>{estadoLabel(o.estadoPago)}</span>
+                    </td>
+                    <td>
+                      {isNarrowScreen
+                        ? new Date(o.dateCreated).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" })
+                        : new Date(o.dateCreated).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td className="num" style={countsAsRevenue(o.estadoPago) ? undefined : { color: "var(--text-dim)", textDecoration: "line-through" }}>{fmt(o.totalOrder)}</td>
+                    {/* Una orden cancelada no dejó ganancia: mostrar su neto en
+                        verde como si fuera plata ganada era directamente falso. */}
+                    <td className="num" style={countsAsRevenue(o.estadoPago) ? { color: o.totalNeto >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 } : { color: "var(--text-dim)" }}>
+                      {countsAsRevenue(o.estadoPago) ? fmt(o.totalNeto) : "—"}
+                    </td>
+                  </tr>
+                  {expandedOrder === o.orderId && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: 0, background: "var(--bg)" }}>
+                        <OrderReceipt items={orderDetails[o.orderId] ?? "loading"} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
