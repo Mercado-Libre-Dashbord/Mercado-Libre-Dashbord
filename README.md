@@ -14,9 +14,17 @@ compradores en seguidores y opiniones dentro de Mercado Libre.
 >
 > Este README cubre solo el **setup técnico**.
 
-Cada cliente entra con su cuenta de Google y ve solo su propia cuenta de
-Mercado Libre; el/los email(s) en `ADMIN_EMAILS` pueden ver y crear cualquier
-cuenta (switcher en la barra de navegación + pantalla `/admin`).
+Cada cliente entra con su cuenta de Google **o de Microsoft** (Hotmail,
+Outlook o cuenta de empresa) y ve solo su propia cuenta de Mercado Libre; el/los
+email(s) en `ADMIN_EMAILS` pueden ver y crear cualquier cuenta (switcher en la
+barra de navegación + pantalla `/admin`).
+
+Los dos logins son independientes y opcionales: el proveedor que no tenga
+credenciales cargadas no aparece en la pantalla. Como la cuenta se identifica
+por email, entrar con Google o con Microsoft con el mismo email cae siempre en
+la misma cuenta — no hay nada que vincular a mano. El setup de Microsoft y por
+qué el email tiene que venir verificado están en
+[`docs/login-microsoft.md`](docs/login-microsoft.md).
 
 La base es Postgres en Supabase, con **Row Level Security (RLS)** activado en
 todas las tablas: aunque el código de la app tuviera un bug y se olvidara de
@@ -38,13 +46,17 @@ cuenta (ver "Seguridad" más abajo).
    - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: credenciales OAuth de Google
      Cloud Console (tipo "Web application"), con `http://localhost:3000/api/auth/callback/google`
      como redirect URI autorizado.
+   - `AZURE_AD_CLIENT_ID` / `AZURE_AD_CLIENT_SECRET` / `AZURE_AD_TENANT_ID`
+     (opcionales): para el login con Microsoft/Hotmail. Paso a paso en
+     [`docs/login-microsoft.md`](docs/login-microsoft.md). Si los dejás vacíos,
+     solo se ofrece Google.
    - `NEXTAUTH_SECRET`: cualquier string random largo (`openssl rand -base64 32`).
-   - `ADMIN_EMAILS`: tu email de Google, separado por coma si hay más de un admin.
+   - `ADMIN_EMAILS`: tu email, separado por coma si hay más de un admin.
 4. `npm run dev`
-5. Entrá a `http://localhost:3000`, iniciá sesión con Google.
+5. Entrá a `http://localhost:3000` e iniciá sesión.
 6. Si sos admin: andá a `/admin` y creá una cuenta por cada cliente (nombre +
-   email de Google con el que va a entrar).
-7. Cada cliente entra con su Google, ve el banner "Conectar Mercado Libre" en
+   email con el que va a entrar, sea de Google o de Microsoft).
+7. Cada cliente entra con su email, ve el banner "Conectar Mercado Libre" en
    Resumen y autoriza su propia cuenta de ML.
 8. Entrá a "Productos" y cargá el costo de cada uno, después apretá
    "Sincronizar" en Resumen.
