@@ -66,6 +66,11 @@ interface Billing {
   charges?: number;
 }
 
+interface BillingStatus {
+  periods: { key: string; dateFrom: string | null; dateTo: string | null; amount: number; periodStatus: string | null }[];
+  restrictions: { confirmed: boolean; activeRestrictions: number | null };
+}
+
 interface OrderSummaryRow {
   orderId: string;
   estadoPago: string;
@@ -592,6 +597,85 @@ function RevenueStackedArea({ daily }: { daily: DailyBreakdown[] }) {
   );
 }
 
+const PERIOD_STATUS_LABEL: Record<string, string> = { OPEN: "En curso", CLOSED: "Cerrado" };
+
+/**
+ * "Facturas vencidas": lo único confirmado de la API de facturación de ML es
+ * si un período está OPEN o CLOSED y su monto — no si está pagado. Se suma
+ * una sonda de un endpoint de restricciones que no está oficialmente
+ * documentado; si no da una respuesta reconocible, se dice explícitamente
+ * que no se pudo confirmar en vez de mostrar "todo bien" sin sustento.
+ */
+function BillingStatusPanel() {
+  const [status, setStatus] = useState<BillingStatus | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/billing/status")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        setStatus(await r.json());
+      })
+      .catch(() => setError(true));
+  }, []);
+
+  if (error || (status && status.periods.length === 0 && !status.restrictions.confirmed)) return null;
+  if (!status) return null;
+
+  return (
+    <>
+      <h2 className="section-title">Estado de facturación con Mercado Libre</h2>
+      <div className="day-card" style={{ maxWidth: 620 }}>
+        {status.restrictions.confirmed ? (
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            {status.restrictions.activeRestrictions === 0
+              ? "Mercado Libre no reporta restricciones activas en tu cuenta por facturación."
+              : `Mercado Libre reporta ${status.restrictions.activeRestrictions} restricción(es) activa(s) en tu cuenta. Revisá tu Mercado Pago para más detalle.`}
+          </p>
+        ) : (
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            No pudimos confirmar directamente si tenés restricciones por deuda de facturación — Mercado Libre no
+            expone ese dato de forma estable todavía. Si te preocupa, revisá tu cuenta de Mercado Pago.
+          </p>
+        )}
+        {status.periods.length > 0 && (
+          <div className="table-wrap" style={{ marginTop: "var(--space-3)" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Período</th>
+                  <th>Estado</th>
+                  <th className="num">Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.periods.map((p) => (
+                  <tr key={p.key}>
+                    <td>{p.dateFrom ?? p.key} — {p.dateTo ?? ""}</td>
+                    <td>
+                      {/* Ninguno de los dos estados significa "pagado" —
+                          "badge-paid" (verde) daría esa impresión falsa, así
+                          que los dos usan el mismo estilo neutro. */}
+                      <span className="badge badge-other">
+                        {p.periodStatus ? PERIOD_STATUS_LABEL[p.periodStatus] ?? p.periodStatus : "—"}
+                      </span>
+                    </td>
+                    <td className="num">{fmt(p.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="field-hint" style={{ marginBottom: 0, marginTop: "var(--space-3)" }}>
+          "Cerrado" es un período que ML ya facturó, no necesariamente uno que quedó sin pagar: el cobro es
+          automático contra tu saldo de Mercado Pago.
+        </p>
+      </div>
+    </>
+  );
+}
+
 export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [orders, setOrders] = useState<OrderSummaryRow[] | null>(null);
@@ -834,6 +918,8 @@ export default function HomePage() {
           </details>
         </>
       )}
+
+      <BillingStatusPanel />
 
       <h2 className="section-title">Últimas órdenes</h2>
       {orders && orders.length === 0 ? (

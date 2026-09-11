@@ -102,6 +102,10 @@ CREATE TABLE IF NOT EXISTS products (
   full_stock_unavailable_qty INTEGER,
   -- Opt-in por producto: NULL = sin alerta de stock bajo configurada.
   low_stock_threshold INTEGER,
+  -- Primera vez que nuestro sync vio a este producto con stock en Full — no
+  -- es la fecha real de ingreso al depósito (ML no la expone por API), sirve
+  -- para estimar antigüedad de ahí en más.
+  full_since TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (account_id, id)
 );
@@ -113,6 +117,7 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS inventory_id TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_qty INTEGER;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS full_stock_unavailable_qty INTEGER;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS low_stock_threshold INTEGER;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS full_since TIMESTAMPTZ;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'mercado_libre';
 
 CREATE TABLE IF NOT EXISTS product_costs (

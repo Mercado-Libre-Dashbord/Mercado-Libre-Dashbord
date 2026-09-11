@@ -8,6 +8,7 @@ vi.mock("@/mcp/tools", () => ({
   getAdsSpend: vi.fn(),
   getProductsByIds: vi.fn().mockResolvedValue([]),
   getOrderItemTitles: vi.fn().mockResolvedValue(new Map()),
+  getFullStock: vi.fn().mockResolvedValue([]),
 }));
 
 const TEST_DATABASE_URL =
@@ -337,5 +338,55 @@ describe("backfillMissingProducts", () => {
       logisticType: "fulfillment",
       inventoryId: "INV5",
     });
+  });
+});
+
+describe("syncFullStock", () => {
+  it("guarda el stock y marca full_since la primera vez, sin pisarlo después", async () => {
+    const { getFullStock } = await import("@/mcp/tools");
+    const { withScope } = await import("@/db/client");
+    const { syncFullStock } = await import("./sync-service");
+    const account = await makeAccount();
+
+    await withScope({ accountId: account.id }, (client) =>
+      client.query(
+        `INSERT INTO products (account_id, id, title, current_price, stock, inventory_id, updated_at)
+         VALUES ($1,'MLA1','Producto',100,5,'INV1',now())`,
+        [account.id]
+      )
+    );
+
+    vi.mocked(getFullStock).mockResolvedValueOnce([
+      { inventoryId: "INV1", availableQuantity: 8, unavailableQuantity: 1 },
+    ]);
+    const synced = await withScope({ accountId: account.id }, (client) => syncFullStock(client, account.id));
+    expect(synced).toBe(1);
+
+    const first = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ full_stock_qty: number; full_since: string }>(
+        `SELECT full_stock_qty, full_since FROM products WHERE account_id = $1 AND id = 'MLA1'`,
+        [account.id]
+      );
+      return r.rows[0];
+    });
+    expect(first.full_stock_qty).toBe(8);
+    expect(first.full_since).toBeTruthy();
+
+    // Un segundo sync con otra cantidad no debería mover full_since para
+    // atrás: sigue siendo la primera vez que lo vimos, no la última.
+    vi.mocked(getFullStock).mockResolvedValueOnce([
+      { inventoryId: "INV1", availableQuantity: 3, unavailableQuantity: 0 },
+    ]);
+    await withScope({ accountId: account.id }, (client) => syncFullStock(client, account.id));
+
+    const second = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ full_stock_qty: number; full_since: string }>(
+        `SELECT full_stock_qty, full_since FROM products WHERE account_id = $1 AND id = 'MLA1'`,
+        [account.id]
+      );
+      return r.rows[0];
+    });
+    expect(second.full_stock_qty).toBe(3);
+    expect(new Date(second.full_since).getTime()).toBe(new Date(first.full_since).getTime());
   });
 });

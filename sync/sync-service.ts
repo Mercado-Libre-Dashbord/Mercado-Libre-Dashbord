@@ -241,10 +241,14 @@ export async function syncFullStock(db: QueryExecutor, accountId: string): Promi
     const inventoryIds = productsResult.rows.map((r) => r.inventory_id);
     if (inventoryIds.length === 0) return 0;
 
+    const hasFullSince = await hasColumn(db, "products", "full_since");
     const stock = await getFullStock(accountId, inventoryIds);
     for (const s of stock) {
+      // full_since se pisa solo si todavía está vacío: es la primera vez
+      // que VIMOS este producto con stock en Full, no la fecha real de
+      // ingreso al depósito (eso no lo expone la API de ML).
       await db.query(
-        `UPDATE products SET full_stock_qty = $1, full_stock_unavailable_qty = $2
+        `UPDATE products SET full_stock_qty = $1, full_stock_unavailable_qty = $2${hasFullSince ? ", full_since = COALESCE(full_since, now())" : ""}
          WHERE account_id = $3 AND inventory_id = $4`,
         [s.availableQuantity, s.unavailableQuantity, accountId, s.inventoryId]
       );

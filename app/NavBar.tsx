@@ -12,6 +12,7 @@ interface AccountOption {
 const NAV_ITEMS = [
   { href: "/", label: "Resumen", icon: "grid" },
   { href: "/productos", label: "Productos", icon: "box" },
+  { href: "/full", label: "Full", icon: "warehouse" },
   { href: "/consultas", label: "Consultas", icon: "question" },
   { href: "/campanas", label: "Campañas", icon: "megaphone" },
   { href: "/tendencias", label: "Tendencias", icon: "trend" },
@@ -59,6 +60,13 @@ function NavIcon({ name }: { name: string }) {
       <>
         <circle cx="9" cy="8" r="3.2" />
         <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 8.2A3.2 3.2 0 1 1 16 14.6M21.5 20c0-3-2-5.2-4.8-5.8" />
+      </>
+    ),
+    warehouse: (
+      <>
+        <path d="M3 21V10L12 4l9 6v11" />
+        <path d="M3 21h18" />
+        <rect x="8" y="13" width="8" height="8" rx="0.5" />
       </>
     ),
   };

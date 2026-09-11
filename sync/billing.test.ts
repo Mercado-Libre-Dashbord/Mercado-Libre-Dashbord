@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyCharge } from "./billing";
+import { classifyCharge, classifyFullChargeDetail } from "./billing";
 
 describe("classifyCharge", () => {
   it("recognises tax perceptions and withholdings", () => {
@@ -59,5 +59,31 @@ describe("classifyCharge", () => {
     expect(classifyCharge(null, "CHARGE", "FBM_STORAGE")).toBe("full");
     expect(classifyCharge(null, "CHARGE", "fbm_long_term_storage")).toBe("full");
     expect(classifyCharge(null, "CHARGE", "FBM_STOCK_REMOVAL")).toBe("full");
+  });
+});
+
+describe("classifyFullChargeDetail", () => {
+  it("reconoce los códigos cortos de detail_sub_type", () => {
+    expect(classifyFullChargeDetail("FBM_STORAGE")).toBe("almacenamiento");
+    expect(classifyFullChargeDetail("FBM_LONG_TERM_STORAGE")).toBe("stock_antiguo");
+    expect(classifyFullChargeDetail("fbm_stock_removal")).toBe("retiro");
+  });
+
+  it("distingue stock antiguo de almacenamiento normal por texto", () => {
+    // "Permanencia prolongada" suele venir junto con la palabra
+    // "almacenamiento" en la misma descripción — antigüedad tiene que ganar,
+    // porque es la penalidad, no el costo de guarda de todos los días.
+    expect(classifyFullChargeDetail("Almacenamiento por permanencia prolongada")).toBe("stock_antiguo");
+    expect(classifyFullChargeDetail("Cargo por almacenamiento diario")).toBe("almacenamiento");
+  });
+
+  it("reconoce el retiro y el envío del stock al depósito", () => {
+    expect(classifyFullChargeDetail("Retiro de stock Full")).toBe("retiro");
+    expect(classifyFullChargeDetail("Envío a depósito Full")).toBe("envio_a_full");
+  });
+
+  it("cae en 'otro' cuando no reconoce el concepto", () => {
+    expect(classifyFullChargeDetail("Cargo de Full sin descripción clara")).toBe("otro");
+    expect(classifyFullChargeDetail(null, undefined)).toBe("otro");
   });
 });

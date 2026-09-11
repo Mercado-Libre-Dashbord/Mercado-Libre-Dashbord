@@ -696,6 +696,9 @@ export interface MlBillingPeriod {
   dateFrom: string | null;
   dateTo: string | null;
   amount: number;
+  /** OPEN = todavía se están acumulando cargos; CLOSED = período cerrado.
+   * No es lo mismo que "pagado": ML no expone ese estado acá. */
+  periodStatus: string | null;
 }
 
 export interface MlBillingCharge {
@@ -724,6 +727,7 @@ export async function listBillingPeriods(accountId: string): Promise<MlBillingPe
     dateFrom: p.period?.date_from ?? null,
     dateTo: p.period?.date_to ?? null,
     amount: Number(p.amount ?? 0),
+    periodStatus: p.period_status ?? null,
   })).filter((p: MlBillingPeriod) => p.key);
 }
 

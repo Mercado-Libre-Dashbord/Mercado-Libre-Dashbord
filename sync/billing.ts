@@ -57,3 +57,50 @@ export function classifyCharge(...fields: (string | null | undefined)[]): Charge
   if (/comisi[oó]n|comision|sale fee|selling fee|sales charge|cargo por venta|venta/.test(haystack)) return "comision";
   return "otro";
 }
+
+export type FullChargeDetail = "almacenamiento" | "stock_antiguo" | "retiro" | "envio_a_full" | "otro";
+
+export const FULL_CHARGE_DETAIL_LABEL: Record<FullChargeDetail, string> = {
+  almacenamiento: "Almacenamiento",
+  stock_antiguo: "Stock antiguo (permanencia prolongada)",
+  retiro: "Retiro de stock",
+  envio_a_full: "Envío de stock a Full",
+  otro: "Otros cargos de Full",
+};
+
+const FULL_DETAIL_SUB_TYPE_MAP: Record<string, FullChargeDetail> = {
+  fbm_storage: "almacenamiento",
+  fbm_long_term_storage: "stock_antiguo",
+  fbm_aged_stock: "stock_antiguo",
+  fbm_stock_removal: "retiro",
+  fbm_disposal: "otro",
+  fbm_unplanned_reception: "otro",
+};
+
+/**
+ * Sub-clasifica un cargo que `classifyCharge` ya puso en el bucket "full",
+ * para separar almacenamiento normal, la penalidad por stock antiguo, el
+ * retiro y el envío del propio stock al depósito — la pregunta real detrás
+ * de "cuánto me cuesta Full" no se contesta con un solo total.
+ *
+ * Mismo criterio que el resto de esta clasificación: los códigos exactos de
+ * `detail_sub_type` son un candidato sin confirmar contra una respuesta
+ * real; el texto libre es el respaldo si el código no matchea.
+ */
+export function classifyFullChargeDetail(...fields: (string | null | undefined)[]): FullChargeDetail {
+  for (const f of fields) {
+    if (!f) continue;
+    const mapped = FULL_DETAIL_SUB_TYPE_MAP[f.trim().toLowerCase()];
+    if (mapped) return mapped;
+  }
+
+  const haystack = fields.filter(Boolean).join(" ").toLowerCase();
+  // Antes que "almacenamiento" a propósito: "permanencia" y "antiguo" son
+  // más específicos que el genérico "almacenamiento" que suele acompañarlos
+  // en la misma descripción.
+  if (/stock antiguo|permanencia|antig[uü]edad|aged/.test(haystack)) return "stock_antiguo";
+  if (/retiro|removal|extracci[oó]n/.test(haystack)) return "retiro";
+  if (/env[ií]o a (dep[oó]sito|fulfillment)|recepci[oó]n|inbound/.test(haystack)) return "envio_a_full";
+  if (/almacenamiento|storage/.test(haystack)) return "almacenamiento";
+  return "otro";
+}

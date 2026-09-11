@@ -120,6 +120,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     table: "products",
     column: "low_stock_threshold",
     ddl: "-- Correr db/postgres/migrations/014-alerta-stock-bajo.sql (alertas de stock bajo por producto).",
+  },
+  {
+    table: "products",
+    column: "full_since",
+    ddl: "-- Correr db/postgres/migrations/015-full-antiguedad.sql (antigüedad estimada en Full).",
   }
 ];
 

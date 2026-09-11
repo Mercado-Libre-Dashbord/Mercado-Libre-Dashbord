@@ -562,7 +562,7 @@ describe("listBillingPeriods", () => {
   it("mapea los períodos y descarta los que no traen clave", async () => {
     vi.mocked(mlFetch).mockResolvedValueOnce({
       results: [
-        { key: "2026-07-01", period: { date_from: "2026-07-01", date_to: "2026-07-31" }, amount: 1234.5 },
+        { key: "2026-07-01", period: { date_from: "2026-07-01", date_to: "2026-07-31" }, amount: 1234.5, period_status: "CLOSED" },
         { period: { date_from: null, date_to: null }, amount: 0 },
       ],
     });
@@ -570,7 +570,7 @@ describe("listBillingPeriods", () => {
     const periods = await listBillingPeriods("acc1");
 
     expect(periods).toEqual([
-      { key: "2026-07-01", dateFrom: "2026-07-01", dateTo: "2026-07-31", amount: 1234.5 },
+      { key: "2026-07-01", dateFrom: "2026-07-01", dateTo: "2026-07-31", amount: 1234.5, periodStatus: "CLOSED" },
     ]);
   });
 });
