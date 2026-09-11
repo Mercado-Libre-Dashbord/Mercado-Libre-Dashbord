@@ -9,6 +9,8 @@ vi.mock("@/mcp/tools", () => ({
   getProductsByIds: vi.fn().mockResolvedValue([]),
   getOrderItemTitles: vi.fn().mockResolvedValue(new Map()),
   getFullStock: vi.fn().mockResolvedValue([]),
+  listBillingPeriods: vi.fn().mockResolvedValue([]),
+  getBillingCharges: vi.fn().mockResolvedValue([]),
 }));
 
 const TEST_DATABASE_URL =
@@ -388,5 +390,65 @@ describe("syncFullStock", () => {
     });
     expect(second.full_stock_qty).toBe(3);
     expect(new Date(second.full_since).getTime()).toBe(new Date(first.full_since).getTime());
+  });
+});
+
+describe("syncBillingCharges", () => {
+  it("no loguea nada cuando todos los cargos son detail_type CHARGE", async () => {
+    const { listBillingPeriods, getBillingCharges } = await import("@/mcp/tools");
+    vi.mocked(listBillingPeriods).mockResolvedValueOnce([
+      { key: "P1", dateFrom: "2026-01-01", dateTo: "2026-01-31", amount: 100, periodStatus: "CLOSED" },
+    ]);
+    vi.mocked(getBillingCharges).mockResolvedValueOnce([
+      { detailId: "D1", periodKey: "P1", detailType: "CHARGE", detailSubType: "CVFV", concept: "Comisión", orderId: "O1", amount: 50, chargedAt: null },
+    ]);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { withScope } = await import("@/db/client");
+    const { syncBillingCharges } = await import("./sync-service");
+    const account = await makeAccount();
+    const saved = await withScope({ accountId: account.id }, (client) => syncBillingCharges(client, account.id));
+
+    expect(saved).toBe(1);
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("detail_type distinto"), expect.anything());
+    warnSpy.mockRestore();
+  });
+
+  /**
+   * Esto no confirma que "BONUS"/"BV" sean reales — es lo contrario: junta
+   * evidencia real la próxima vez que corra un sync de verdad, en vez de
+   * programar el neteo de notas de crédito sobre una investigación externa
+   * sin verificar. Este test solo prueba que el diagnóstico se dispara y
+   * agrupa bien, no que el código "BONUS" exista de verdad en la API.
+   */
+  it("loguea (sin exponer montos) cualquier detail_type distinto de CHARGE, agrupado por tipo", async () => {
+    const { listBillingPeriods, getBillingCharges } = await import("@/mcp/tools");
+    vi.mocked(listBillingPeriods).mockResolvedValueOnce([
+      { key: "P1", dateFrom: "2026-01-01", dateTo: "2026-01-31", amount: 100, periodStatus: "CLOSED" },
+    ]);
+    vi.mocked(getBillingCharges).mockResolvedValueOnce([
+      { detailId: "D1", periodKey: "P1", detailType: "CHARGE", detailSubType: "CVFV", concept: "Comisión", orderId: "O1", amount: 130, chargedAt: null },
+      { detailId: "D2", periodKey: "P1", detailType: "BONUS", detailSubType: "BV", concept: "Devolución de comisión", orderId: "O1", amount: -130, chargedAt: null },
+      { detailId: "D3", periodKey: "P1", detailType: "BONUS", detailSubType: "BV", concept: "Devolución de comisión", orderId: null, amount: -80, chargedAt: null },
+    ]);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { withScope } = await import("@/db/client");
+    const { syncBillingCharges } = await import("./sync-service");
+    const account = await makeAccount();
+    const saved = await withScope({ accountId: account.id }, (client) => syncBillingCharges(client, account.id));
+
+    expect(saved).toBe(3);
+    const call = warnSpy.mock.calls.find((c) => String(c[0]).includes("detail_type distinto"));
+    expect(call).toBeTruthy();
+    const summary = JSON.parse(call![1] as string);
+    expect(summary).toEqual([
+      { detailType: "BONUS", detailSubTypes: ["BV"], concepts: ["Devolución de comisión"], conOrderId: 1, sinOrderId: 1 },
+    ]);
+    // Ningún monto ($130, $-130, $-80) tiene que aparecer en lo logueado.
+    const loggedText = JSON.stringify(warnSpy.mock.calls);
+    expect(loggedText).not.toContain("130");
+    expect(loggedText).not.toContain("80");
+    warnSpy.mockRestore();
   });
 });

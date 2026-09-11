@@ -464,8 +464,33 @@ export async function syncBillingCharges(db: QueryExecutor, accountId: string): 
     // Los últimos 3 meses alcanzan para conciliar y acotan el volumen: los
     // períodos viejos ya están cerrados y no cambian.
     let saved = 0;
+    // Diagnóstico: una investigación externa (sin confirmar) sostiene que
+    // las devoluciones/cancelaciones no borran el cargo original sino que
+    // ML agrega una fila propia con detail_type "BONUS" (sub_type BV/BXD/
+    // BFF) como nota de crédito, y que hay un cargo punitivo aparte "CDSD"
+    // por logística de devolución. classifyCharge() de sync/billing.ts hoy
+    // solo entiende cargos con detail_type "CHARGE" — cualquier otro valor
+    // cae sin clasificar. Antes de programar un neteo BONUS-contra-CHARGE
+    // sobre códigos que nunca vimos en un log real, se junta evidencia:
+    // cualquier detail_type distinto de CHARGE queda registrado acá (solo
+    // el tipo/sub-tipo/concepto, y si viene o no con order_id — nunca un
+    // monto) para confirmar o descartar la hipótesis con datos reales.
+    const unexpectedTypes = new Map<
+      string,
+      { subTypes: Set<string>; concepts: Set<string>; withOrderId: number; withoutOrderId: number }
+    >();
     for (const period of periods.slice(0, 3)) {
       for (const c of await getBillingCharges(accountId, period.key)) {
+        if (c.detailType && c.detailType.toUpperCase() !== "CHARGE") {
+          const entry = unexpectedTypes.get(c.detailType) ?? {
+            subTypes: new Set(), concepts: new Set(), withOrderId: 0, withoutOrderId: 0,
+          };
+          if (c.detailSubType) entry.subTypes.add(c.detailSubType);
+          if (c.concept) entry.concepts.add(c.concept);
+          if (c.orderId) entry.withOrderId += 1; else entry.withoutOrderId += 1;
+          unexpectedTypes.set(c.detailType, entry);
+        }
+
         await db.query(
           `INSERT INTO billing_charges
              (account_id, detail_id, period_key, detail_type, detail_sub_type, concept, order_id, amount, charged_at)
@@ -478,6 +503,16 @@ export async function syncBillingCharges(db: QueryExecutor, accountId: string): 
         );
         saved += 1;
       }
+    }
+    if (unexpectedTypes.size > 0) {
+      const summary = [...unexpectedTypes.entries()].map(([type, e]) => ({
+        detailType: type,
+        detailSubTypes: [...e.subTypes],
+        concepts: [...e.concepts],
+        conOrderId: e.withOrderId,
+        sinOrderId: e.withoutOrderId,
+      }));
+      console.warn("Facturación ML: detail_type distinto de 'CHARGE' encontrado:", JSON.stringify(summary));
     }
     return saved;
   } catch (err) {
