@@ -14,6 +14,9 @@ export default function AdminAccountsPage() {
   const [form, setForm] = useState({ name: "", ownerEmail: "" });
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [invitingId, setInvitingId] = useState<string | null>(null);
+  const [inviteLinks, setInviteLinks] = useState<Record<string, { url: string; hadPasswordAlready: boolean }>>({});
+  const [inviteError, setInviteError] = useState<Record<string, string>>({});
 
   function load() {
     fetch("/api/admin/accounts")
@@ -49,6 +52,34 @@ export default function AdminAccountsPage() {
     }
   }
 
+  /**
+   * No es un registro abierto: esto genera un link de un solo uso para el
+   * owner_email YA guardado de esa cuenta (nunca un email suelto), pensado
+   * para pasárselo al cliente por WhatsApp o el canal que sea. El token en
+   * claro viaja una sola vez, en esta respuesta — después no se puede
+   * volver a ver, ni siquiera desde acá.
+   */
+  async function generateInvite(accountId: string) {
+    setInvitingId(accountId);
+    setInviteError((prev) => ({ ...prev, [accountId]: "" }));
+    try {
+      const res = await fetch("/api/admin/credential-invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteError((prev) => ({ ...prev, [accountId]: data.error ?? "No se pudo generar la invitación." }));
+        return;
+      }
+      const url = `${window.location.origin}/set-password?token=${data.token}`;
+      setInviteLinks((prev) => ({ ...prev, [accountId]: { url, hadPasswordAlready: data.hadPasswordAlready } }));
+    } finally {
+      setInvitingId(null);
+    }
+  }
+
   return (
     <div>
       <h1>Cuentas</h1>
@@ -67,7 +98,7 @@ export default function AdminAccountsPage() {
           />
         </div>
         <div className="field-group">
-          <label htmlFor="acc-email">Email del cliente (Google)</label>
+          <label htmlFor="acc-email">Email del cliente</label>
           <input
             id="acc-email"
             type="email"
@@ -83,6 +114,10 @@ export default function AdminAccountsPage() {
         </button>
         {error && <p className="field-error" role="alert">{error}</p>}
       </form>
+      <p className="field-hint" style={{ marginTop: -16, marginBottom: 24 }}>
+        Si el cliente usa Google, entra directo con este email. Si no (Hotmail, Outlook, etc.), generá una
+        invitación desde la tabla de abajo para que ponga su contraseña.
+      </p>
 
       <h2 className="section-title">Todas las cuentas</h2>
       {accounts === null ? (
@@ -97,6 +132,7 @@ export default function AdminAccountsPage() {
                 <th>Nombre</th>
                 <th>Email</th>
                 <th>Mercado Libre</th>
+                <th>Login sin Google</th>
               </tr>
             </thead>
             <tbody>
@@ -110,6 +146,40 @@ export default function AdminAccountsPage() {
                     ) : (
                       <span className="badge badge-other">Sin conectar</span>
                     )}
+                  </td>
+                  <td>
+                    {inviteLinks[a.id] ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", maxWidth: 320 }}>
+                        {inviteLinks[a.id].hadPasswordAlready && (
+                          <p className="field-hint" style={{ margin: 0, color: "var(--negative)" }}>
+                            Ya tenía contraseña puesta — este link, al usarse, la reemplaza.
+                          </p>
+                        )}
+                        <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                          <input readOnly value={inviteLinks[a.id].url} style={{ fontSize: 12, flex: "1 1 auto", minWidth: 0 }} onFocus={(e) => e.target.select()} />
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => navigator.clipboard.writeText(inviteLinks[a.id].url)}
+                          >
+                            Copiar
+                          </button>
+                        </div>
+                        <p className="field-hint" style={{ margin: 0 }}>
+                          Guardalo ahora: no se puede volver a ver. Vence en 7 días o al primer uso.
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => generateInvite(a.id)}
+                        disabled={invitingId === a.id}
+                      >
+                        {invitingId === a.id ? "Generando…" : "Generar invitación"}
+                      </button>
+                    )}
+                    {inviteError[a.id] && <p className="field-error">{inviteError[a.id]}</p>}
                   </td>
                 </tr>
               ))}

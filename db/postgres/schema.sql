@@ -45,6 +45,16 @@ CREATE OR REPLACE FUNCTION app_current_loyalty_key_hash() RETURNS text AS $$
   SELECT NULLIF(current_setting('app.loyalty_key_hash', true), '');
 $$ LANGUAGE sql STABLE;
 
+-- Login con email y contraseña (clientes sin cuenta de Google, ver migración
+-- 016): mismo mecanismo de "conocer un secreto ve exactamente esa fila".
+CREATE OR REPLACE FUNCTION app_credential_lookup_email() RETURNS text AS $$
+  SELECT NULLIF(current_setting('app.credential_lookup_email', true), '');
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION app_current_credential_invite_hash() RETURNS text AS $$
+  SELECT NULLIF(current_setting('app.credential_invite_hash', true), '');
+$$ LANGUAGE sql STABLE;
+
 -- ── Tables ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY,
@@ -279,6 +289,27 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
   expires_at TIMESTAMPTZ NOT NULL
 );
 
+-- Login con email y contraseña, para clientes sin cuenta de Google. El admin
+-- genera una invitación por email (ver /admin) y se la manda por fuera de la
+-- app; solo con ese link se puede poner una contraseña (ver migración 016).
+CREATE TABLE IF NOT EXISTS credential_users (
+  email TEXT PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_login_at TIMESTAMPTZ,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS credential_invites (
+  token_hash TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_credential_invites_email ON credential_invites(email);
+
 CREATE INDEX IF NOT EXISTS idx_order_items_account_order ON order_items(account_id, order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_account_product ON order_items(account_id, product_id);
 CREATE INDEX IF NOT EXISTS idx_product_costs_account_product ON product_costs(account_id, product_id);
@@ -314,6 +345,74 @@ CREATE POLICY accounts_update ON accounts FOR UPDATE
   USING (app_is_admin() OR owner_email = app_current_user_email())
   WITH CHECK (app_is_admin() OR owner_email = app_current_user_email());
 
+ALTER TABLE credential_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credential_users FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS credential_users_select ON credential_users;
+CREATE POLICY credential_users_select ON credential_users FOR SELECT
+  USING (app_is_admin() OR email = app_credential_lookup_email());
+-- OJO: a propósito no hay otra política de UPDATE encima de esta (ver
+-- migración 016) — RLS filtra filas, no columnas, así que una segunda
+-- política "para el contador de intentos" también dejaría cambiar
+-- password_hash sin invitación. Esos contadores usan las funciones
+-- SECURITY DEFINER de abajo en vez de un UPDATE directo. El USING repite el
+-- EXISTS del WITH CHECK porque un INSERT ... ON CONFLICT DO UPDATE evalúa
+-- USING también en la rama de INSERT sin conflicto (ver migración 016).
+DROP POLICY IF EXISTS credential_users_write ON credential_users;
+CREATE POLICY credential_users_write ON credential_users FOR ALL
+  USING (
+    app_is_admin()
+    OR email = app_credential_lookup_email()
+    OR EXISTS (
+      SELECT 1 FROM credential_invites ci
+      WHERE ci.email = credential_users.email
+        AND ci.token_hash = app_current_credential_invite_hash()
+        AND ci.used_at IS NULL
+        AND ci.expires_at > now()
+    )
+  )
+  WITH CHECK (
+    app_is_admin()
+    OR EXISTS (
+      SELECT 1 FROM credential_invites ci
+      WHERE ci.email = credential_users.email
+        AND ci.token_hash = app_current_credential_invite_hash()
+        AND ci.used_at IS NULL
+        AND ci.expires_at > now()
+    )
+  );
+
+CREATE OR REPLACE FUNCTION credential_record_failed_login(p_email TEXT, p_max_attempts INTEGER, p_lockout_minutes INTEGER)
+RETURNS void AS $$
+  UPDATE credential_users
+     SET failed_attempts = failed_attempts + 1,
+         locked_until = CASE
+           WHEN failed_attempts + 1 >= p_max_attempts THEN now() + (p_lockout_minutes || ' minutes')::interval
+           ELSE locked_until
+         END
+   WHERE email = p_email;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION credential_record_successful_login(p_email TEXT)
+RETURNS void AS $$
+  UPDATE credential_users SET failed_attempts = 0, locked_until = NULL, last_login_at = now() WHERE email = p_email;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
+
+ALTER TABLE credential_invites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credential_invites FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS credential_invites_select ON credential_invites;
+CREATE POLICY credential_invites_select ON credential_invites FOR SELECT
+  USING (app_is_admin() OR token_hash = app_current_credential_invite_hash());
+DROP POLICY IF EXISTS credential_invites_insert ON credential_invites;
+CREATE POLICY credential_invites_insert ON credential_invites FOR INSERT
+  WITH CHECK (app_is_admin());
+DROP POLICY IF EXISTS credential_invites_update ON credential_invites;
+CREATE POLICY credential_invites_update ON credential_invites FOR UPDATE
+  USING (app_is_admin() OR token_hash = app_current_credential_invite_hash())
+  WITH CHECK (app_is_admin() OR token_hash = app_current_credential_invite_hash());
+DROP POLICY IF EXISTS credential_invites_delete ON credential_invites;
+CREATE POLICY credential_invites_delete ON credential_invites FOR DELETE
+  USING (app_is_admin());
+
 DO $$
 DECLARE
   t text;
@@ -332,7 +431,8 @@ END
 $$;
 
 -- ── Grants ───────────────────────────────────────────────────────────────
-GRANT EXECUTE ON FUNCTION app_current_account_id(), app_is_admin(), app_current_user_email(), app_current_loyalty_key_hash() TO app_user;
+GRANT EXECUTE ON FUNCTION app_current_account_id(), app_is_admin(), app_current_user_email(), app_current_loyalty_key_hash(), app_credential_lookup_email(), app_current_credential_invite_hash() TO app_user;
+GRANT EXECUTE ON FUNCTION credential_record_failed_login(text, integer, integer), credential_record_successful_login(text) TO app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;

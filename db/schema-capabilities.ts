@@ -125,7 +125,13 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     table: "products",
     column: "full_since",
     ddl: "-- Correr db/postgres/migrations/015-full-antiguedad.sql (antigüedad estimada en Full).",
-  }
+  },
+  {
+    // La tabla entera llega por migración; se detecta por una columna suya.
+    table: "credential_users",
+    column: "email",
+    ddl: "-- Correr db/postgres/migrations/016-login-credenciales.sql (login con email y contraseña).",
+  },
 ];
 
 export async function missingMigrations(client: QueryExecutor): Promise<{ table: string; column: string; ddl: string }[]> {

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
+import { LOCKOUT_MINUTES } from "@/lib/credentials-constants";
 
 const FEATURES = [
   "Tu cuenta de Mercado Libre, aislada y segura",
@@ -11,10 +12,43 @@ const FEATURES = [
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
+  const [credEmail, setCredEmail] = useState("");
+  const [credPassword, setCredPassword] = useState("");
+  const [credLoading, setCredLoading] = useState(false);
+  const [credError, setCredError] = useState("");
 
   function handleSignIn() {
     setLoading(true);
     signIn("google", { callbackUrl: "/" });
+  }
+
+  async function handleCredentialsSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    setCredError("");
+    if (!credEmail.trim() || !credPassword) {
+      setCredError("Completá email y contraseña.");
+      return;
+    }
+    setCredLoading(true);
+    try {
+      // redirect:false para poder mostrar el error acá mismo en vez de
+      // depender del ?error= que NextAuth agrega a la URL de vuelta.
+      const res = await signIn("credentials", {
+        email: credEmail.trim().toLowerCase(),
+        password: credPassword,
+        redirect: false,
+      });
+      if (res?.error) {
+        setCredError(
+          `Email o contraseña incorrectos. Si fallaste varias veces seguidas, la cuenta queda bloqueada ` +
+          `${LOCKOUT_MINUTES} minutos por seguridad.`
+        );
+        return;
+      }
+      window.location.href = "/";
+    } finally {
+      setCredLoading(false);
+    }
   }
 
   return (
@@ -69,6 +103,35 @@ export default function LoginPage() {
           <span>{loading ? "Conectando…" : "Continuar con Google"}</span>
         </button>
 
+        <div className="login-divider"><span>o</span></div>
+
+        <form onSubmit={handleCredentialsSignIn} noValidate style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", width: "100%" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: "left" }}>
+            <label htmlFor="cred-email" className="field-hint" style={{ margin: 0 }}>Email</label>
+            <input
+              id="cred-email"
+              type="email"
+              autoComplete="email"
+              value={credEmail}
+              onChange={(e) => { setCredEmail(e.target.value); if (credError) setCredError(""); }}
+            />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: "left" }}>
+            <label htmlFor="cred-password" className="field-hint" style={{ margin: 0 }}>Contraseña</label>
+            <input
+              id="cred-password"
+              type="password"
+              autoComplete="current-password"
+              value={credPassword}
+              onChange={(e) => { setCredPassword(e.target.value); if (credError) setCredError(""); }}
+            />
+          </div>
+          {credError && <p className="field-error" role="alert" style={{ textAlign: "left" }}>{credError}</p>}
+          <button type="submit" className="btn btn-secondary" disabled={credLoading} aria-busy={credLoading || undefined}>
+            {credLoading ? "Entrando…" : "Entrar con email y contraseña"}
+          </button>
+        </form>
+
         <ul className="login-features">
           {FEATURES.map((feature) => (
             <li key={feature}>
@@ -89,8 +152,8 @@ export default function LoginPage() {
       </div>
 
       <p className="login-footnote">
-        ¿Sos cliente y todavía no tenés cuenta? Pedile a tu administrador que te dé de alta con este mismo email de
-        Google.
+        ¿Sos cliente y todavía no tenés cuenta? Pedile a tu administrador que te dé de alta, o que te mande el link
+        para poner tu contraseña si no usás Google.
       </p>
     </div>
   );

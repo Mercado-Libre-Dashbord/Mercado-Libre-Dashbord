@@ -25,6 +25,13 @@ export interface ScopeContext {
    * usuario: la app de la billetera se identifica con una clave por cuenta.
    * Ver la política `accounts_select` en db/postgres/schema.sql. */
   loyaltyKeyHash?: string | null;
+  /** Email candidato durante un intento de login por contraseña, ANTES de
+   * verificar que la contraseña es correcta. Deja ver esa única fila de
+   * credential_users — no implica que el login haya sido exitoso. */
+  credentialLookupEmail?: string | null;
+  /** Hash del token de una invitación de login por contraseña, para poder
+   * consultarla/consumirla sin tener todavía una sesión. */
+  credentialInviteHash?: string | null;
 }
 
 /**
@@ -43,6 +50,8 @@ export async function withScope<T>(ctx: ScopeContext, fn: (client: PoolClient) =
     await client.query("SELECT set_config('app.is_admin', $1, true)", [ctx.isAdmin ? "true" : "false"]);
     await client.query("SELECT set_config('app.current_user_email', $1, true)", [ctx.userEmail ?? ""]);
     await client.query("SELECT set_config('app.loyalty_key_hash', $1, true)", [ctx.loyaltyKeyHash ?? ""]);
+    await client.query("SELECT set_config('app.credential_lookup_email', $1, true)", [ctx.credentialLookupEmail ?? ""]);
+    await client.query("SELECT set_config('app.credential_invite_hash', $1, true)", [ctx.credentialInviteHash ?? ""]);
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
