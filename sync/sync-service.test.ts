@@ -297,7 +297,7 @@ describe("backfillMissingProducts", () => {
       },
     ]);
 
-    await withScope({ accountId: account.id }, async (client) => {
+    const saved = await withScope({ accountId: account.id }, async (client) => {
       // Ficha mínima de una corrida anterior: título = id, todo lo demás null.
       await client.query(
         `INSERT INTO products (account_id, id, title, current_price, stock, updated_at) VALUES ($1,'MLA555','MLA555',0,0,now())`,
@@ -314,6 +314,8 @@ describe("backfillMissingProducts", () => {
       );
       return backfillMissingProducts(client, account.id, "SELLER1");
     });
+
+    expect(saved).toBe(1);
 
     const row = await withScope({ accountId: account.id }, async (client) => {
       const r = await client.query(

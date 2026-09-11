@@ -143,6 +143,19 @@ export default function ProductosPage() {
     }
   }
 
+  /** PATCH /api/products, compartido entre saveCost y saveThreshold — evita
+   * que el chequeo de res.ok se termine escribiendo dos veces y, la próxima
+   * vez que haga falta ajustarlo, arreglándolo en una sola de las dos. */
+  async function patchProduct(body: Record<string, unknown>): Promise<{ ok: boolean; data: any }> {
+    const res = await fetch("/api/products", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data };
+  }
+
   async function saveCost(productId: string) {
     const draft = editing[productId] ?? "";
     const cost = Number(draft);
@@ -153,13 +166,8 @@ export default function ProductosPage() {
     setErrors((prev) => ({ ...prev, [productId]: "" }));
     setSavingId(productId);
     try {
-      const res = await fetch("/api/products", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, cost }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+      const { ok, data } = await patchProduct({ productId, cost });
+      if (!ok) {
         setErrors((prev) => ({ ...prev, [productId]: data.error ?? "No se pudo guardar el costo." }));
         return;
       }
@@ -185,18 +193,14 @@ export default function ProductosPage() {
     setThresholdErrors((prev) => ({ ...prev, [productId]: "" }));
     setThresholdSavingId(productId);
     try {
-      const res = await fetch("/api/products", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, lowStockThreshold }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      // Esta pantalla siempre manda lowStockThreshold solo (nunca junto con
+      // cost), así que del lado del servidor un problema acá siempre vuelve
+      // como error duro (503), nunca como el "warning" de éxito parcial que
+      // existe para cuando alguien manda los dos campos juntos.
+      const { ok, data } = await patchProduct({ productId, lowStockThreshold });
+      if (!ok) {
         setThresholdErrors((prev) => ({ ...prev, [productId]: data.error ?? "No se pudo guardar la alerta." }));
         return;
-      }
-      if (data.warning) {
-        setThresholdErrors((prev) => ({ ...prev, [productId]: data.warning }));
       }
       setThresholdEditing((prev) => {
         const next = { ...prev };
