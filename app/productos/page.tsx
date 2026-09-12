@@ -136,10 +136,11 @@ function sortProducts(products: Product[], mode: SortMode): Product[] {
 
 /** Filtro por "vendido en los últimos X días" — en días de calendario, no
  * mes/semestre exactos: alcanza para priorizar carga de costos, no es un
- * cálculo financiero. `lastFullMonth` es distinto a propósito: no es una
- * ventana relativa a hoy, es el mes calendario ya cerrado (por ej. agosto
- * entero), para contrastar contra un período con números ya definitivos. */
-type SoldWithinMode = "all" | "week" | "month" | "semester" | "lastFullMonth";
+ * cálculo financiero. `lastFullMonth` y `custom` son distintos a propósito:
+ * no son una ventana relativa a hoy, sino un rango de fechas fijo (el mes
+ * calendario ya cerrado, o uno elegido a mano), para contrastar contra un
+ * período con números ya definitivos. */
+type SoldWithinMode = "all" | "week" | "month" | "semester" | "lastFullMonth" | "custom";
 
 const SOLD_WITHIN_LABELS: Record<SoldWithinMode, string> = {
   all: "Todos",
@@ -147,6 +148,7 @@ const SOLD_WITHIN_LABELS: Record<SoldWithinMode, string> = {
   month: "Último mes",
   semester: "Último semestre",
   lastFullMonth: "Último mes completo (cerrado)",
+  custom: "Rango de fechas personalizado",
 };
 
 const SOLD_WITHIN_DAYS: Record<"week" | "month" | "semester", number> = {
@@ -172,8 +174,20 @@ function lastFullMonthLabel(now = new Date()): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function filterProductsSoldWithin(products: Product[], mode: SoldWithinMode): Product[] {
+function filterProductsSoldWithin(
+  products: Product[],
+  mode: SoldWithinMode,
+  customRange?: { from: string; to: string }
+): Product[] {
   if (mode === "all") return products;
+  if (mode === "custom") {
+    // Sin las dos fechas todavía no hay nada que acotar: se muestra el
+    // catálogo entero hasta que el vendedor termine de elegir el rango.
+    if (!customRange) return products;
+    // Igual que lastFullMonth: `unitsSold` ya viene acotado a ESE rango
+    // (load() lo pide con from/to), no lastSaleDate.
+    return products.filter((p) => p.unitsSold > 0);
+  }
   if (mode === "lastFullMonth") {
     // Acá `unitsSold` ya viene acotado a ese mes (load() lo pide con
     // from/to) — no lastSaleDate, que sería la última venta de SIEMPRE y
@@ -188,20 +202,33 @@ export default function ProductosPage() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [soldWithin, setSoldWithin] = useState<SoldWithinMode>("all");
+  // Rango de fechas para "Rango personalizado" — se pide solo cuando las dos
+  // puntas están elegidas (ver filterProductsSoldWithin y load()).
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
   const [loadError, setLoadError] = useState("");
 
-  // En qué moneda se está cargando el costo ahora mismo — es una sola
-  // elección para toda la pantalla (no por fila): el vendedor suele cargar
-  // varios costos seguidos en la misma moneda, así que no tiene sentido
-  // hacerlo elegir de nuevo en cada producto. El tipo de cambio se acuerda
+  // En qué moneda se carga el costo de CADA producto — por fila, no global:
+  // un vendedor con costos mixtos (algunos proveedores facturan en dólares,
+  // otros en pesos) necesita poder alternar producto por producto sin que
+  // elegir uno cambie todos los demás. Sin entrada = ARS (el caso más común).
+  // El tipo de cambio en cambio sí es uno solo, compartido, y se acuerda
   // entre visitas (localStorage) para no tener que volver a escribirlo cada
   // vez que vuelve a esta pantalla el mismo día.
-  const [costCurrency, setCostCurrency] = useState<"ARS" | "USD">("ARS");
+  const [costCurrencyByProduct, setCostCurrencyByProduct] = useState<Record<string, "ARS" | "USD">>({});
   const [exchangeRate, setExchangeRate] = useState("");
+
+  function getCostCurrency(productId: string): "ARS" | "USD" {
+    return costCurrencyByProduct[productId] ?? "ARS";
+  }
+
+  function toggleCostCurrency(productId: string) {
+    setCostCurrencyByProduct((prev) => ({ ...prev, [productId]: getCostCurrency(productId) === "USD" ? "ARS" : "USD" }));
+  }
 
   useEffect(() => {
     try {
@@ -236,10 +263,16 @@ export default function ProductosPage() {
 
   function load() {
     setLoadError("");
-    // "Último mes completo" necesita que Vendidas/Beneficio vengan acotados
-    // a ESE mes, no a todo el historial — si no, un producto que también
-    // vendió después de agosto mostraría números mezclados con septiembre.
-    const query = soldWithin === "lastFullMonth" ? `?${new URLSearchParams(lastFullMonthRange())}` : "";
+    // "Último mes completo" y "Rango personalizado" necesitan que
+    // Vendidas/Beneficio vengan acotados a ESE período, no a todo el
+    // historial — si no, un producto que también vendió después mostraría
+    // números mezclados con ventas de otro momento.
+    let query = "";
+    if (soldWithin === "lastFullMonth") {
+      query = `?${new URLSearchParams(lastFullMonthRange())}`;
+    } else if (soldWithin === "custom" && customFrom && customTo) {
+      query = `?${new URLSearchParams({ from: customFrom, to: customTo })}`;
+    }
     fetch(`/api/products${query}`)
       .then(async (r) => {
         if (r.status === 401) { setNoAccount(true); return; }
@@ -254,10 +287,11 @@ export default function ProductosPage() {
       });
   }
 
-  // Se vuelve a pedir cada vez que cambia el filtro de período: es la única
-  // forma de que "Último mes completo" traiga los números acotados a ese mes
-  // en vez de a todo el historial.
-  useEffect(load, [soldWithin]);
+  // Se vuelve a pedir cada vez que cambia el filtro de período (o las puntas
+  // del rango personalizado): es la única forma de que "Último mes completo"
+  // y "Rango personalizado" traigan los números acotados a ese período en vez
+  // de a todo el historial.
+  useEffect(load, [soldWithin, customFrom, customTo]);
 
   if (noAccount) {
     return (
@@ -330,12 +364,12 @@ export default function ProductosPage() {
       return;
     }
     // El costo siempre se guarda en pesos (así calculan el margen todas las
-    // ventas, en ARS) — si se está cargando en dólares, se convierte acá,
-    // antes de mandarlo, con el tipo de cambio puesto arriba. La
-    // sincronización con Mercado Libre no se entera de nada de esto: sigue
+    // ventas, en ARS) — si esta fila se está cargando en dólares, se
+    // convierte acá, antes de mandarlo, con el tipo de cambio puesto arriba.
+    // La sincronización con Mercado Libre no se entera de nada de esto: sigue
     // viendo un costo en pesos, como siempre.
     let cost = rawCost;
-    if (costCurrency === "USD") {
+    if (getCostCurrency(productId) === "USD") {
       const rate = Number(exchangeRate);
       if (exchangeRate.trim() === "" || Number.isNaN(rate) || rate <= 0) {
         setErrors((prev) => ({ ...prev, [productId]: "Ingresá el tipo de cambio arriba antes de guardar en dólares." }));
@@ -393,7 +427,8 @@ export default function ProductosPage() {
     }
   }
 
-  const filteredProducts = products ? filterProductsSoldWithin(products, soldWithin) : null;
+  const customRange = customFrom && customTo ? { from: customFrom, to: customTo } : undefined;
+  const filteredProducts = products ? filterProductsSoldWithin(products, soldWithin, customRange) : null;
   const sortedProducts = filteredProducts ? sortProducts(filteredProducts, sortMode) : null;
 
   return (
@@ -435,46 +470,61 @@ export default function ProductosPage() {
                 <option key={mode} value={mode}>{SOLD_WITHIN_LABELS[mode]}</option>
               ))}
             </select>
+            {soldWithin === "custom" && (
+              <>
+                <label htmlFor="custom-from" className="field-hint" style={{ margin: 0 }}>
+                  Desde
+                </label>
+                <input
+                  id="custom-from"
+                  type="date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  style={{ padding: "5px 6px" }}
+                />
+                <label htmlFor="custom-to" className="field-hint" style={{ margin: 0 }}>
+                  Hasta
+                </label>
+                <input
+                  id="custom-to"
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  style={{ padding: "5px 6px" }}
+                />
+              </>
+            )}
             <span className="field-hint" style={{ margin: 0 }}>
               {soldWithin === "lastFullMonth"
                 ? `Vendidas y beneficio de ${lastFullMonthLabel()} solamente (mes ya cerrado, números definitivos).`
+                : soldWithin === "custom"
+                ? customFrom && customTo
+                  ? `Vendidas y beneficio del ${new Date(`${customFrom}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC" })} al ${new Date(`${customTo}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC" })} solamente.`
+                  : "Elegí las dos fechas para acotar Vendidas y Beneficio a ese rango exacto."
                 : "Con un catálogo grande, priorizar por lo que más vende hace rendir más la carga de costos."}
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
-            <label htmlFor="cost-currency" className="field-hint" style={{ margin: 0 }}>
-              Cargar costos en
+            <label htmlFor="exchange-rate" className="field-hint" style={{ margin: 0 }}>
+              Tipo de cambio (ARS por US$)
             </label>
-            <select
-              id="cost-currency"
-              value={costCurrency}
-              onChange={(e) => setCostCurrency(e.target.value as "ARS" | "USD")}
-              style={{ padding: "6px 8px" }}
-            >
-              <option value="ARS">Pesos (ARS)</option>
-              <option value="USD">Dólares (USD)</option>
-            </select>
-            {costCurrency === "USD" && (
-              <>
-                <label htmlFor="exchange-rate" className="field-hint" style={{ margin: 0 }}>
-                  Tipo de cambio (ARS por US$)
-                </label>
-                <input
-                  id="exchange-rate"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  placeholder="Ej: 1450"
-                  value={exchangeRate}
-                  onChange={(e) => updateExchangeRate(e.target.value)}
-                  style={{ width: 90, padding: "6px 8px" }}
-                />
-                <span className="field-hint" style={{ margin: 0 }}>
-                  Convertimos a pesos con este tipo de cambio al guardar, para que el margen cierre igual que el resto.
-                </span>
-              </>
-            )}
+            <input
+              id="exchange-rate"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="Ej: 1450"
+              value={exchangeRate}
+              onChange={(e) => updateExchangeRate(e.target.value)}
+              style={{ width: 90, padding: "6px 8px" }}
+            />
+            <span className="field-hint" style={{ margin: 0 }}>
+              Para cargar un costo en dólares, tocá el botón "ARS"/"USD" al lado del costo de ese producto — lo
+              convertimos a pesos con este tipo de cambio al guardar, para que el margen cierre igual que el resto.
+            </span>
           </div>
         </>
       )}
@@ -592,8 +642,8 @@ export default function ProductosPage() {
                           type="number"
                           min="0"
                           inputMode="decimal"
-                          placeholder={costCurrency === "USD" ? "Costo US$" : "Costo"}
-                          aria-label={`Nuevo costo para ${p.title}${costCurrency === "USD" ? ", en dólares" : ""}`}
+                          placeholder={getCostCurrency(p.id) === "USD" ? "Costo US$" : "Costo"}
+                          aria-label={`Nuevo costo para ${p.title}${getCostCurrency(p.id) === "USD" ? ", en dólares" : ""}`}
                           aria-invalid={errors[p.id] ? true : undefined}
                           value={editing[p.id] ?? ""}
                           onChange={(e) => {
@@ -602,11 +652,21 @@ export default function ProductosPage() {
                           }}
                           style={{ width: 76, padding: "6px" }}
                         />
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => toggleCostCurrency(p.id)}
+                          title="Elegir en qué moneda cargar el costo de este producto"
+                          aria-label={`Moneda del costo para ${p.title}: ${getCostCurrency(p.id)}. Tocar para cambiar.`}
+                          style={{ padding: "5px 7px", fontSize: 12, fontWeight: 600 }}
+                        >
+                          {getCostCurrency(p.id)}
+                        </button>
                         <button className="btn btn-secondary btn-sm" onClick={() => saveCost(p.id)} disabled={savingId === p.id}>
                           {savingId === p.id ? "…" : "Guardar"}
                         </button>
                       </div>
-                      {costCurrency === "USD" && Number(editing[p.id]) > 0 && Number(exchangeRate) > 0 && (
+                      {getCostCurrency(p.id) === "USD" && Number(editing[p.id]) > 0 && Number(exchangeRate) > 0 && (
                         <p className="field-hint" style={{ margin: 0 }}>
                           ≈ {fmt(Number(editing[p.id]) * Number(exchangeRate))}
                         </p>
