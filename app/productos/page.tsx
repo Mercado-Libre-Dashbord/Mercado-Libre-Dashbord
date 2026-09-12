@@ -134,14 +134,67 @@ function sortProducts(products: Product[], mode: SortMode): Product[] {
   }
 }
 
+/** Filtro por "vendido en los últimos X días" — en días de calendario, no
+ * mes/semestre exactos: alcanza para priorizar carga de costos, no es un
+ * cálculo financiero. */
+type SoldWithinMode = "all" | "week" | "month" | "semester";
+
+const SOLD_WITHIN_LABELS: Record<SoldWithinMode, string> = {
+  all: "Todos",
+  week: "Última semana",
+  month: "Último mes",
+  semester: "Último semestre",
+};
+
+const SOLD_WITHIN_DAYS: Record<Exclude<SoldWithinMode, "all">, number> = {
+  week: 7,
+  month: 30,
+  semester: 182,
+};
+
+function filterProductsSoldWithin(products: Product[], mode: SoldWithinMode): Product[] {
+  if (mode === "all") return products;
+  const cutoff = Date.now() - SOLD_WITHIN_DAYS[mode] * 86400000;
+  return products.filter((p) => p.lastSaleDate !== null && new Date(p.lastSaleDate).getTime() >= cutoff);
+}
+
 export default function ProductosPage() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("name");
+  const [soldWithin, setSoldWithin] = useState<SoldWithinMode>("all");
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
   const [loadError, setLoadError] = useState("");
+
+  // En qué moneda se está cargando el costo ahora mismo — es una sola
+  // elección para toda la pantalla (no por fila): el vendedor suele cargar
+  // varios costos seguidos en la misma moneda, así que no tiene sentido
+  // hacerlo elegir de nuevo en cada producto. El tipo de cambio se acuerda
+  // entre visitas (localStorage) para no tener que volver a escribirlo cada
+  // vez que vuelve a esta pantalla el mismo día.
+  const [costCurrency, setCostCurrency] = useState<"ARS" | "USD">("ARS");
+  const [exchangeRate, setExchangeRate] = useState("");
+
+  useEffect(() => {
+    try {
+      const savedRate = localStorage.getItem("productos.exchangeRate");
+      if (savedRate) setExchangeRate(savedRate);
+    } catch {
+      // Modo privado o storage bloqueado: sin memoria entre visitas, no es
+      // motivo para romper la pantalla.
+    }
+  }, []);
+
+  function updateExchangeRate(value: string) {
+    setExchangeRate(value);
+    try {
+      localStorage.setItem("productos.exchangeRate", value);
+    } catch {
+      // Igual que arriba: si no se puede guardar, no pasa nada grave.
+    }
+  }
 
   // Edición de precio/stock que se escribe de vuelta a la publicación real en
   // Mercado Libre — separado a propósito de "editing" (que es el costo,
@@ -238,10 +291,24 @@ export default function ProductosPage() {
 
   async function saveCost(productId: string) {
     const draft = editing[productId] ?? "";
-    const cost = Number(draft);
-    if (draft.trim() === "" || Number.isNaN(cost) || cost < 0) {
+    const rawCost = Number(draft);
+    if (draft.trim() === "" || Number.isNaN(rawCost) || rawCost < 0) {
       setErrors((prev) => ({ ...prev, [productId]: "Ingresá un costo (≥ 0)." }));
       return;
+    }
+    // El costo siempre se guarda en pesos (así calculan el margen todas las
+    // ventas, en ARS) — si se está cargando en dólares, se convierte acá,
+    // antes de mandarlo, con el tipo de cambio puesto arriba. La
+    // sincronización con Mercado Libre no se entera de nada de esto: sigue
+    // viendo un costo en pesos, como siempre.
+    let cost = rawCost;
+    if (costCurrency === "USD") {
+      const rate = Number(exchangeRate);
+      if (exchangeRate.trim() === "" || Number.isNaN(rate) || rate <= 0) {
+        setErrors((prev) => ({ ...prev, [productId]: "Ingresá el tipo de cambio arriba antes de guardar en dólares." }));
+        return;
+      }
+      cost = rawCost * rate;
     }
     setErrors((prev) => ({ ...prev, [productId]: "" }));
     setSavingId(productId);
@@ -293,7 +360,8 @@ export default function ProductosPage() {
     }
   }
 
-  const sortedProducts = products ? sortProducts(products, sortMode) : null;
+  const filteredProducts = products ? filterProductsSoldWithin(products, soldWithin) : null;
+  const sortedProducts = filteredProducts ? sortProducts(filteredProducts, sortMode) : null;
 
   return (
     <div>
@@ -306,27 +374,84 @@ export default function ProductosPage() {
       {products && <NegativeMarginPanel products={products} />}
       {products && <LowStockPanel products={products} />}
       {products && products.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
-          <label htmlFor="sort-products" className="field-hint" style={{ margin: 0 }}>
-            Ordenar por
-          </label>
-          <select
-            id="sort-products"
-            value={sortMode}
-            onChange={(e) => setSortMode(e.target.value as SortMode)}
-            style={{ padding: "6px 8px" }}
-          >
-            {(Object.keys(SORT_LABELS) as SortMode[]).map((mode) => (
-              <option key={mode} value={mode}>{SORT_LABELS[mode]}</option>
-            ))}
-          </select>
-          <span className="field-hint" style={{ margin: 0 }}>
-            Con un catálogo grande, priorizar por lo que más vende hace rendir más la carga de costos.
-          </span>
-        </div>
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
+            <label htmlFor="sort-products" className="field-hint" style={{ margin: 0 }}>
+              Ordenar por
+            </label>
+            <select
+              id="sort-products"
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              style={{ padding: "6px 8px" }}
+            >
+              {(Object.keys(SORT_LABELS) as SortMode[]).map((mode) => (
+                <option key={mode} value={mode}>{SORT_LABELS[mode]}</option>
+              ))}
+            </select>
+            <label htmlFor="sold-within" className="field-hint" style={{ margin: 0 }}>
+              Vendidos en
+            </label>
+            <select
+              id="sold-within"
+              value={soldWithin}
+              onChange={(e) => setSoldWithin(e.target.value as SoldWithinMode)}
+              style={{ padding: "6px 8px" }}
+            >
+              {(Object.keys(SOLD_WITHIN_LABELS) as SoldWithinMode[]).map((mode) => (
+                <option key={mode} value={mode}>{SOLD_WITHIN_LABELS[mode]}</option>
+              ))}
+            </select>
+            <span className="field-hint" style={{ margin: 0 }}>
+              Con un catálogo grande, priorizar por lo que más vende hace rendir más la carga de costos.
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
+            <label htmlFor="cost-currency" className="field-hint" style={{ margin: 0 }}>
+              Cargar costos en
+            </label>
+            <select
+              id="cost-currency"
+              value={costCurrency}
+              onChange={(e) => setCostCurrency(e.target.value as "ARS" | "USD")}
+              style={{ padding: "6px 8px" }}
+            >
+              <option value="ARS">Pesos (ARS)</option>
+              <option value="USD">Dólares (USD)</option>
+            </select>
+            {costCurrency === "USD" && (
+              <>
+                <label htmlFor="exchange-rate" className="field-hint" style={{ margin: 0 }}>
+                  Tipo de cambio (ARS por US$)
+                </label>
+                <input
+                  id="exchange-rate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="Ej: 1450"
+                  value={exchangeRate}
+                  onChange={(e) => updateExchangeRate(e.target.value)}
+                  style={{ width: 90, padding: "6px 8px" }}
+                />
+                <span className="field-hint" style={{ margin: 0 }}>
+                  Convertimos a pesos con este tipo de cambio al guardar, para que el margen cierre igual que el resto.
+                </span>
+              </>
+            )}
+          </div>
+        </>
       )}
       {sortedProducts === null ? (
         <p className="empty-state">Cargando productos…</p>
+      ) : sortedProducts.length === 0 && products && products.length > 0 ? (
+        <div className="empty-state">
+          <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>
+            Ningún producto vendido en el período elegido.
+          </p>
+          <p style={{ margin: "var(--space-2) 0 0" }}>Probá con "Todos" o un período más largo en "Vendidos en".</p>
+        </div>
       ) : sortedProducts.length === 0 ? (
         <div className="empty-state">
           <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Todavía no hay productos sincronizados.</p>
@@ -432,8 +557,8 @@ export default function ProductosPage() {
                           type="number"
                           min="0"
                           inputMode="decimal"
-                          placeholder="Costo"
-                          aria-label={`Nuevo costo para ${p.title}`}
+                          placeholder={costCurrency === "USD" ? "Costo US$" : "Costo"}
+                          aria-label={`Nuevo costo para ${p.title}${costCurrency === "USD" ? ", en dólares" : ""}`}
                           aria-invalid={errors[p.id] ? true : undefined}
                           value={editing[p.id] ?? ""}
                           onChange={(e) => {
@@ -446,6 +571,11 @@ export default function ProductosPage() {
                           {savingId === p.id ? "…" : "Guardar"}
                         </button>
                       </div>
+                      {costCurrency === "USD" && Number(editing[p.id]) > 0 && Number(exchangeRate) > 0 && (
+                        <p className="field-hint" style={{ margin: 0 }}>
+                          ≈ {fmt(Number(editing[p.id]) * Number(exchangeRate))}
+                        </p>
+                      )}
                       {errors[p.id] && <p className="field-error">{errors[p.id]}</p>}
                     </div>
                   </td>
