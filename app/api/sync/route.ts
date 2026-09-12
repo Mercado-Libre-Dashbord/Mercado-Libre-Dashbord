@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
 import { syncProductsPage, syncOrders, syncAds, syncFullStock, syncBillingCharges, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
-import { appliesIva } from "@/db/accounts";
+import { appliesIva, setOrdersSyncedThrough } from "@/db/accounts";
 import { listOrdersPage } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
@@ -11,6 +11,21 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const HISTORY_START_DATE = "2020-01-01";
+
+/**
+ * Cuando una cuenta ya completó un sync entero (`orders_synced_through`
+ * guardado, ver migración 018), el próximo sync arranca acá atrás en vez de
+ * desde el arranque del historial — margen para agarrar altas o cambios de
+ * estado tardíos en órdenes recientes, sin tener que recorrer años enteros
+ * que `pendingOrderIds` va a descartar de todos modos porque ya están al día
+ * (esa función no vuelve a comparar el estado contra ML, solo mira si el
+ * código con el que se procesaron cambió).
+ */
+const ORDERS_INCREMENTAL_LOOKBACK_DAYS = 30;
+
+function addDaysStr(date: string, days: number): string {
+  return new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86400000).toISOString().slice(0, 10);
+}
 
 /**
  * Órdenes que mira cada llamada. Es una página entera de la API, pero solo se
@@ -55,7 +70,12 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as SyncBody;
   const productsDone = body.productsDone === true;
-  const ordersFrom = body.ordersFrom ?? HISTORY_START_DATE;
+  // Arranque de un sync nuevo (no la continuación de un lote en curso): usar
+  // el checkpoint de la cuenta si ya completó una vuelta entera alguna vez.
+  const freshOrdersFrom = account.ordersSyncedThrough
+    ? addDaysStr(account.ordersSyncedThrough, -ORDERS_INCREMENTAL_LOOKBACK_DAYS)
+    : HISTORY_START_DATE;
+  const ordersFrom = body.ordersFrom ?? (freshOrdersFrom > HISTORY_START_DATE ? freshOrdersFrom : HISTORY_START_DATE);
   const offsetInWindow = Math.max(0, Number(body.ordersOffsetInWindow ?? 0));
   const ordersStarted = body.ordersFrom !== undefined || offsetInWindow > 0;
 
@@ -88,6 +108,10 @@ export async function POST(request: NextRequest) {
           fullStockSynced = await syncFullStock(client, account.id);
           await recalculate(client, account.id, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
           billingChargesSynced = await syncBillingCharges(client, account.id);
+          // Recién ahora queda confirmado que todo el historial hasta hoy
+          // está al día: el próximo sync puede arrancar cerca de acá en vez
+          // de desde cero.
+          await setOrdersSyncedThrough(client, account.id, today);
         }
 
         return {
@@ -127,7 +151,7 @@ export async function POST(request: NextRequest) {
             productsDone: false,
           };
         }
-        return ordersPhase(productsSynced, HISTORY_START_DATE, 0);
+        return ordersPhase(productsSynced, ordersFrom, 0);
       }
 
       return ordersPhase(0, ordersFrom, offsetInWindow);

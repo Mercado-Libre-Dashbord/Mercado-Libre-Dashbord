@@ -22,6 +22,14 @@ export interface Account {
    * que se lo hayamos preguntado (ver migración 012). */
   taxConditionConfirmed: boolean;
   createdAt: string;
+  /**
+   * Hasta qué fecha ya se recorrió el historial completo de órdenes (ver
+   * migración 018). `null`/`undefined` si la cuenta todavía no completó un
+   * sync entero: el próximo sync arranca del historial completo, como
+   * siempre. Opcional (no requerido en el tipo) para no obligar a todos los
+   * mocks de test existentes a conocer este campo.
+   */
+  ordersSyncedThrough?: string | null;
 }
 
 /** Si corresponde calcular IVA para este régimen. Solo el Responsable
@@ -38,6 +46,7 @@ interface AccountRow {
   other_tax_rate?: number | string | null;
   tax_condition?: string | null;
   tax_condition_confirmed?: boolean | null;
+  orders_synced_through?: string | Date | null;
   created_at: string | Date;
 }
 
@@ -58,6 +67,9 @@ function mapRow(row: AccountRow): Account {
     // preguntar, así que se asume confirmada para no bloquear a nadie.
     taxConditionConfirmed: row.tax_condition_confirmed ?? true,
     createdAt: new Date(row.created_at).toISOString(),
+    // La columna llega por migración (018); sin ella, ningún sync tiene de
+    // dónde sacar un atajo y arranca del historial completo, como siempre.
+    ordersSyncedThrough: row.orders_synced_through ? new Date(row.orders_synced_through).toISOString().slice(0, 10) : null,
   };
 }
 
@@ -72,6 +84,7 @@ export async function createAccount(db: QueryExecutor, name: string, ownerEmail:
   return {
     id, name, ownerEmail: normalizedEmail, mlSellerId: null,
     otherTaxRate: 0, taxCondition: "responsable_inscripto", taxConditionConfirmed: false, createdAt,
+    ordersSyncedThrough: null,
   };
 }
 
@@ -140,6 +153,17 @@ export async function setAccountMlSellerId(db: QueryExecutor, accountId: string,
 /** Guarda la alícuota de otros impuestos (IIBB, internos) de la cuenta. */
 export async function setAccountOtherTaxRate(db: QueryExecutor, accountId: string, rate: number): Promise<void> {
   await db.query(`UPDATE accounts SET other_tax_rate = $1 WHERE id = $2`, [rate, accountId]);
+}
+
+/**
+ * Marca hasta qué fecha ya se recorrió el historial completo de órdenes (ver
+ * migración 018) — el próximo sync usa esto para no tener que volver a
+ * recorrer años de historial que ya está al día. Si la migración todavía no
+ * se corrió, no hace nada (no bloquea el sync, solo no guarda el atajo).
+ */
+export async function setOrdersSyncedThrough(db: QueryExecutor, accountId: string, throughDate: string): Promise<void> {
+  if (!(await hasColumn(db, "accounts", "orders_synced_through"))) return;
+  await db.query(`UPDATE accounts SET orders_synced_through = $1 WHERE id = $2`, [throughDate, accountId]);
 }
 
 /** Guarda el régimen fiscal de la cuenta (decide si corresponde IVA) y lo

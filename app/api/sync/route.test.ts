@@ -13,12 +13,17 @@ vi.mock("@/sync/sync-service", () => ({
 }));
 vi.mock("@/mcp/tools", () => ({ listOrdersPage: vi.fn() }));
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
+vi.mock("@/db/accounts", async () => {
+  const actual = await vi.importActual<typeof import("@/db/accounts")>("@/db/accounts");
+  return { ...actual, setOrdersSyncedThrough: vi.fn() };
+});
 
 import { POST } from "./route";
 import { withScope } from "@/db/client";
 import { syncOrders, syncProductsPage, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
 import { listOrdersPage } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
+import { setOrdersSyncedThrough } from "@/db/accounts";
 
 /** El route lee `full` del body; los tests que no lo pasan mandan uno vacío. */
 function req(body: unknown = {}) {
@@ -93,6 +98,59 @@ describe("POST /api/sync", () => {
     await POST(req({ productsDone: true }));
 
     expect(vi.mocked(listOrdersPage).mock.calls[0][2]).toBe("2020-01-01");
+  });
+
+  it("con una cuenta que ya completó un sync entero, arranca cerca del checkpoint en vez de desde HISTORY_START", async () => {
+    // Una vez sincronizada, una orden vieja nunca se vuelve a comparar contra
+    // ML (pendingOrderIds solo mira sync_version) — así que recorrer TODO el
+    // historial en cada sync era trabajo desperdiciado. Con orders_synced_through
+    // guardado, el próximo sync arranca 30 días antes de ahí (margen para
+    // altas o cambios de estado tardíos), no desde 2020.
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({
+      id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto",
+      ordersSyncedThrough: "2026-08-15",
+    } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
+
+    await POST(req({ productsDone: true }));
+
+    expect(vi.mocked(listOrdersPage).mock.calls[0][2]).toBe("2026-07-16"); // 2026-08-15 menos 30 días
+  });
+
+  it("nunca arranca antes de HISTORY_START, aunque el checkpoint menos el margen caiga antes", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({
+      id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto",
+      ordersSyncedThrough: "2020-01-10",
+    } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
+
+    await POST(req({ productsDone: true }));
+
+    expect(vi.mocked(listOrdersPage).mock.calls[0][2]).toBe("2020-01-01");
+  });
+
+  it("guarda el checkpoint (hasta hoy) cuando termina de recorrer todo el historial pedido", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
+
+    await POST(req({ productsDone: true }));
+
+    expect(vi.mocked(setOrdersSyncedThrough)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(setOrdersSyncedThrough).mock.calls[0][1]).toBe("acc1");
+    expect(vi.mocked(setOrdersSyncedThrough).mock.calls[0][2]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("no guarda el checkpoint si todavía queda historial de órdenes por recorrer", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1"], nextFrom: "2020-04-01", nextOffsetInWindow: 0, done: false });
+
+    await POST(req({ productsDone: true }));
+
+    expect(vi.mocked(setOrdersSyncedThrough)).not.toHaveBeenCalled();
   });
 
   it("le pasa la fecha de hoy a listOrdersPage, no un total fijo de antemano", async () => {

@@ -96,6 +96,23 @@ describe("accounts", () => {
     expect(updated?.taxConditionConfirmed).toBe(true);
   });
 
+  it("a new account starts without orders_synced_through, and setOrdersSyncedThrough guarda el checkpoint", async () => {
+    // Sin esto, el próximo sync no tiene de dónde sacar el atajo y recorre
+    // el historial completo, como una cuenta que nunca sincronizó nada.
+    const { withScope } = await import("./client");
+    const { createAccount, setOrdersSyncedThrough, getAccountById } = await import("./accounts");
+    const email = `checkpoint.${nanoid(6)}@example.com`;
+    const account = await withScope({ isAdmin: true }, (client) => createAccount(client, "Cuenta con checkpoint", email));
+    expect(account.ordersSyncedThrough).toBeNull();
+
+    await withScope({ isAdmin: false, userEmail: email.toLowerCase() }, (client) =>
+      setOrdersSyncedThrough(client, account.id, "2026-08-15")
+    );
+
+    const updated = await withScope({ isAdmin: true }, (client) => getAccountById(client, account.id));
+    expect(updated?.ordersSyncedThrough).toBe("2026-08-15");
+  });
+
   it("an admin can edit the name and owner email of an account", async () => {
     const { withScope } = await import("./client");
     const { createAccount, updateAccountDetails } = await import("./accounts");

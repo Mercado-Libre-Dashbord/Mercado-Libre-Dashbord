@@ -80,6 +80,11 @@ CREATE TABLE IF NOT EXISTS accounts (
   tax_condition_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
   point_of_sale INTEGER,
   cuit TEXT,
+  -- Hasta qué fecha ya se recorrió el historial completo de órdenes. NULL en
+  -- una cuenta que nunca completó un sync entero (arranca del historial
+  -- completo, como siempre); una vez que se completa, el próximo sync puede
+  -- arrancar cerca de acá en vez de desde 2020 (ver migración 018).
+  orders_synced_through DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS other_tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0;
@@ -90,6 +95,7 @@ ALTER TABLE accounts ADD CONSTRAINT accounts_tax_condition_check
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tax_condition_confirmed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS point_of_sale INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS cuit TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS orders_synced_through DATE;
 
 CREATE TABLE IF NOT EXISTS products (
   account_id TEXT NOT NULL REFERENCES accounts(id),

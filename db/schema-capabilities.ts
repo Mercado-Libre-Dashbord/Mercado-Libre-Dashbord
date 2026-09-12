@@ -132,6 +132,11 @@ export const EXPECTED_COLUMNS: { table: string; column: string; ddl: string }[] 
     column: "email",
     ddl: "-- Correr db/postgres/migrations/016-login-credenciales.sql (login con email y contraseña).",
   },
+  {
+    table: "accounts",
+    column: "orders_synced_through",
+    ddl: "-- Correr db/postgres/migrations/018-orders-synced-through.sql (sync incremental de órdenes).",
+  },
 ];
 
 export async function missingMigrations(client: QueryExecutor): Promise<{ table: string; column: string; ddl: string }[]> {
