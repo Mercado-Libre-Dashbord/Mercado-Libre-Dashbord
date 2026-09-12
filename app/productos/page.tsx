@@ -24,6 +24,9 @@ interface Product {
   fullStockValue: number | null;
   lowStockThreshold: number | null;
   lowStock: boolean;
+  /** Última venta de este producto (de siempre, no del período elegido). Null
+   * si nunca vendió nada. */
+  lastSaleDate: string | null;
   /** Ganancia real por unidad de las ventas ya hechas (con la comisión,
    * envío e impuestos que se cobraron en cada caso) — null si todavía no
    * vendió nada, para no acusar pérdida sin ninguna venta real de fondo. */
@@ -95,8 +98,45 @@ function LowStockPanel({ products }: { products: Product[] }) {
   );
 }
 
+/**
+ * Con un catálogo de miles de productos, cargar costos en orden alfabético
+ * significa cargarlos todos antes de que el número de ganancia neta empiece
+ * a acercarse a la realidad. Ordenar por lo que más vende (o por lo que hace
+ * más que no vende) deja priorizar dónde cargar el costo primero rinde más.
+ */
+type SortMode = "name" | "mostSold" | "leastSold" | "recentSale" | "oldestSale";
+
+const SORT_LABELS: Record<SortMode, string> = {
+  name: "Nombre (A-Z)",
+  mostSold: "Más vendidos primero",
+  leastSold: "Menos vendidos primero",
+  recentSale: "Vendidos más recientemente primero",
+  oldestSale: "Hace más tiempo sin vender primero",
+};
+
+function sortProducts(products: Product[], mode: SortMode): Product[] {
+  const sorted = [...products];
+  switch (mode) {
+    case "mostSold":
+      return sorted.sort((a, b) => b.unitsSold - a.unitsSold);
+    case "leastSold":
+      return sorted.sort((a, b) => a.unitsSold - b.unitsSold);
+    case "recentSale":
+      // Los que nunca vendieron van al final: no hay fecha más "vieja" que
+      // no tener ninguna venta todavía.
+      return sorted.sort((a, b) => (b.lastSaleDate ?? "").localeCompare(a.lastSaleDate ?? ""));
+    case "oldestSale":
+      // Acá los que nunca vendieron van primero — son, en los hechos, los
+      // que hace más tiempo (siempre) que no se mueven.
+      return sorted.sort((a, b) => (a.lastSaleDate ?? "").localeCompare(b.lastSaleDate ?? ""));
+    default:
+      return sorted;
+  }
+}
+
 export default function ProductosPage() {
   const [products, setProducts] = useState<Product[] | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>("name");
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -253,6 +293,8 @@ export default function ProductosPage() {
     }
   }
 
+  const sortedProducts = products ? sortProducts(products, sortMode) : null;
+
   return (
     <div>
       <h1>Productos</h1>
@@ -263,9 +305,29 @@ export default function ProductosPage() {
       {loadError && <p className="field-error" role="alert" style={{ marginBottom: "var(--space-3)" }}>{loadError}</p>}
       {products && <NegativeMarginPanel products={products} />}
       {products && <LowStockPanel products={products} />}
-      {products === null ? (
+      {products && products.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
+          <label htmlFor="sort-products" className="field-hint" style={{ margin: 0 }}>
+            Ordenar por
+          </label>
+          <select
+            id="sort-products"
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as SortMode)}
+            style={{ padding: "6px 8px" }}
+          >
+            {(Object.keys(SORT_LABELS) as SortMode[]).map((mode) => (
+              <option key={mode} value={mode}>{SORT_LABELS[mode]}</option>
+            ))}
+          </select>
+          <span className="field-hint" style={{ margin: 0 }}>
+            Con un catálogo grande, priorizar por lo que más vende hace rendir más la carga de costos.
+          </span>
+        </div>
+      )}
+      {sortedProducts === null ? (
         <p className="empty-state">Cargando productos…</p>
-      ) : products.length === 0 ? (
+      ) : sortedProducts.length === 0 ? (
         <div className="empty-state">
           <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>Todavía no hay productos sincronizados.</p>
           <p style={{ margin: "var(--space-2) 0 var(--space-3)" }}>
@@ -285,6 +347,7 @@ export default function ProductosPage() {
                 <th className="num">Costo</th>
                 <th className="num">Margen</th>
                 <th className="num">Vendidas</th>
+                <th>Última venta</th>
                 <th className="num">Beneficio</th>
                 <th>Actualizar costo</th>
                 <th>Alerta stock</th>
@@ -292,7 +355,7 @@ export default function ProductosPage() {
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => (
+              {sortedProducts.map((p) => (
                 <tr key={p.id}>
                   <td>
                     <span className="cell-product">
@@ -349,6 +412,7 @@ export default function ProductosPage() {
                   </td>
                   <td className="num">{p.marginPct === null ? "-" : `${(p.marginPct * 100).toFixed(1)}%`}</td>
                   <td className="num">{p.unitsSold}</td>
+                  <td>{p.lastSaleDate ? new Date(p.lastSaleDate).toLocaleDateString("es-AR") : "Nunca"}</td>
                   <td className={`num ${p.negativeMargin ? "missing-cost" : ""}`}>
                     {p.totalProfit.toFixed(2)}
                     {p.negativeMargin && (

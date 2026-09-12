@@ -232,4 +232,22 @@ describe("GET /api/products", () => {
     expect(body.find((p: any) => p.id === "MLA2")).toMatchObject({ avgProfitPerUnit: 200, negativeMargin: false });
     expect(body.find((p: any) => p.id === "MLA3")).toMatchObject({ avgProfitPerUnit: null, negativeMargin: false });
   });
+
+  it("devuelve lastSaleDate como ISO, o null si nunca vendió — para poder ordenar por antigüedad de venta", async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes("information_schema.columns")) return { rows: [] };
+      return {
+        rows: [
+          { id: "MLA1", title: "Con ventas", sku: null, currentPrice: 1000, stock: 10, currentCost: 500, unitsSold: 3, totalProfit: 300, lastSaleDate: "2026-08-01T12:00:00.000Z" },
+          { id: "MLA2", title: "Nunca vendió", sku: null, currentPrice: 1000, stock: 10, currentCost: 500, unitsSold: 0, totalProfit: 0, lastSaleDate: null },
+        ],
+      };
+    });
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query }));
+
+    const body = await (await GET({ nextUrl: new URL("http://x/api/products") } as any)).json();
+
+    expect(body.find((p: any) => p.id === "MLA1").lastSaleDate).toBe("2026-08-01T12:00:00.000Z");
+    expect(body.find((p: any) => p.id === "MLA2").lastSaleDate).toBeNull();
+  });
 });

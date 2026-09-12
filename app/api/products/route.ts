@@ -38,7 +38,12 @@ export async function GET(request: NextRequest) {
                   AND ${revenueStatusFilter()}) as "unitsSold",
               (SELECT COALESCE(SUM(oi.net_profit), 0) FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
                 WHERE oi.account_id = p.account_id AND oi.product_id = p.id AND o.date_created::date BETWEEN $1::date AND $2::date
-                  AND ${revenueStatusFilter()}) as "totalProfit"
+                  AND ${revenueStatusFilter()}) as "totalProfit",
+              -- Última venta de siempre, sin acotar por from/to: es una señal
+              -- de "hace cuánto que no se mueve" independiente del período
+              -- elegido arriba, para poder ordenar el catálogo por eso.
+              (SELECT MAX(o.date_created) FROM order_items oi JOIN orders o ON o.account_id = oi.account_id AND o.id = oi.order_id
+                WHERE oi.account_id = p.account_id AND oi.product_id = p.id AND ${revenueStatusFilter()}) as "lastSaleDate"
          FROM products p WHERE p.account_id = $3 ORDER BY p.title`,
       [from, to, account.id]
     );
@@ -57,6 +62,7 @@ export async function GET(request: NextRequest) {
       currentCost: number | null;
       unitsSold: number;
       totalProfit: number;
+      lastSaleDate: string | Date | null;
     }[];
 
     // El margen descuenta la alícuota de otros impuestos de la CUENTA. Antes
@@ -91,6 +97,7 @@ export async function GET(request: NextRequest) {
         ...r,
         effectiveStock,
         fullStockValue,
+        lastSaleDate: r.lastSaleDate ? new Date(r.lastSaleDate).toISOString() : null,
         marginPct:
           r.currentCost !== null && r.currentPrice > 0
             ? (r.currentPrice * (1 - account.otherTaxRate) - r.currentCost) / r.currentPrice
