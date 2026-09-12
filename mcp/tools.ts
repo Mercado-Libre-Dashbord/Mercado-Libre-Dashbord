@@ -48,19 +48,31 @@ export async function listProducts(accountId: string, sellerId: string): Promise
   // publicaciones pausadas o cerradas cuyas órdenes viejas siguen
   // apareciendo en /orders — si no las traemos acá, esos product_id nunca
   // entran a la tabla products y su costo no se puede cargar nunca.
+  // Paginación por `offset` clásica: ML la corta con un 400 ("Invalid limit
+  // and offset values") en cuanto offset+limit pasa de 1000, sin importar
+  // cuántas publicaciones tenga realmente el vendedor. Un catálogo grande
+  // (con historial de pausadas/cerradas incluido) supera eso fácil, y sin
+  // esto el sync entero fallaba para esas cuentas. `search_type=scan` es el
+  // modo que Mercado Libre da para recorrer más de 1000 resultados: la
+  // primera página se pide con los filtros de siempre, y las siguientes solo
+  // con el `scroll_id` que devuelve cada respuesta, hasta que no traiga más.
   const SEARCH_PAGE_SIZE = 50;
   const ids: string[] = [];
-  let offset = 0;
-  while (true) {
-    const search = await mlFetch(
-      `/users/${sellerId}/items/search?status=active,paused,closed&limit=${SEARCH_PAGE_SIZE}&offset=${offset}`,
-      token
-    );
-    const page: string[] = search.results;
-    ids.push(...page);
-    offset += page.length;
-    const total = search.paging?.total ?? offset;
-    if (page.length === 0 || offset >= total) break;
+  let scrollId: string | undefined;
+  // Techo de seguridad: si ML alguna vez devolviera el mismo scroll_id sin
+  // avanzar, esto corta el sync en vez de colgarlo pidiendo páginas para
+  // siempre (con 50 por página, 2000 páginas son 100.000 publicaciones).
+  const MAX_SCAN_PAGES = 2000;
+  for (let page = 0; page < MAX_SCAN_PAGES; page++) {
+    const url = scrollId
+      ? `/users/${sellerId}/items/search?search_type=scan&scroll_id=${encodeURIComponent(scrollId)}`
+      : `/users/${sellerId}/items/search?status=active,paused,closed&search_type=scan&limit=${SEARCH_PAGE_SIZE}`;
+    const search = await mlFetch(url, token);
+    const results: string[] = search.results;
+    if (results.length === 0) break;
+    ids.push(...results);
+    scrollId = search.scroll_id;
+    if (!scrollId) break;
   }
   if (ids.length === 0) return [];
 

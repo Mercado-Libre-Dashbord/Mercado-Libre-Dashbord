@@ -142,7 +142,7 @@ describe("listProducts", () => {
     expect(vi.mocked(mlFetch).mock.calls[2][0]).toContain(ids.slice(20).join(","));
   });
 
-  it("pages through items/search when there are more results than one page", async () => {
+  it("pages through items/search with scroll_id when there are more results than one page", async () => {
     const firstPageIds = Array.from({ length: 50 }, (_, i) => `MLA${i}`);
     const secondPageIds = ["MLA50", "MLA51"];
     const allIds = [...firstPageIds, ...secondPageIds];
@@ -150,8 +150,9 @@ describe("listProducts", () => {
       ids.map((id) => ({ body: { id, title: id, price: 1, available_quantity: 1, permalink: "" } }));
 
     vi.mocked(mlFetch)
-      .mockResolvedValueOnce({ results: firstPageIds, paging: { total: 52 } })
-      .mockResolvedValueOnce({ results: secondPageIds, paging: { total: 52 } })
+      .mockResolvedValueOnce({ results: firstPageIds, scroll_id: "scroll-1" })
+      .mockResolvedValueOnce({ results: secondPageIds, scroll_id: "scroll-1" })
+      .mockResolvedValueOnce({ results: [] })
       .mockResolvedValueOnce(detailsFor(allIds.slice(0, 20)))
       .mockResolvedValueOnce(detailsFor(allIds.slice(20, 40)))
       .mockResolvedValueOnce(detailsFor(allIds.slice(40)));
@@ -159,8 +160,47 @@ describe("listProducts", () => {
     const products = await listProducts("acc1", "123");
 
     expect(products).toHaveLength(52);
-    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("offset=0");
-    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("offset=50");
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("search_type=scan");
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).not.toContain("scroll_id");
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("scroll_id=scroll-1");
+    expect(vi.mocked(mlFetch).mock.calls[2][0]).toContain("scroll_id=scroll-1");
+  });
+
+  it("stops as soon as a page comes back without a scroll_id, even mid-catalog", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: ["MLA1"] }) // sin scroll_id: no hay más para pedir
+      .mockResolvedValueOnce([{ body: { id: "MLA1", title: "A", price: 1, available_quantity: 1, permalink: "" } }]);
+
+    const products = await listProducts("acc1", "123");
+
+    expect(products).toHaveLength(1);
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(2);
+  });
+
+  it("no se corta con el límite clásico de offset+limit<=1000 de ML: un catálogo grande sigue paginando por scroll_id", async () => {
+    // Reproduce el caso real: una cuenta con más de 1000 publicaciones entre
+    // activas/pausadas/cerradas. Con offset esto tiraba 400 "Invalid limit
+    // and offset values" apenas offset pasaba de 1000 y el sync se caía
+    // entero; con scroll_id no hay ese techo.
+    const TOTAL_ITEMS = 1050;
+    const allIds = Array.from({ length: TOTAL_ITEMS }, (_, i) => `MLA${i}`);
+    const PAGE_SIZE = 50;
+    for (let i = 0; i < TOTAL_ITEMS; i += PAGE_SIZE) {
+      const page = allIds.slice(i, i + PAGE_SIZE);
+      const isLast = i + PAGE_SIZE >= TOTAL_ITEMS;
+      vi.mocked(mlFetch).mockResolvedValueOnce({ results: page, scroll_id: isLast ? undefined : "scroll-x" });
+    }
+    for (let i = 0; i < TOTAL_ITEMS; i += 20) {
+      vi.mocked(mlFetch).mockResolvedValueOnce(
+        allIds.slice(i, i + 20).map((id) => ({ body: { id, title: id, price: 1, available_quantity: 1, permalink: "" } }))
+      );
+    }
+
+    const products = await listProducts("acc1", "123");
+
+    expect(products).toHaveLength(TOTAL_ITEMS);
+    const searchCalls = vi.mocked(mlFetch).mock.calls.map((c) => String(c[0])).filter((u) => u.includes("items/search"));
+    expect(searchCalls.every((u) => !u.includes("offset="))).toBe(true);
   });
 });
 
