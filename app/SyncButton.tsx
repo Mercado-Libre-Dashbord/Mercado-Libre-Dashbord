@@ -16,6 +16,8 @@ interface SyncResponse {
   ordersFrom?: string;
   /** Desde qué orden, dentro de esa ventana, seguir. */
   ordersOffsetInWindow?: number;
+  /** Si el cierre (ads, stock de Full, recálculo, facturación) ya corrió. */
+  finalized?: boolean;
   error?: string;
 }
 
@@ -24,6 +26,7 @@ interface CallBody {
   productsDone?: boolean;
   ordersFrom?: string;
   ordersOffsetInWindow?: number;
+  finalize?: boolean;
 }
 
 export function SyncButton() {
@@ -52,6 +55,17 @@ export function SyncButton() {
       throw new Error("Se cortó la conexión con el servidor (señal débil o tardó demasiado). Probá de nuevo.");
     }
 
+    // Un 504 es Vercel cortando la función por tardar demasiado — con un
+    // lote puntual más pesado que lo normal (ej. una cuenta con mucho volumen
+    // en Full) esto pasó una vez en producción y el reintento simplemente
+    // funcionó, sin perder nada: el estado (scroll_id / fecha+offset) sigue
+    // valiendo. Se reintenta igual que un corte de red en vez de mostrar un
+    // error de una.
+    if (res.status === 504 && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      return call(body, attempt + 1);
+    }
+
     let data: SyncResponse;
     try {
       data = (await res.json()) as SyncResponse;
@@ -74,7 +88,9 @@ export function SyncButton() {
    * escaneando productos antes de que arranque el progreso de órdenes — y el
    * historial de órdenes va por ventanas de fecha (no un solo número de
    * offset), así que el progreso se muestra como cantidad procesada, no como
-   * fracción de un total.
+   * fracción de un total. El cierre (ads, stock de Full, recálculo,
+   * facturación) se pide en una llamada aparte, con su propio presupuesto de
+   * tiempo, recién cuando terminó de recorrer todo el historial de órdenes.
    */
   async function handleSync() {
     setStatus("syncing");
@@ -112,7 +128,19 @@ export function SyncButton() {
         }
 
         setProgress(`${totals.orders} órdenes sincronizadas…`);
-        if (data.done) break;
+        if (data.done) {
+          if (!data.finalized) {
+            // Todo el historial de órdenes ya está al día — falta solo el
+            // cierre (ads, stock de Full, recálculo, facturación), en su
+            // propia llamada para que no compita por tiempo con el lote que
+            // recién terminó.
+            setProgress("Cerrando sincronización…");
+            const closing = await call({ finalize: true });
+            totals.ads += closing.adsRowsSynced;
+            totals.billing += closing.billingChargesSynced ?? 0;
+          }
+          break;
+        }
 
         const nextFrom = data.ordersFrom ?? ordersFrom;
         const nextOffsetInWindow = data.ordersOffsetInWindow ?? ordersOffsetInWindow;

@@ -55,6 +55,8 @@ interface SyncBody {
   ordersFrom?: string;
   /** Desde qué orden, dentro de esa ventana, seguir. */
   ordersOffsetInWindow?: number;
+  /** Pide correr el cierre (ads, stock de Full, recálculo, facturación) en esta llamada. */
+  finalize?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -69,6 +71,7 @@ export async function POST(request: NextRequest) {
   const sellerId = account.mlSellerId;
 
   const body = (await request.json().catch(() => ({}))) as SyncBody;
+  const finalize = body.finalize === true;
   const productsDone = body.productsDone === true;
   // Arranque de un sync nuevo (no la continuación de un lote en curso): usar
   // el checkpoint de la cuenta si ya completó una vuelta entera alguna vez.
@@ -83,47 +86,62 @@ export async function POST(request: NextRequest) {
     const result = await withScope({ accountId: account.id }, async (client) => {
       const hasIva = await hasColumn(client, "order_items", "iva_applied");
 
+      // Publicidad, recálculo y facturación dependen de tener todas las
+      // órdenes cargadas, así que van al final — pero en su PROPIA llamada,
+      // con su propio presupuesto de 60s. Antes compartían la llamada con el
+      // último lote de órdenes: para una cuenta con mucho volumen (catálogo
+      // grande en Full, muchos años de Ads) esa combinación ocasionalmente se
+      // pasaba del techo de tiempo (pasó en producción), justo cuando ya no
+      // quedaba nada más por sincronizar.
+      const finalizePhase = async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const adsRowsSynced = await syncAds(client, account.id, sellerId, `${HISTORY_START_DATE}T00:00:00Z`);
+        // Antes del recálculo: le da nombre y foto a las publicaciones dadas
+        // de baja que se vendieron, así aparecen en Productos y se les puede
+        // cargar el costo.
+        await backfillMissingProducts(client, account.id, sellerId);
+        // Depende del catálogo ya sincronizado (necesita el inventory_id de
+        // cada producto), no de las órdenes.
+        const fullStockSynced = await syncFullStock(client, account.id);
+        await recalculate(client, account.id, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
+        const billingChargesSynced = await syncBillingCharges(client, account.id);
+        // Recién ahora queda confirmado que todo el historial hasta hoy está
+        // al día: el próximo sync puede arrancar cerca de acá en vez de
+        // desde cero.
+        await setOrdersSyncedThrough(client, account.id, today);
+
+        return {
+          done: true,
+          productsSynced: 0,
+          ordersSynced: 0,
+          adsRowsSynced,
+          billingChargesSynced,
+          fullStockSynced,
+          productsDone: true,
+          finalized: true,
+        };
+      };
+
+      if (finalize) return finalizePhase();
+
       const ordersPhase = async (productsSynced: number, from: string, offset: number) => {
         const today = new Date().toISOString().slice(0, 10);
         const page = await listOrdersPage(account.id, sellerId, from, today, offset, ORDERS_PER_BATCH);
         const pending = await pendingOrderIds(client, account.id, page.ids);
         const ordersSynced = await syncOrders(client, account.id, pending, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
 
-        const done = page.done;
-
-        // Publicidad, recálculo y facturación dependen de tener todas las
-        // órdenes cargadas, así que van al final, en el último lote.
-        let adsRowsSynced = 0;
-        let billingChargesSynced = 0;
-        let fullStockSynced = 0;
-        if (done) {
-          adsRowsSynced = await syncAds(client, account.id, sellerId, `${HISTORY_START_DATE}T00:00:00Z`);
-          // Antes del recálculo: le da nombre y foto a las publicaciones dadas
-          // de baja que se vendieron, así aparecen en Productos y se les puede
-          // cargar el costo.
-          await backfillMissingProducts(client, account.id, sellerId);
-          // Depende del catálogo ya sincronizado (necesita el inventory_id de
-          // cada producto), no de las órdenes — puede ir en cualquier momento
-          // del último lote.
-          fullStockSynced = await syncFullStock(client, account.id);
-          await recalculate(client, account.id, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
-          billingChargesSynced = await syncBillingCharges(client, account.id);
-          // Recién ahora queda confirmado que todo el historial hasta hoy
-          // está al día: el próximo sync puede arrancar cerca de acá en vez
-          // de desde cero.
-          await setOrdersSyncedThrough(client, account.id, today);
-        }
-
         return {
-          done,
+          done: page.done,
           productsSynced,
           ordersSynced,
-          adsRowsSynced,
-          billingChargesSynced,
-          fullStockSynced,
+          adsRowsSynced: 0,
+          billingChargesSynced: 0,
+          fullStockSynced: 0,
           productsDone: true,
           ordersFrom: page.nextFrom,
           ordersOffsetInWindow: page.nextOffsetInWindow,
+          // Todavía falta el cierre: el cliente tiene que pedirlo aparte.
+          finalized: page.done ? false : undefined,
         };
       };
 

@@ -46,6 +46,9 @@ describe("POST /api/sync", () => {
     vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
 
     await POST(req({ productsDone: true }));
+    // El cierre (donde corre recalculate) se pide en una llamada aparte, una
+    // vez que el historial de órdenes ya está al día.
+    await POST(req({ finalize: true }));
 
     expect(vi.mocked(syncOrders).mock.calls[0][5]).toBe(false);
     expect(vi.mocked(recalculate).mock.calls[0][4]).toBe(false);
@@ -131,12 +134,20 @@ describe("POST /api/sync", () => {
     expect(vi.mocked(listOrdersPage).mock.calls[0][2]).toBe("2020-01-01");
   });
 
-  it("guarda el checkpoint (hasta hoy) cuando termina de recorrer todo el historial pedido", async () => {
+  it("guarda el checkpoint (hasta hoy) cuando corre el cierre, no antes", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
     vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
 
-    await POST(req({ productsDone: true }));
+    const body = await (await POST(req({ productsDone: true }))).json();
+    expect(body).toMatchObject({ done: true, finalized: false });
+    expect(vi.mocked(setOrdersSyncedThrough)).not.toHaveBeenCalled();
+
+    // El cierre (donde se guarda el checkpoint) corre en su propia llamada,
+    // con su propio presupuesto de 60s — no compite por tiempo con el lote
+    // de órdenes que recién terminó (eso fue lo que se pasó del techo en
+    // producción con una cuenta de mucho volumen).
+    await POST(req({ finalize: true }));
 
     expect(vi.mocked(setOrdersSyncedThrough)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(setOrdersSyncedThrough).mock.calls[0][1]).toBe("acc1");
@@ -180,15 +191,23 @@ describe("POST /api/sync", () => {
     expect(vi.mocked(syncOrders).mock.calls[0][2]).toEqual(["3"]);
   });
 
-  it("finishes the run — ads, recalc and billing — on the last batch", async () => {
+  it("marks the order walk done but not finalized on the last batch, then finishes — ads, recalc and billing — on the finalize call", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
     vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1"], nextFrom: "9999-12-31", nextOffsetInWindow: 0, done: true });
     vi.mocked(pendingOrderIds).mockImplementation(async (_d: any, _a: any, ids: any) => ids);
 
     const body = await (await POST(req({ productsDone: true, ordersFrom: "2026-06-01", ordersOffsetInWindow: 40 }))).json();
+    expect(body).toMatchObject({ done: true, finalized: false });
+    expect(vi.mocked(backfillMissingProducts)).not.toHaveBeenCalled();
+    expect(vi.mocked(recalculate)).not.toHaveBeenCalled();
 
-    expect(body.done).toBe(true);
+    // El cierre (ads, backfill, stock de Full, recálculo, facturación) va en
+    // su propia llamada, con su propio presupuesto de 60s — así una cuenta
+    // de mucho volumen no se pasa del techo justo en el último paso.
+    const closingBody = await (await POST(req({ finalize: true }))).json();
+
+    expect(closingBody).toMatchObject({ done: true, finalized: true });
     // Le da nombre y foto a las publicaciones dadas de baja antes de recalcular:
     // si no corre, esas ventas siguen mostrándose como un id suelto.
     expect(vi.mocked(backfillMissingProducts)).toHaveBeenCalledTimes(1);
@@ -254,6 +273,16 @@ describe("POST /api/sync", () => {
     await POST(req({ ordersOffsetInWindow: 20 }));
 
     expect(vi.mocked(syncProductsPage)).not.toHaveBeenCalled();
+  });
+
+  it("finalize:true corre solo el cierre, sin volver a tocar la búsqueda de órdenes", async () => {
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
+
+    await POST(req({ finalize: true }));
+
+    expect(vi.mocked(listOrdersPage)).not.toHaveBeenCalled();
+    expect(vi.mocked(syncOrders)).not.toHaveBeenCalled();
   });
 
   it("returns a 500 with the error message when the sync fails", async () => {
