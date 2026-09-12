@@ -3,7 +3,7 @@ import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
 import { syncProductsPage, syncOrders, syncAds, syncFullStock, syncBillingCharges, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
 import { appliesIva } from "@/db/accounts";
-import { listOrdersPage } from "@/mcp/tools";
+import { listOrdersPage, splitIntoWindows, ORDER_SEARCH_WINDOW_DAYS } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
@@ -32,12 +32,14 @@ const ORDERS_PER_BATCH = 50;
 const PRODUCTS_TIME_BUDGET_MS = 35_000;
 
 interface SyncBody {
-  /** Desde qué orden seguir. El cliente reenvía el que devolvimos. */
-  offset?: number;
   /** scroll_id de catálogo para retomar el escaneo donde quedó. */
   productsScrollId?: string;
   /** Si el catálogo ya quedó sincronizado del todo (en esta corrida). */
   productsDone?: boolean;
+  /** En qué ventana de fecha de órdenes seguir (ver `splitIntoWindows`). */
+  ordersWindowIndex?: number;
+  /** Desde qué orden, dentro de esa ventana, seguir. */
+  ordersOffsetInWindow?: number;
 }
 
 export async function POST(request: NextRequest) {
@@ -52,20 +54,25 @@ export async function POST(request: NextRequest) {
   const sellerId = account.mlSellerId;
 
   const body = (await request.json().catch(() => ({}))) as SyncBody;
-  const offset = Math.max(0, Number(body.offset ?? 0));
   const productsDone = body.productsDone === true;
+  const windowIndex = Math.max(0, Number(body.ordersWindowIndex ?? 0));
+  const offsetInWindow = Math.max(0, Number(body.ordersOffsetInWindow ?? 0));
+  const ordersStarted = windowIndex > 0 || offsetInWindow > 0;
 
   try {
     const result = await withScope({ accountId: account.id }, async (client) => {
       const hasIva = await hasColumn(client, "order_items", "iva_applied");
 
-      const ordersPhase = async (productsSynced: number) => {
-        const page = await listOrdersPage(account.id, sellerId, HISTORY_START, offset, ORDERS_PER_BATCH);
+      const ordersPhase = async (productsSynced: number, wIndex: number, wOffset: number) => {
+        // Ventanas fijas y deterministas (mismo `from`, mismo tamaño): no
+        // hace falta mandarlas de ida y vuelta con el cliente, solo la
+        // posición dentro de ellas.
+        const windows = splitIntoWindows(HISTORY_START.slice(0, 10), new Date().toISOString().slice(0, 10), ORDER_SEARCH_WINDOW_DAYS);
+        const page = await listOrdersPage(account.id, sellerId, windows, wIndex, wOffset, ORDERS_PER_BATCH);
         const pending = await pendingOrderIds(client, account.id, page.ids);
         const ordersSynced = await syncOrders(client, account.id, pending, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
 
-        const nextOffset = offset + page.ids.length;
-        const done = page.ids.length === 0 || nextOffset >= page.total;
+        const done = page.done;
 
         // Publicidad, recálculo y facturación dependen de tener todas las
         // órdenes cargadas, así que van al final, en el último lote.
@@ -88,14 +95,14 @@ export async function POST(request: NextRequest) {
 
         return {
           done,
-          offset: nextOffset,
-          totalOrders: page.total,
           productsSynced,
           ordersSynced,
           adsRowsSynced,
           billingChargesSynced,
           fullStockSynced,
           productsDone: true,
+          ordersWindowIndex: page.nextWindowIndex,
+          ordersOffsetInWindow: page.nextOffsetInWindow,
         };
       };
 
@@ -106,7 +113,7 @@ export async function POST(request: NextRequest) {
       // llamada; si el catálogo entero entró en esta misma pasada, sigue
       // derecho con las órdenes en vez de gastar una ida y vuelta solo para
       // avisar que ya terminó.
-      if (offset === 0 && !productsDone) {
+      if (!ordersStarted && !productsDone) {
         const deadline = Date.now() + PRODUCTS_TIME_BUDGET_MS;
         const { productsSynced, nextScrollId } = await syncProductsPage(
           client, account.id, sellerId, body.productsScrollId, deadline
@@ -114,8 +121,6 @@ export async function POST(request: NextRequest) {
         if (nextScrollId) {
           return {
             done: false,
-            offset: 0,
-            totalOrders: 0,
             productsSynced,
             ordersSynced: 0,
             adsRowsSynced: 0,
@@ -125,10 +130,10 @@ export async function POST(request: NextRequest) {
             productsDone: false,
           };
         }
-        return ordersPhase(productsSynced);
+        return ordersPhase(productsSynced, 0, 0);
       }
 
-      return ordersPhase(0);
+      return ordersPhase(0, windowIndex, offsetInWindow);
     });
 
     return NextResponse.json(result);

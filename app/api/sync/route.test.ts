@@ -11,7 +11,10 @@ vi.mock("@/sync/sync-service", () => ({
   backfillMissingProducts: vi.fn().mockResolvedValue(0),
   pendingOrderIds: vi.fn(async (_db: unknown, _acc: string, ids: string[]) => ids),
 }));
-vi.mock("@/mcp/tools", () => ({ listOrdersPage: vi.fn() }));
+vi.mock("@/mcp/tools", async () => {
+  const actual = await vi.importActual<typeof import("@/mcp/tools")>("@/mcp/tools");
+  return { ...actual, listOrdersPage: vi.fn() };
+});
 vi.mock("@/lib/current-account", () => ({ resolveCurrentAccount: vi.fn() }));
 
 import { POST } from "./route";
@@ -25,6 +28,8 @@ function req(body: unknown = {}) {
   return { json: async () => body } as any;
 }
 
+const NO_MORE_ORDERS = { ids: [], nextWindowIndex: 999, nextOffsetInWindow: 0, done: true };
+
 describe("POST /api/sync", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -36,9 +41,9 @@ describe("POST /api/sync", () => {
       id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "monotributo",
     } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
-    vi.mocked(listOrdersPage).mockResolvedValue({ ids: [], total: 0 });
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
 
-    await POST(req({ offset: 0 }));
+    await POST(req({ productsDone: true }));
 
     expect(vi.mocked(syncOrders).mock.calls[0][5]).toBe(false);
     expect(vi.mocked(recalculate).mock.calls[0][4]).toBe(false);
@@ -67,30 +72,51 @@ describe("POST /api/sync", () => {
     expect(res.status).toBe(400);
   });
 
-  it("walks the whole history in batches and reports progress", async () => {
+  it("walks the order history in batches and reports the next window/offset to resume from", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
-    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1", "2"], total: 120 });
+    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1", "2"], nextWindowIndex: 2, nextOffsetInWindow: 30, done: false });
     vi.mocked(syncOrders).mockResolvedValue(2);
 
-    const body = await (await POST(req({ offset: 50 }))).json();
+    const body = await (await POST(req({ productsDone: true, ordersWindowIndex: 2, ordersOffsetInWindow: 0 }))).json();
 
-    expect(vi.mocked(listOrdersPage).mock.calls[0][2]).toBe("2020-01-01T00:00:00Z");
-    expect(vi.mocked(listOrdersPage).mock.calls[0][3]).toBe(50);
-    expect(body).toMatchObject({ done: false, offset: 52, totalOrders: 120 });
+    // Las ventanas de fecha son deterministas (arrancan siempre en
+    // HISTORY_START); el punto de partida real es windowIndex/offsetInWindow.
+    expect(vi.mocked(listOrdersPage).mock.calls[0][3]).toBe(2);
+    expect(vi.mocked(listOrdersPage).mock.calls[0][4]).toBe(0);
+    expect(body).toMatchObject({ done: false, ordersWindowIndex: 2, ordersOffsetInWindow: 30 });
     // El catálogo solo en el primer lote; el recálculo solo en el último.
     expect(vi.mocked(syncProductsPage)).not.toHaveBeenCalled();
     expect(vi.mocked(recalculate)).not.toHaveBeenCalled();
   });
 
+  it("no vuelve a pisar el offset de 10.000 de /orders/search: pagina por ventana, no por un offset único sobre todo el historial", async () => {
+    // El caso real que motivó esto: una cuenta con más de 10.000 órdenes en
+    // TODO su historial (2020 a hoy) tiraba 400 "limit.maximum_exceeded" en
+    // /orders/search apenas el offset plano pasaba de 10.000, sin importar
+    // que esas órdenes estuvieran repartidas en años. Por eso `listOrdersPage`
+    // ahora recibe ventanas de fecha ya partidas, no un offset sobre todo el
+    // historial junto.
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
+
+    await POST(req({ productsDone: true }));
+
+    const windowsArg = vi.mocked(listOrdersPage).mock.calls[0][2] as { from: string; to: string }[];
+    expect(Array.isArray(windowsArg)).toBe(true);
+    expect(windowsArg.length).toBeGreaterThan(0);
+    expect(windowsArg[0].from).toBe("2020-01-01");
+  });
+
   it("only asks Mercado Libre for the orders that are not up to date", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
-    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1", "2", "3"], total: 3 });
+    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1", "2", "3"], nextWindowIndex: 0, nextOffsetInWindow: 3, done: false });
     // Solo la 3 está desactualizada.
     vi.mocked(pendingOrderIds).mockResolvedValue(["3"]);
 
-    await POST(req());
+    await POST(req({ productsDone: true }));
 
     expect(vi.mocked(syncOrders).mock.calls[0][2]).toEqual(["3"]);
   });
@@ -98,10 +124,10 @@ describe("POST /api/sync", () => {
   it("finishes the run — ads, recalc and billing — on the last batch", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
-    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1"], total: 6 });
+    vi.mocked(listOrdersPage).mockResolvedValue({ ids: ["1"], nextWindowIndex: 5, nextOffsetInWindow: 0, done: true });
     vi.mocked(pendingOrderIds).mockImplementation(async (_d: any, _a: any, ids: any) => ids);
 
-    const body = await (await POST(req({ offset: 5 }))).json();
+    const body = await (await POST(req({ productsDone: true, ordersWindowIndex: 4, ordersOffsetInWindow: 40 }))).json();
 
     expect(body.done).toBe(true);
     // Le da nombre y foto a las publicaciones dadas de baja antes de recalcular:
@@ -119,7 +145,7 @@ describe("POST /api/sync", () => {
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
     vi.mocked(syncProductsPage).mockResolvedValueOnce({ productsSynced: 3000, nextScrollId: "scroll-abc" });
 
-    const body = await (await POST(req({ offset: 0, productsDone: false }))).json();
+    const body = await (await POST(req({ productsDone: false }))).json();
 
     expect(body).toMatchObject({ done: false, productsSynced: 3000, productsScrollId: "scroll-abc", productsDone: false });
     expect(vi.mocked(listOrdersPage)).not.toHaveBeenCalled();
@@ -130,9 +156,9 @@ describe("POST /api/sync", () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
     vi.mocked(syncProductsPage).mockResolvedValueOnce({ productsSynced: 500, nextScrollId: undefined });
-    vi.mocked(listOrdersPage).mockResolvedValue({ ids: [], total: 0 });
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
 
-    await POST(req({ offset: 0, productsScrollId: "scroll-abc", productsDone: false }));
+    await POST(req({ productsScrollId: "scroll-abc", productsDone: false }));
 
     expect(vi.mocked(syncProductsPage).mock.calls[0][3]).toBe("scroll-abc");
   });
@@ -141,9 +167,9 @@ describe("POST /api/sync", () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
     vi.mocked(syncProductsPage).mockResolvedValueOnce({ productsSynced: 12, nextScrollId: undefined });
-    vi.mocked(listOrdersPage).mockResolvedValue({ ids: [], total: 0 });
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
 
-    const body = await (await POST(req({ offset: 0, productsDone: false }))).json();
+    const body = await (await POST(req({ productsDone: false }))).json();
 
     expect(vi.mocked(listOrdersPage)).toHaveBeenCalledTimes(1);
     expect(body).toMatchObject({ done: true, productsSynced: 12, productsDone: true });
@@ -152,9 +178,21 @@ describe("POST /api/sync", () => {
   it("una vez que el catálogo ya terminó (productsDone), no lo vuelve a escanear en lotes de órdenes siguientes", async () => {
     vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
     vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
-    vi.mocked(listOrdersPage).mockResolvedValue({ ids: [], total: 0 });
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
 
-    await POST(req({ offset: 0, productsDone: true }));
+    await POST(req({ productsDone: true }));
+
+    expect(vi.mocked(syncProductsPage)).not.toHaveBeenCalled();
+  });
+
+  it("una vez que arrancaron las órdenes (ordersWindowIndex u offset > 0), no vuelve a escanear el catálogo aunque productsDone no venga", async () => {
+    // Cubre el caso real: el cliente ya viene mandando progreso de órdenes,
+    // así que aunque productsDone no esté explícito, no hay que reescanear.
+    vi.mocked(resolveCurrentAccount).mockResolvedValue({ id: "acc1", mlSellerId: "S1", otherTaxRate: 0, taxCondition: "responsable_inscripto" } as any);
+    vi.mocked(withScope).mockImplementation((ctx: any, fn: any) => fn({ query: vi.fn().mockResolvedValue({ rows: [] }) }));
+    vi.mocked(listOrdersPage).mockResolvedValue(NO_MORE_ORDERS);
+
+    await POST(req({ ordersOffsetInWindow: 20 }));
 
     expect(vi.mocked(syncProductsPage)).not.toHaveBeenCalled();
   });

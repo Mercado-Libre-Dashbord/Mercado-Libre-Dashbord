@@ -10,6 +10,7 @@ import {
   listProducts,
   getOrderDetail,
   listOrders,
+  listOrdersPage,
   listUnansweredQuestions,
   answerQuestion,
   updateProductPriceStock,
@@ -230,7 +231,9 @@ describe("listOrders", () => {
 
   it("returns order ids from the search results", async () => {
     vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: 1 }, { id: 2 }], paging: { total: 2 } });
-    expect(await listOrders("acc1", "123", "2026-01-01T00:00:00Z")).toEqual(["1", "2"]);
+    // `today` cerca de `sinceIso` para que quede en una sola ventana de fecha
+    // y el test no dependa de cuántos días separan al reloj real de esa fecha.
+    expect(await listOrders("acc1", "123", "2026-01-01T00:00:00Z", new Date("2026-01-10"))).toEqual(["1", "2"]);
   });
 
   it("pages through every order instead of stopping at the first 50", async () => {
@@ -243,10 +246,84 @@ describe("listOrders", () => {
       .mockResolvedValueOnce(page(50, 51))
       .mockResolvedValueOnce(page(20, 101));
 
-    const ids = await listOrders("acc1", "S1", "2020-01-01T00:00:00Z");
+    const ids = await listOrders("acc1", "S1", "2020-01-01T00:00:00Z", new Date("2020-02-01"));
 
     expect(ids).toHaveLength(120);
     expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("offset=50");
+  });
+
+  it("no pisa el techo de 10.000 de offset de /orders/search: un historial largo se parte en ventanas de fecha, con el offset reiniciado en cada una", async () => {
+    // El caso real que motivó esto: ML rechaza con 400
+    // "limit.maximum_exceeded" un offset mayor a 10.000 en /orders/search, sin
+    // importar que esas órdenes estén repartidas en años de historial. Acá el
+    // rango pedido (2020-01-01 a 2020-06-20, ~170 días) cruza dos ventanas de
+    // 90 días — cada una tiene que arrancar con offset=0, no seguir sumando
+    // sobre la ventana anterior.
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: [{ id: "A1" }], paging: { total: 1 } }) // ventana 1
+      .mockResolvedValueOnce({ results: [{ id: "B1" }], paging: { total: 1 } }); // ventana 2
+
+    const ids = await listOrders("acc1", "S1", "2020-01-01T00:00:00Z", new Date("2020-06-20"));
+
+    expect(ids).toEqual(["A1", "B1"]);
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("offset=0");
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("offset=0");
+    // Ventanas de fecha distintas, no la misma repetida.
+    const [firstUrl, secondUrl] = vi.mocked(mlFetch).mock.calls.map((c) => String(c[0]));
+    expect(firstUrl).not.toBe(secondUrl);
+  });
+});
+
+describe("listOrdersPage", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const windows = [
+    { from: "2020-01-01", to: "2020-03-30" },
+    { from: "2020-03-31", to: "2020-06-28" },
+  ];
+
+  it("trae hasta `limit` ids dentro de la ventana actual", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: "1" }, { id: "2" }], paging: { total: 10 } });
+
+    const page = await listOrdersPage("acc1", "S1", windows, 0, 0, 2);
+
+    expect(page).toEqual({ ids: ["1", "2"], nextWindowIndex: 0, nextOffsetInWindow: 2, done: false });
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain(`order.date_created.from=${windows[0].from}T00:00:00Z`);
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain(`order.date_created.to=${windows[0].to}T23:59:59.999Z`);
+  });
+
+  it("cruza a la ventana siguiente si la actual se termina antes de completar el límite pedido", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: [{ id: "last-of-window-1" }], paging: { total: 1 } })
+      .mockResolvedValueOnce({ results: [{ id: "first-of-window-2" }], paging: { total: 5 } });
+
+    const page = await listOrdersPage("acc1", "S1", windows, 0, 0, 2);
+
+    expect(page.ids).toEqual(["last-of-window-1", "first-of-window-2"]);
+    expect(page.nextWindowIndex).toBe(1);
+    expect(page.nextOffsetInWindow).toBe(1);
+    expect(page.done).toBe(false);
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain(`order.date_created.from=${windows[1].from}T00:00:00Z`);
+  });
+
+  it("devuelve done:true cuando ya no queda ninguna ventana con órdenes", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: [], paging: { total: 0 } })
+      .mockResolvedValueOnce({ results: [], paging: { total: 0 } });
+
+    const page = await listOrdersPage("acc1", "S1", windows, 0, 0, 50);
+
+    expect(page).toEqual({ ids: [], nextWindowIndex: 2, nextOffsetInWindow: 0, done: true });
+  });
+
+  it("retoma desde windowIndex/offsetInWindow en vez de arrancar de cero", async () => {
+    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: "9" }], paging: { total: 40 } });
+
+    await listOrdersPage("acc1", "S1", windows, 1, 30, 5);
+
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain(`order.date_created.from=${windows[1].from}T00:00:00Z`);
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("offset=30");
   });
 });
 

@@ -387,21 +387,26 @@ export async function getOrderDetail(accountId: string, orderId: string): Promis
 }
 
 /**
- * Una sola página de órdenes, más el total. El recálculo del historial va por
- * lotes (cada orden cuesta 2 llamadas a la API, así que traerlas todas en un
- * request se pasa del límite de tiempo de la función), y para eso necesita
- * poder pedir "dame las 10 órdenes a partir de la N".
+ * Cuántos días tiene cada ventana de fecha al recorrer `/orders/search`. Ese
+ * endpoint tiene el mismo problema que `/items/search`: ML rechaza un offset
+ * mayor a 10.000 ("limit.maximum_exceeded"), sin importar cuántas órdenes
+ * tenga la cuenta en TODO su historial — a diferencia del catálogo, acá ML no
+ * da un modo scroll para esquivarlo. La salida es partir el historial en
+ * ventanas de fecha y paginar offset DENTRO de cada una: con 90 días por
+ * ventana, hasta una cuenta que hiciera 100 órdenes por día (muy por encima
+ * de lo real) quedaría en ~9.000 órdenes por ventana, bien lejos del techo.
  */
-export async function listOrdersPage(
-  accountId: string,
+export const ORDER_SEARCH_WINDOW_DAYS = 90;
+
+async function searchOrdersWindow(
   sellerId: string,
-  sinceIso: string,
+  token: string,
+  window: { from: string; to: string },
   offset: number,
   limit: number
 ): Promise<{ ids: string[]; total: number }> {
-  const token = await getValidAccessToken(accountId);
   const search = await mlFetch(
-    `/orders/search?seller=${sellerId}&order.date_created.from=${sinceIso}&limit=${limit}&offset=${offset}`,
+    `/orders/search?seller=${sellerId}&order.date_created.from=${window.from}T00:00:00Z&order.date_created.to=${window.to}T23:59:59.999Z&limit=${limit}&offset=${offset}`,
     token
   );
   const results: any[] = search.results ?? [];
@@ -411,23 +416,73 @@ export async function listOrdersPage(
   };
 }
 
-export async function listOrders(accountId: string, sellerId: string, sinceIso: string): Promise<string[]> {
+export interface OrdersWindowPage {
+  ids: string[];
+  /** Posición para pedir la próxima página. */
+  nextWindowIndex: number;
+  nextOffsetInWindow: number;
+  /** true cuando ya no queda ninguna ventana con órdenes por traer. */
+  done: boolean;
+}
+
+/**
+ * Hasta `limit` ids de orden, cruzando ventanas de fecha si hace falta para
+ * completarla. El estado (`windowIndex` + `offsetInWindow`) es justo lo
+ * necesario para retomar en la próxima llamada exactamente donde quedó —
+ * igual que el offset plano de antes, pero sin pisar el techo de 10.000 de
+ * `/orders/search`. Las ventanas las arma el caller (con `splitIntoWindows`)
+ * para que sean las mismas en cada llamada sin tener que mandarlas de un
+ * lado a otro.
+ */
+export async function listOrdersPage(
+  accountId: string,
+  sellerId: string,
+  windows: { from: string; to: string }[],
+  windowIndex: number,
+  offsetInWindow: number,
+  limit: number
+): Promise<OrdersWindowPage> {
   const token = await getValidAccessToken(accountId);
-  // /orders/search pagina de a 50 por defecto. Sin recorrer las páginas, un
-  // sync completo del historial se cortaba en las primeras 50 órdenes.
+  const ids: string[] = [];
+  let wi = windowIndex;
+  let off = offsetInWindow;
+  while (ids.length < limit && wi < windows.length) {
+    const page = await searchOrdersWindow(sellerId, token, windows[wi], off, limit - ids.length);
+    ids.push(...page.ids);
+    off += page.ids.length;
+    if (page.ids.length === 0 || off >= page.total) {
+      // Esta ventana se terminó: seguir con la próxima, no cortar acá.
+      wi += 1;
+      off = 0;
+    }
+  }
+  return { ids, nextWindowIndex: wi, nextOffsetInWindow: off, done: wi >= windows.length };
+}
+
+/**
+ * Catálogo de órdenes completo, sin cortar por tiempo — lo usan el servidor
+ * MCP y los lugares que no necesitan ir por lotes (ver `listOrdersPage` para
+ * cuando sí hace falta). `today` existe para poder testear sin depender del
+ * reloj real (mismo patrón que `clampToAdsWindow`).
+ */
+export async function listOrders(
+  accountId: string,
+  sellerId: string,
+  sinceIso: string,
+  today: Date = new Date()
+): Promise<string[]> {
+  const token = await getValidAccessToken(accountId);
+  const windows = splitIntoWindows(sinceIso.slice(0, 10), dateStr(today), ORDER_SEARCH_WINDOW_DAYS);
   const PAGE_SIZE = 50;
   const ids: string[] = [];
-  let offset = 0;
-  while (true) {
-    const search = await mlFetch(
-      `/orders/search?seller=${sellerId}&order.date_created.from=${sinceIso}&limit=${PAGE_SIZE}&offset=${offset}`,
-      token
-    );
-    const page: any[] = search.results ?? [];
-    ids.push(...page.map((o: any) => String(o.id)));
-    offset += page.length;
-    const total = search.paging?.total ?? offset;
-    if (page.length === 0 || offset >= total) break;
+  for (const window of windows) {
+    let offset = 0;
+    while (true) {
+      const page = await searchOrdersWindow(sellerId, token, window, offset, PAGE_SIZE);
+      ids.push(...page.ids);
+      offset += page.ids.length;
+      if (page.ids.length === 0 || offset >= page.total) break;
+    }
   }
   return ids;
 }

@@ -4,8 +4,6 @@ import { useState } from "react";
 
 interface SyncResponse {
   done: boolean;
-  offset?: number;
-  totalOrders?: number;
   productsSynced: number;
   ordersSynced: number;
   adsRowsSynced: number;
@@ -14,13 +12,18 @@ interface SyncResponse {
   productsScrollId?: string;
   /** Si el catálogo ya quedó sincronizado del todo. */
   productsDone?: boolean;
+  /** En qué ventana de fecha de órdenes seguir. */
+  ordersWindowIndex?: number;
+  /** Desde qué orden, dentro de esa ventana, seguir. */
+  ordersOffsetInWindow?: number;
   error?: string;
 }
 
 interface CallBody {
-  offset: number;
   productsScrollId?: string;
   productsDone?: boolean;
+  ordersWindowIndex?: number;
+  ordersOffsetInWindow?: number;
 }
 
 export function SyncButton() {
@@ -68,7 +71,10 @@ export function SyncButton() {
    * primera vez esto termina en segundos aunque mire todas las ventas. Un
    * catálogo grande (decenas de miles de publicaciones) tampoco entra en una
    * sola llamada al servidor, así que primero puede haber varias vueltas
-   * escaneando productos antes de que arranque el progreso de órdenes.
+   * escaneando productos antes de que arranque el progreso de órdenes — y el
+   * historial de órdenes va por ventanas de fecha (no un solo número de
+   * offset), así que el progreso se muestra como cantidad procesada, no como
+   * fracción de un total.
    */
   async function handleSync() {
     setStatus("syncing");
@@ -77,26 +83,26 @@ export function SyncButton() {
 
     try {
       const totals = { products: 0, orders: 0, ads: 0, billing: 0 };
-      let offset = 0;
       let productsScrollId: string | undefined;
       let productsDone = false;
+      let ordersWindowIndex = 0;
+      let ordersOffsetInWindow = 0;
 
       // Cota de seguridad: si el servidor dejara de avanzar (ni el catálogo
-      // ni el offset de órdenes), esto corta en vez de quedar girando para
+      // ni la posición de órdenes), esto corta en vez de quedar girando para
       // siempre.
       for (let batch = 0; batch < 3000; batch += 1) {
-        const data = await call({ offset, productsScrollId, productsDone });
+        const data = await call({ productsScrollId, productsDone, ordersWindowIndex, ordersOffsetInWindow });
         totals.products += data.productsSynced;
         totals.orders += data.ordersSynced;
         totals.ads += data.adsRowsSynced;
         totals.billing += data.billingChargesSynced ?? 0;
 
-        const wasProductsDone = productsDone;
         productsDone = data.productsDone === true;
 
         if (!productsDone) {
-          // Todavía escaneando el catálogo: un catálogo grande no entra en
-          // una sola llamada, así que esto puede tardar varias vueltas.
+          // Todavía escaneando el catálogo: uno grande no entra en una sola
+          // llamada, así que esto puede tardar varias vueltas.
           if (data.productsScrollId === productsScrollId) {
             throw new Error("La sincronización del catálogo dejó de avanzar. Probá de nuevo.");
           }
@@ -105,21 +111,16 @@ export function SyncButton() {
           continue;
         }
 
-        // Ya hay progreso de órdenes en esta respuesta — puede ser recién
-        // ahora (el catálogo entero entró en esta misma pasada) o veníamos
-        // en esta fase desde antes.
-        const next = data.offset ?? offset;
-        setProgress(`${next} de ${data.totalOrders ?? next} órdenes…`);
+        setProgress(`${totals.orders} órdenes sincronizadas…`);
         if (data.done) break;
-        if (!wasProductsDone) {
-          // Transición recién ahora de catálogo a órdenes: `offset` todavía
-          // vale 0 de antes, así que compararlo con `next` no dice nada
-          // sobre si las órdenes avanzaron.
-          offset = next;
-          continue;
+
+        const nextWindowIndex = data.ordersWindowIndex ?? ordersWindowIndex;
+        const nextOffsetInWindow = data.ordersOffsetInWindow ?? ordersOffsetInWindow;
+        if (nextWindowIndex === ordersWindowIndex && nextOffsetInWindow === ordersOffsetInWindow) {
+          throw new Error("La sincronización dejó de avanzar. Probá de nuevo.");
         }
-        if (next <= offset) throw new Error("La sincronización dejó de avanzar. Probá de nuevo.");
-        offset = next;
+        ordersWindowIndex = nextWindowIndex;
+        ordersOffsetInWindow = nextOffsetInWindow;
       }
 
       setProgress(null);
