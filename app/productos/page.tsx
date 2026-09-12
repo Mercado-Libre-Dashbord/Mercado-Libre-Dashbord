@@ -136,24 +136,50 @@ function sortProducts(products: Product[], mode: SortMode): Product[] {
 
 /** Filtro por "vendido en los últimos X días" — en días de calendario, no
  * mes/semestre exactos: alcanza para priorizar carga de costos, no es un
- * cálculo financiero. */
-type SoldWithinMode = "all" | "week" | "month" | "semester";
+ * cálculo financiero. `lastFullMonth` es distinto a propósito: no es una
+ * ventana relativa a hoy, es el mes calendario ya cerrado (por ej. agosto
+ * entero), para contrastar contra un período con números ya definitivos. */
+type SoldWithinMode = "all" | "week" | "month" | "semester" | "lastFullMonth";
 
 const SOLD_WITHIN_LABELS: Record<SoldWithinMode, string> = {
   all: "Todos",
   week: "Última semana",
   month: "Último mes",
   semester: "Último semestre",
+  lastFullMonth: "Último mes completo (cerrado)",
 };
 
-const SOLD_WITHIN_DAYS: Record<Exclude<SoldWithinMode, "all">, number> = {
+const SOLD_WITHIN_DAYS: Record<"week" | "month" | "semester", number> = {
   week: 7,
   month: 30,
   semester: 182,
 };
 
+/** [1º, último día] del mes calendario anterior al actual — ej. si hoy es
+ * cualquier día de septiembre, devuelve agosto entero. */
+function lastFullMonthRange(now = new Date()): { from: string; to: string } {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 0)); // día 0 del mes actual = último día del anterior
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+}
+
+function lastFullMonthLabel(now = new Date()): string {
+  const { from } = lastFullMonthRange(now);
+  const d = new Date(`${from}T00:00:00Z`);
+  const label = d.toLocaleDateString("es-AR", { month: "long", year: "numeric", timeZone: "UTC" });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function filterProductsSoldWithin(products: Product[], mode: SoldWithinMode): Product[] {
   if (mode === "all") return products;
+  if (mode === "lastFullMonth") {
+    // Acá `unitsSold` ya viene acotado a ese mes (load() lo pide con
+    // from/to) — no lastSaleDate, que sería la última venta de SIEMPRE y
+    // podría ser más reciente que el mes cerrado que se quiere mirar.
+    return products.filter((p) => p.unitsSold > 0);
+  }
   const cutoff = Date.now() - SOLD_WITHIN_DAYS[mode] * 86400000;
   return products.filter((p) => p.lastSaleDate !== null && new Date(p.lastSaleDate).getTime() >= cutoff);
 }
@@ -210,7 +236,11 @@ export default function ProductosPage() {
 
   function load() {
     setLoadError("");
-    fetch("/api/products")
+    // "Último mes completo" necesita que Vendidas/Beneficio vengan acotados
+    // a ESE mes, no a todo el historial — si no, un producto que también
+    // vendió después de agosto mostraría números mezclados con septiembre.
+    const query = soldWithin === "lastFullMonth" ? `?${new URLSearchParams(lastFullMonthRange())}` : "";
+    fetch(`/api/products${query}`)
       .then(async (r) => {
         if (r.status === 401) { setNoAccount(true); return; }
         if (!r.ok) throw new Error(String(r.status));
@@ -224,7 +254,10 @@ export default function ProductosPage() {
       });
   }
 
-  useEffect(load, []);
+  // Se vuelve a pedir cada vez que cambia el filtro de período: es la única
+  // forma de que "Último mes completo" traiga los números acotados a ese mes
+  // en vez de a todo el historial.
+  useEffect(load, [soldWithin]);
 
   if (noAccount) {
     return (
@@ -403,7 +436,9 @@ export default function ProductosPage() {
               ))}
             </select>
             <span className="field-hint" style={{ margin: 0 }}>
-              Con un catálogo grande, priorizar por lo que más vende hace rendir más la carga de costos.
+              {soldWithin === "lastFullMonth"
+                ? `Vendidas y beneficio de ${lastFullMonthLabel()} solamente (mes ya cerrado, números definitivos).`
+                : "Con un catálogo grande, priorizar por lo que más vende hace rendir más la carga de costos."}
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
