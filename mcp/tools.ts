@@ -42,39 +42,74 @@ function warnIfNoLogisticType(bodies: any[]): void {
   );
 }
 
-export async function listProducts(accountId: string, sellerId: string): Promise<MlProduct[]> {
+export interface ProductIdsPage {
+  ids: string[];
+  /** Si viene, todavía queda catálogo por escanear: pedir la próxima página con este scroll_id. */
+  nextScrollId?: string;
+}
+
+/**
+ * Escanea ids de publicaciones por scroll, parando cuando ML se queda sin
+ * resultados O cuando se llega a `deadline` (lo que pase primero) — pasar
+ * `Infinity` para recorrer el catálogo entero sin cortar, como hace
+ * `listProducts`. Separado de `listProducts` para que un catálogo enorme
+ * (decenas de miles de publicaciones) pueda cortar acá a mitad de camino,
+ * devolver `nextScrollId`, y retomar exactamente ahí en la próxima llamada —
+ * una función serverless tiene un techo de tiempo que ese catálogo no entra
+ * en una sola pasada.
+ *
+ * No solo "active": una cuenta con historial real de ventas tiene
+ * publicaciones pausadas o cerradas cuyas órdenes viejas siguen apareciendo
+ * en /orders — si no las traemos acá, esos product_id nunca entran a la
+ * tabla products y su costo no se puede cargar nunca.
+ *
+ * Paginación por `offset` clásica: ML la corta con un 400 ("Invalid limit
+ * and offset values") en cuanto offset+limit pasa de 1000, sin importar
+ * cuántas publicaciones tenga realmente el vendedor. `search_type=scan` es
+ * el modo que Mercado Libre da para recorrer más de 1000 resultados: la
+ * primera página se pide con los filtros de siempre, y las siguientes solo
+ * con el `scroll_id` que devuelve cada respuesta, hasta que no traiga más.
+ */
+export async function scanProductIds(
+  accountId: string,
+  sellerId: string,
+  scrollId: string | undefined,
+  deadline: number
+): Promise<ProductIdsPage> {
   const token = await getValidAccessToken(accountId);
-  // No solo "active": una cuenta con historial real de ventas tiene
-  // publicaciones pausadas o cerradas cuyas órdenes viejas siguen
-  // apareciendo en /orders — si no las traemos acá, esos product_id nunca
-  // entran a la tabla products y su costo no se puede cargar nunca.
-  // Paginación por `offset` clásica: ML la corta con un 400 ("Invalid limit
-  // and offset values") en cuanto offset+limit pasa de 1000, sin importar
-  // cuántas publicaciones tenga realmente el vendedor. Un catálogo grande
-  // (con historial de pausadas/cerradas incluido) supera eso fácil, y sin
-  // esto el sync entero fallaba para esas cuentas. `search_type=scan` es el
-  // modo que Mercado Libre da para recorrer más de 1000 resultados: la
-  // primera página se pide con los filtros de siempre, y las siguientes solo
-  // con el `scroll_id` que devuelve cada respuesta, hasta que no traiga más.
   const SEARCH_PAGE_SIZE = 50;
   const ids: string[] = [];
-  let scrollId: string | undefined;
+  let currentScrollId = scrollId;
   // Techo de seguridad: si ML alguna vez devolviera el mismo scroll_id sin
-  // avanzar, esto corta el sync en vez de colgarlo pidiendo páginas para
-  // siempre (con 50 por página, 2000 páginas son 100.000 publicaciones).
+  // avanzar, esto corta en vez de pedir páginas para siempre (con 50 por
+  // página, 2000 páginas son 100.000 publicaciones).
   const MAX_SCAN_PAGES = 2000;
   for (let page = 0; page < MAX_SCAN_PAGES; page++) {
-    const url = scrollId
-      ? `/users/${sellerId}/items/search?search_type=scan&scroll_id=${encodeURIComponent(scrollId)}`
+    if (Date.now() >= deadline) break;
+    const url = currentScrollId
+      ? `/users/${sellerId}/items/search?search_type=scan&scroll_id=${encodeURIComponent(currentScrollId)}`
       : `/users/${sellerId}/items/search?status=active,paused,closed&search_type=scan&limit=${SEARCH_PAGE_SIZE}`;
     const search = await mlFetch(url, token);
     const results: string[] = search.results;
-    if (results.length === 0) break;
+    if (results.length === 0) {
+      currentScrollId = undefined;
+      break;
+    }
     ids.push(...results);
-    scrollId = search.scroll_id;
-    if (!scrollId) break;
+    currentScrollId = search.scroll_id;
+    if (!currentScrollId) break;
   }
+  return { ids, nextScrollId: currentScrollId };
+}
+
+/**
+ * Dados ids de publicaciones, trae el detalle completo (precio, stock,
+ * categoría, logística, foto). Separado de `scanProductIds` para poder
+ * pedirlo página por página en vez de todo el catálogo de una.
+ */
+export async function getProductDetails(accountId: string, ids: string[]): Promise<MlProduct[]> {
   if (ids.length === 0) return [];
+  const token = await getValidAccessToken(accountId);
 
   // /items?ids= solo acepta 20 ids por llamada — con más de una publicación
   // pausada/cerrada en el historial esto se pasa fácil. Con un catálogo
@@ -119,6 +154,14 @@ export async function listProducts(accountId: string, sellerId: string): Promise
 
   await attachCategoryNames(products, token);
   return products;
+}
+
+/** Catálogo completo, sin cortar por tiempo. Lo usa el servidor MCP y los
+ * lugares que no necesitan ir por lotes (ver `scanProductIds` para el
+ * porqué de ir por páginas cuando sí hace falta). */
+export async function listProducts(accountId: string, sellerId: string): Promise<MlProduct[]> {
+  const { ids } = await scanProductIds(accountId, sellerId, undefined, Infinity);
+  return getProductDetails(accountId, ids);
 }
 
 /**
@@ -207,22 +250,31 @@ export async function getOrderItemTitles(accountId: string, orderId: string): Pr
  * un puñado de categorías, así que esto son pocas llamadas y no una por
  * producto. Si alguna falla, ese producto queda sin nombre de categoría en
  * vez de romper la sincronización entera del catálogo.
+ *
+ * Igual que el detalle de productos: se piden de a `CATEGORY_CONCURRENCY` en
+ * simultáneo, no todas juntas — un catálogo grande puede tener cientos de
+ * categorías distintas, y pedirlas todas de una es lo mismo que gatillar el
+ * rate limit de ML.
  */
 async function attachCategoryNames(products: MlProduct[], token: string): Promise<void> {
   const uniqueIds = [...new Set(products.map((p) => p.categoryId).filter((id): id is string => Boolean(id)))];
   if (uniqueIds.length === 0) return;
 
   const names = new Map<string, string>();
-  await Promise.all(
-    uniqueIds.map(async (id) => {
-      try {
-        const category = await mlFetch(`/categories/${id}`, token);
-        if (category?.name) names.set(id, String(category.name));
-      } catch (err) {
-        console.warn(`No se pudo resolver el nombre de la categoría ${id}:`, (err as Error).message);
-      }
-    })
-  );
+  const CATEGORY_CONCURRENCY = 10;
+  for (let i = 0; i < uniqueIds.length; i += CATEGORY_CONCURRENCY) {
+    const chunk = uniqueIds.slice(i, i + CATEGORY_CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (id) => {
+        try {
+          const category = await mlFetch(`/categories/${id}`, token);
+          if (category?.name) names.set(id, String(category.name));
+        } catch (err) {
+          console.warn(`No se pudo resolver el nombre de la categoría ${id}:`, (err as Error).message);
+        }
+      })
+    );
+  }
 
   for (const p of products) {
     if (p.categoryId) p.categoryName = names.get(p.categoryId) ?? null;

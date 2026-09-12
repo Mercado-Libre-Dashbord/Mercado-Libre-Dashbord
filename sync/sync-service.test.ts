@@ -3,6 +3,8 @@ import { nanoid } from "nanoid";
 
 vi.mock("@/mcp/tools", () => ({
   listProducts: vi.fn(),
+  scanProductIds: vi.fn(),
+  getProductDetails: vi.fn(),
   listOrders: vi.fn(),
   getOrderDetail: vi.fn(),
   getAdsSpend: vi.fn(),
@@ -169,6 +171,57 @@ describe("runSync", () => {
       return r.rows[0];
     });
     expect(order).toBeTruthy();
+  });
+});
+
+describe("syncProductsPage", () => {
+  it("sincroniza los productos de la página y devuelve el nextScrollId cuando queda catálogo por escanear", async () => {
+    // El caso real que motivó esto: un catálogo de decenas de miles de
+    // publicaciones no entra en el tiempo de una función serverless. Acá se
+    // prueba una sola página, verificando que efectivamente pasa el
+    // scrollId/deadline recibidos y guarda lo que trajo esa página nomás.
+    const { scanProductIds, getProductDetails } = await import("@/mcp/tools");
+    vi.mocked(scanProductIds).mockResolvedValueOnce({ ids: ["MLA1", "MLA2"], nextScrollId: "scroll-next" });
+    vi.mocked(getProductDetails).mockResolvedValueOnce([
+      { id: "MLA1", title: "Producto 1", sku: null, price: 100, stock: 1, permalink: "url1", categoryId: null, categoryName: null, thumbnail: null, logisticType: null, inventoryId: null },
+      { id: "MLA2", title: "Producto 2", sku: null, price: 200, stock: 2, permalink: "url2", categoryId: null, categoryName: null, thumbnail: null, logisticType: null, inventoryId: null },
+    ]);
+
+    const { withScope } = await import("@/db/client");
+    const { syncProductsPage } = await import("./sync-service");
+    const account = await makeAccount();
+    const deadline = Date.now() + 1000;
+
+    const result = await withScope({ accountId: account.id }, (client) =>
+      syncProductsPage(client, account.id, "SELLER1", "scroll-prev", deadline)
+    );
+
+    expect(result).toEqual({ productsSynced: 2, nextScrollId: "scroll-next" });
+    expect(vi.mocked(scanProductIds)).toHaveBeenCalledWith(account.id, "SELLER1", "scroll-prev", deadline);
+
+    const rows = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ id: string }>(`SELECT id FROM products WHERE account_id = $1 ORDER BY id`, [account.id]);
+      return r.rows;
+    });
+    expect(rows.map((r) => r.id)).toEqual(["MLA1", "MLA2"]);
+  });
+
+  it("no devuelve nextScrollId cuando el catálogo entero entró en esta página", async () => {
+    const { scanProductIds, getProductDetails } = await import("@/mcp/tools");
+    vi.mocked(scanProductIds).mockResolvedValueOnce({ ids: ["MLA9"], nextScrollId: undefined });
+    vi.mocked(getProductDetails).mockResolvedValueOnce([
+      { id: "MLA9", title: "Producto 9", sku: null, price: 50, stock: 1, permalink: "url9", categoryId: null, categoryName: null, thumbnail: null, logisticType: null, inventoryId: null },
+    ]);
+
+    const { withScope } = await import("@/db/client");
+    const { syncProductsPage } = await import("./sync-service");
+    const account = await makeAccount();
+
+    const result = await withScope({ accountId: account.id }, (client) =>
+      syncProductsPage(client, account.id, "SELLER1", undefined, Date.now() + 1000)
+    );
+
+    expect(result).toEqual({ productsSynced: 1, nextScrollId: undefined });
   });
 });
 

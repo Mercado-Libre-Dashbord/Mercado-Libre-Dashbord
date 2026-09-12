@@ -10,21 +10,31 @@ interface SyncResponse {
   ordersSynced: number;
   adsRowsSynced: number;
   billingChargesSynced?: number;
+  /** scroll_id de catálogo para retomar el escaneo donde quedó. */
+  productsScrollId?: string;
+  /** Si el catálogo ya quedó sincronizado del todo. */
+  productsDone?: boolean;
   error?: string;
+}
+
+interface CallBody {
+  offset: number;
+  productsScrollId?: string;
+  productsDone?: boolean;
 }
 
 export function SyncButton() {
   const [status, setStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
 
-  async function call(offset: number, attempt = 0): Promise<SyncResponse> {
+  async function call(body: CallBody, attempt = 0): Promise<SyncResponse> {
     let res: Response;
     try {
       res = await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offset }),
+        body: JSON.stringify(body),
       });
     } catch {
       // El fetch se cortó a nivel de red (señal débil, timeout, el servidor
@@ -34,7 +44,7 @@ export function SyncButton() {
       // reintenta un par de veces con espera creciente antes de rendirse.
       if (attempt < 2) {
         await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-        return call(offset, attempt + 1);
+        return call(body, attempt + 1);
       }
       throw new Error("Se cortó la conexión con el servidor (señal débil o tardó demasiado). Probá de nuevo.");
     }
@@ -53,9 +63,12 @@ export function SyncButton() {
   }
 
   /**
-   * Un solo sync que recorre todo el historial por lotes. El servidor saltea
-   * las órdenes que ya están al día, así que después de la primera vez esto
-   * termina en segundos aunque mire todas las ventas.
+   * Un solo sync que recorre todo el catálogo y todo el historial por lotes.
+   * El servidor saltea las órdenes que ya están al día, así que después de la
+   * primera vez esto termina en segundos aunque mire todas las ventas. Un
+   * catálogo grande (decenas de miles de publicaciones) tampoco entra en una
+   * sola llamada al servidor, así que primero puede haber varias vueltas
+   * escaneando productos antes de que arranque el progreso de órdenes.
    */
   async function handleSync() {
     setStatus("syncing");
@@ -63,20 +76,48 @@ export function SyncButton() {
     setProgress(null);
 
     try {
-      let offset = 0;
       const totals = { products: 0, orders: 0, ads: 0, billing: 0 };
-      // Cota de seguridad: si el servidor dejara de avanzar el offset, esto
-      // corta en vez de quedar girando para siempre.
-      for (let batch = 0; batch < 500; batch += 1) {
-        const data = await call(offset);
+      let offset = 0;
+      let productsScrollId: string | undefined;
+      let productsDone = false;
+
+      // Cota de seguridad: si el servidor dejara de avanzar (ni el catálogo
+      // ni el offset de órdenes), esto corta en vez de quedar girando para
+      // siempre.
+      for (let batch = 0; batch < 3000; batch += 1) {
+        const data = await call({ offset, productsScrollId, productsDone });
         totals.products += data.productsSynced;
         totals.orders += data.ordersSynced;
         totals.ads += data.adsRowsSynced;
         totals.billing += data.billingChargesSynced ?? 0;
 
+        const wasProductsDone = productsDone;
+        productsDone = data.productsDone === true;
+
+        if (!productsDone) {
+          // Todavía escaneando el catálogo: un catálogo grande no entra en
+          // una sola llamada, así que esto puede tardar varias vueltas.
+          if (data.productsScrollId === productsScrollId) {
+            throw new Error("La sincronización del catálogo dejó de avanzar. Probá de nuevo.");
+          }
+          productsScrollId = data.productsScrollId;
+          setProgress(`Escaneando catálogo… ${totals.products} publicaciones`);
+          continue;
+        }
+
+        // Ya hay progreso de órdenes en esta respuesta — puede ser recién
+        // ahora (el catálogo entero entró en esta misma pasada) o veníamos
+        // en esta fase desde antes.
         const next = data.offset ?? offset;
-        setProgress({ done: next, total: data.totalOrders ?? next });
+        setProgress(`${next} de ${data.totalOrders ?? next} órdenes…`);
         if (data.done) break;
+        if (!wasProductsDone) {
+          // Transición recién ahora de catálogo a órdenes: `offset` todavía
+          // vale 0 de antes, así que compararlo con `next` no dice nada
+          // sobre si las órdenes avanzaron.
+          offset = next;
+          continue;
+        }
         if (next <= offset) throw new Error("La sincronización dejó de avanzar. Probá de nuevo.");
         offset = next;
       }
@@ -103,7 +144,7 @@ export function SyncButton() {
         </button>
         {progress && (
           <span role="status" aria-live="polite" className="field-hint" style={{ margin: 0 }}>
-            {progress.done} de {progress.total} órdenes…
+            {progress}
           </span>
         )}
         {message && (

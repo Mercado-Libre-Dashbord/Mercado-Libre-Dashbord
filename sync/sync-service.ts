@@ -1,5 +1,5 @@
 import type { QueryExecutor } from "@/db/client";
-import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds, getOrderItemTitles, getFullStock } from "@/mcp/tools";
+import { listProducts, listOrders, getOrderDetail, getAdsSpend, listBillingPeriods, getBillingCharges, getProductsByIds, getOrderItemTitles, getFullStock, scanProductIds, getProductDetails, type MlProduct } from "@/mcp/tools";
 import { getCostEntryAtDate, allocateAdsCost, calculateNetProfit, calculateIva } from "./profitability";
 import { hasColumn } from "@/db/schema-capabilities";
 
@@ -60,15 +60,21 @@ function buildOptionalProductColumns(
   return { cols, vals, updateSet };
 }
 
-/** Sincroniza el catálogo. Barato: una llamada paginada + un upsert por producto. */
-export async function syncProducts(db: QueryExecutor, accountId: string, sellerId: string): Promise<number> {
-  const now = new Date().toISOString();
-  const flags: ProductColumnFlags = {
+async function productColumnFlags(db: QueryExecutor): Promise<ProductColumnFlags> {
+  return {
     hasCategory: await hasColumn(db, "products", "category_id"),
     hasThumbnail: await hasColumn(db, "products", "thumbnail"),
     hasLogistics: await hasColumn(db, "products", "logistic_type"),
   };
-  const products = await listProducts(accountId, sellerId);
+}
+
+async function upsertProducts(
+  db: QueryExecutor,
+  accountId: string,
+  products: MlProduct[],
+  flags: ProductColumnFlags,
+  now: string
+): Promise<void> {
   for (const p of products) {
     const cols = ["account_id", "id", "title", "sku", "current_price", "stock", "permalink", "updated_at"];
     const vals: unknown[] = [accountId, p.id, p.title, p.sku, p.price, p.stock, p.permalink, now];
@@ -87,7 +93,45 @@ export async function syncProducts(db: QueryExecutor, accountId: string, sellerI
       vals
     );
   }
+}
+
+/** Sincroniza el catálogo entero, sin cortar por tiempo. La usan `runSync` y
+ * los tests; el endpoint real (`/api/sync`) usa `syncProductsPage` porque un
+ * catálogo de decenas de miles de publicaciones no entra en una sola llamada. */
+export async function syncProducts(db: QueryExecutor, accountId: string, sellerId: string): Promise<number> {
+  const now = new Date().toISOString();
+  const flags = await productColumnFlags(db);
+  const products = await listProducts(accountId, sellerId);
+  await upsertProducts(db, accountId, products, flags, now);
   return products.length;
+}
+
+export interface SyncProductsPageResult {
+  productsSynced: number;
+  /** Si viene, todavía queda catálogo por escanear: la próxima llamada tiene que mandar este scroll_id. */
+  nextScrollId?: string;
+}
+
+/**
+ * Igual que `syncProducts`, pero de una sola página con un límite de tiempo
+ * (`deadline`) — para catálogos grandes que no entran en el tiempo de una
+ * función serverless. `/api/sync` va llamando esto pasando el `nextScrollId`
+ * de la respuesta anterior hasta que deja de venir, momento en el que el
+ * catálogo entero ya quedó sincronizado.
+ */
+export async function syncProductsPage(
+  db: QueryExecutor,
+  accountId: string,
+  sellerId: string,
+  scrollId: string | undefined,
+  deadline: number
+): Promise<SyncProductsPageResult> {
+  const now = new Date().toISOString();
+  const flags = await productColumnFlags(db);
+  const { ids, nextScrollId } = await scanProductIds(accountId, sellerId, scrollId, deadline);
+  const products = await getProductDetails(accountId, ids);
+  await upsertProducts(db, accountId, products, flags, now);
+  return { productsSynced: products.length, nextScrollId };
 }
 
 /**
