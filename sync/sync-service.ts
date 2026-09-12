@@ -127,70 +127,82 @@ export async function syncOrders(
 ): Promise<number> {
   const hasVersion = await hasColumn(db, "orders", "sync_version");
   let synced = 0;
-  for (const orderId of orderIds) {
-    const order = await getOrderDetail(accountId, orderId);
-    await db.query(
-      `INSERT INTO orders (account_id, id, date_created, status, buyer_total${hasVersion ? ", sync_version" : ""})
-       VALUES ($1, $2, $3, $4, $5${hasVersion ? ", $6" : ""})
-       ON CONFLICT (account_id, id) DO UPDATE SET status = excluded.status, buyer_total = excluded.buyer_total${
-         hasVersion ? ", sync_version = excluded.sync_version" : ""
-       }`,
-      [accountId, order.id, order.dateCreated, order.status, order.buyerTotal, ...(hasVersion ? [ORDER_SYNC_VERSION] : [])]
-    );
-    await db.query(`DELETE FROM order_items WHERE account_id = $1 AND order_id = $2`, [accountId, order.id]);
 
-    for (const item of order.items) {
-      // Un producto que se vendió pero ya no está publicado no vuelve en
-      // /users/{id}/items, así que no tiene fila en `products` y por lo tanto
-      // no aparece en la pantalla Productos: el vendedor no tiene dónde
-      // cargarle el costo y esas ventas quedan para siempre fuera de la
-      // ganancia neta, sin explicación. Se crea una ficha mínima con el
-      // título que quedó en la venta. DO NOTHING: si el producto sí está en
-      // el catálogo, manda el dato real que trajo syncProducts.
+  // Cada orden le cuesta a Mercado Libre 1 o 2 llamadas (detalle + costo de
+  // envío si tiene), y antes se pedían de a una, esperando que termine la
+  // anterior sin ninguna razón para eso — no dependen entre sí. Con historial
+  // grande (miles de órdenes) esa espera secuencial es la que hacía que el
+  // sync por lotes tardara tanto. Se piden de a `ORDER_FETCH_CONCURRENCY` en
+  // simultáneo — no todas juntas, para no gatillar el rate limit de ML — y
+  // se procesan (e insertan) en el mismo orden de siempre.
+  const ORDER_FETCH_CONCURRENCY = 10;
+  for (let i = 0; i < orderIds.length; i += ORDER_FETCH_CONCURRENCY) {
+    const chunk = orderIds.slice(i, i + ORDER_FETCH_CONCURRENCY);
+    const orders = await Promise.all(chunk.map((orderId) => getOrderDetail(accountId, orderId)));
+    for (const order of orders) {
       await db.query(
-        `INSERT INTO products (account_id, id, title, current_price, stock, updated_at)
-         VALUES ($1, $2, $3, $4, 0, $5)
-         ON CONFLICT (account_id, id) DO UPDATE SET
-         title = CASE WHEN products.title = products.id THEN excluded.title ELSE products.title END`,
-        [accountId, item.productId, item.productTitle || item.productId, item.unitPrice, order.dateCreated]
+        `INSERT INTO orders (account_id, id, date_created, status, buyer_total${hasVersion ? ", sync_version" : ""})
+         VALUES ($1, $2, $3, $4, $5${hasVersion ? ", $6" : ""})
+         ON CONFLICT (account_id, id) DO UPDATE SET status = excluded.status, buyer_total = excluded.buyer_total${
+           hasVersion ? ", sync_version = excluded.sync_version" : ""
+         }`,
+        [accountId, order.id, order.dateCreated, order.status, order.buyerTotal, ...(hasVersion ? [ORDER_SYNC_VERSION] : [])]
       );
+      await db.query(`DELETE FROM order_items WHERE account_id = $1 AND order_id = $2`, [accountId, order.id]);
 
-      const costsResult = await db.query<{ cost: number; tax: number; validfrom: string | Date }>(
-        `SELECT cost, tax, valid_from as validFrom FROM product_costs WHERE account_id = $1 AND product_id = $2`,
-        [accountId, item.productId]
-      );
-      const costs = costsResult.rows.map((r) => ({
-        cost: Number(r.cost),
-        tax: Number(r.tax),
-        validFrom: new Date(r.validfrom).toISOString(),
-      }));
-      const entry = getCostEntryAtDate(costs, order.dateCreated);
-      const profitInput = {
-        unitPrice: item.unitPrice,
-        quantity: item.quantity,
-        mlCommission: item.mlCommission,
-        shippingCost: item.shippingCost,
-        adsCostAllocated: 0,
-        costApplied: entry?.cost ?? null,
-        // Otros impuestos salen de la alícuota de la cuenta aplicada al precio,
-        // no de un valor cargado producto por producto.
-        taxApplied: item.unitPrice * otherTaxRate,
-        appliesIva,
-      };
-      await db.query(
-        `INSERT INTO order_items
-           (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated, cost_applied, tax_applied${hasIva ? ", iva_applied" : ""}, net_profit)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10${hasIva ? ", $12" : ""}, $11)`,
-        [
-          accountId, order.id, item.productId, item.unitPrice, item.quantity,
-          item.mlCommission, item.shippingCost, 0,
-          entry?.cost ?? null, profitInput.taxApplied,
-          calculateNetProfit(profitInput),
-          ...(hasIva ? [calculateIva(profitInput)] : []),
-        ]
-      );
+      for (const item of order.items) {
+        // Un producto que se vendió pero ya no está publicado no vuelve en
+        // /users/{id}/items, así que no tiene fila en `products` y por lo tanto
+        // no aparece en la pantalla Productos: el vendedor no tiene dónde
+        // cargarle el costo y esas ventas quedan para siempre fuera de la
+        // ganancia neta, sin explicación. Se crea una ficha mínima con el
+        // título que quedó en la venta. DO NOTHING: si el producto sí está en
+        // el catálogo, manda el dato real que trajo syncProducts.
+        await db.query(
+          `INSERT INTO products (account_id, id, title, current_price, stock, updated_at)
+           VALUES ($1, $2, $3, $4, 0, $5)
+           ON CONFLICT (account_id, id) DO UPDATE SET
+           title = CASE WHEN products.title = products.id THEN excluded.title ELSE products.title END`,
+          [accountId, item.productId, item.productTitle || item.productId, item.unitPrice, order.dateCreated]
+        );
+
+        const costsResult = await db.query<{ cost: number; tax: number; validfrom: string | Date }>(
+          `SELECT cost, tax, valid_from as validFrom FROM product_costs WHERE account_id = $1 AND product_id = $2`,
+          [accountId, item.productId]
+        );
+        const costs = costsResult.rows.map((r) => ({
+          cost: Number(r.cost),
+          tax: Number(r.tax),
+          validFrom: new Date(r.validfrom).toISOString(),
+        }));
+        const entry = getCostEntryAtDate(costs, order.dateCreated);
+        const profitInput = {
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          mlCommission: item.mlCommission,
+          shippingCost: item.shippingCost,
+          adsCostAllocated: 0,
+          costApplied: entry?.cost ?? null,
+          // Otros impuestos salen de la alícuota de la cuenta aplicada al precio,
+          // no de un valor cargado producto por producto.
+          taxApplied: item.unitPrice * otherTaxRate,
+          appliesIva,
+        };
+        await db.query(
+          `INSERT INTO order_items
+             (account_id, order_id, product_id, unit_price, quantity, ml_commission, shipping_cost, ads_cost_allocated, cost_applied, tax_applied${hasIva ? ", iva_applied" : ""}, net_profit)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10${hasIva ? ", $12" : ""}, $11)`,
+          [
+            accountId, order.id, item.productId, item.unitPrice, item.quantity,
+            item.mlCommission, item.shippingCost, 0,
+            entry?.cost ?? null, profitInput.taxApplied,
+            calculateNetProfit(profitInput),
+            ...(hasIva ? [calculateIva(profitInput)] : []),
+          ]
+        );
+      }
+      synced += 1;
     }
-    synced += 1;
   }
   return synced;
 }

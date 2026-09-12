@@ -172,6 +172,47 @@ describe("runSync", () => {
   });
 });
 
+describe("syncOrders", () => {
+  it("procesa todas las órdenes de un lote grande, aunque se pidan de a varias en simultáneo", async () => {
+    // Antes se pedía el detalle de cada orden de a una, esperando a que
+    // termine la anterior — con historiales grandes eso era el cuello de
+    // botella real del sync. Ahora se piden de a ORDER_FETCH_CONCURRENCY (10)
+    // en simultáneo; este test usa más órdenes que esa concurrencia (25) para
+    // probar que ningún lote se pierde ni se procesa fuera de lugar.
+    // Prefijo propio (no solo "ORD<n>") para no pisarse con los ids que usan
+    // otros tests de este archivo — no hay un beforeEach que resetee mocks
+    // acá, así que el conteo total de llamadas es acumulado entre tests.
+    const { getOrderDetail } = await import("@/mcp/tools");
+    const ORDER_COUNT = 25;
+    const orderIds = Array.from({ length: ORDER_COUNT }, (_, i) => `BULK-ORD${i}`);
+    vi.mocked(getOrderDetail).mockImplementation(async (_accountId: string, orderId: string) => ({
+      id: orderId,
+      dateCreated: "2026-01-10T12:00:00Z",
+      status: "paid",
+      buyerTotal: 100,
+      items: [{ productId: `PROD-${orderId}`, productTitle: `Producto de ${orderId}`, unitPrice: 100, quantity: 1, mlCommission: 10, shippingCost: 5 }],
+    }));
+
+    const { withScope } = await import("@/db/client");
+    const { syncOrders } = await import("./sync-service");
+    const account = await makeAccount();
+
+    const synced = await withScope({ accountId: account.id }, (client) =>
+      syncOrders(client, account.id, orderIds, false)
+    );
+
+    expect(synced).toBe(ORDER_COUNT);
+    const callsForThisBatch = vi.mocked(getOrderDetail).mock.calls.filter((c) => String(c[1]).startsWith("BULK-ORD"));
+    expect(callsForThisBatch).toHaveLength(ORDER_COUNT);
+
+    const rows = await withScope({ accountId: account.id }, async (client) => {
+      const r = await client.query<{ id: string }>(`SELECT id FROM orders WHERE account_id = $1`, [account.id]);
+      return r.rows;
+    });
+    expect(rows.map((r) => r.id).sort()).toEqual([...orderIds].sort());
+  });
+});
+
 describe("backfillMissingProducts", () => {
   it("le pone nombre y foto a una publicación que ya no está en el catálogo", async () => {
     const { getProductsByIds } = await import("@/mcp/tools");

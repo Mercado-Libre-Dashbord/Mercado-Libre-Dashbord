@@ -142,6 +142,27 @@ describe("listProducts", () => {
     expect(vi.mocked(mlFetch).mock.calls[2][0]).toContain(ids.slice(20).join(","));
   });
 
+  it("no pierde ningún producto con un catálogo grande, aunque haya más tandas que la concurrencia máxima", async () => {
+    // 300 ids -> 15 tandas de 20 (más que ITEMS_BATCH_CONCURRENCY=10). Antes
+    // se pedían las 15 juntas con un solo Promise.all; con miles de ids reales
+    // eso son cientos de pedidos simultáneos a la API de ML. Ahora se piden
+    // de a 10 tandas en simultáneo — este test prueba que ningún producto se
+    // pierde ni se duplica al cortar en más de un grupo.
+    const ids = Array.from({ length: 300 }, (_, i) => `MLA${i}`);
+    vi.mocked(mlFetch).mockImplementation(async (path: string) => {
+      if (path.includes("items/search")) return { results: ids };
+      const match = path.match(/ids=([^&]+)/);
+      const batchIds = match ? match[1].split(",") : [];
+      return batchIds.map((id) => ({ body: { id, title: id, price: 1, available_quantity: 1, permalink: "" } }));
+    });
+
+    const products = await listProducts("acc1", "123");
+
+    expect(products.map((p) => p.id).sort()).toEqual([...ids].sort());
+    // 1 llamada de búsqueda + 15 tandas de detalle de 20 ids cada una.
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(16);
+  });
+
   it("pages through items/search with scroll_id when there are more results than one page", async () => {
     const firstPageIds = Array.from({ length: 50 }, (_, i) => `MLA${i}`);
     const secondPageIds = ["MLA50", "MLA51"];

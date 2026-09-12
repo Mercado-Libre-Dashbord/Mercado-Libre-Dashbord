@@ -77,13 +77,22 @@ export async function listProducts(accountId: string, sellerId: string): Promise
   if (ids.length === 0) return [];
 
   // /items?ids= solo acepta 20 ids por llamada — con más de una publicación
-  // pausada/cerrada en el historial esto se pasa fácil.
+  // pausada/cerrada en el historial esto se pasa fácil. Con un catálogo
+  // grande (miles de ids) pedir TODAS las tandas juntas con un solo
+  // Promise.all dispara cientos o miles de pedidos simultáneos a la API de
+  // ML — eso gatilla su rate limit en vez de acelerar nada. Se piden de a
+  // `ITEMS_BATCH_CONCURRENCY` tandas en simultáneo, no todas juntas.
   const ML_ITEMS_BATCH_SIZE = 20;
   const batches: string[][] = [];
   for (let i = 0; i < ids.length; i += ML_ITEMS_BATCH_SIZE) {
     batches.push(ids.slice(i, i + ML_ITEMS_BATCH_SIZE));
   }
-  const batchResults = await Promise.all(batches.map((batch) => mlFetch(`/items?ids=${batch.join(",")}`, token)));
+  const ITEMS_BATCH_CONCURRENCY = 10;
+  const batchResults: any[] = [];
+  for (let i = 0; i < batches.length; i += ITEMS_BATCH_CONCURRENCY) {
+    const chunk = batches.slice(i, i + ITEMS_BATCH_CONCURRENCY);
+    batchResults.push(...(await Promise.all(chunk.map((batch) => mlFetch(`/items?ids=${batch.join(",")}`, token)))));
+  }
 
   const products: MlProduct[] = [];
   const bodies: any[] = [];
