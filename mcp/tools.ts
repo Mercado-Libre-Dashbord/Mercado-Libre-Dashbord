@@ -1025,7 +1025,13 @@ export interface MlFullStock {
  * en optimizarlo hasta confirmar que el patrón de a uno es correcto.
  */
 export async function getFullStock(accountId: string, inventoryIds: string[]): Promise<MlFullStock[]> {
-  if (inventoryIds.length === 0) return [];
+  // Más de un producto (variaciones de una misma publicación, por ejemplo)
+  // puede compartir el mismo inventory_id de Full — sin esto se le pedía el
+  // mismo dato a ML una vez por cada fila de `products` que lo compartiera,
+  // no una vez por inventory_id real. Con un catálogo grande eso multiplicaba
+  // los pedidos innecesariamente.
+  const uniqueIds = [...new Set(inventoryIds)];
+  if (uniqueIds.length === 0) return [];
   const token = await getValidAccessToken(accountId);
 
   const results: MlFullStock[] = [];
@@ -1033,32 +1039,40 @@ export async function getFullStock(accountId: string, inventoryIds: string[]): P
   let sample: any = null;
 
   // Por ítem, no por tanda: un solo inventory_id que falle (rate limit, 500
-  // pasajero) no puede tirar abajo el stock de los otros 49 que sí
-  // contestaron bien. Un 404 es normal (todavía no tiene stock ahí); otro
-  // error se loguea, pero tampoco frena al resto.
-  await Promise.all(
-    inventoryIds.map(async (inventoryId) => {
-      let res: any;
-      try {
-        res = await mlFetch(`/inventories/${inventoryId}/stock/fulfillment`, token);
-      } catch (err) {
-        if (!(err instanceof MlApiError && err.status === 404)) {
-          console.warn(`No se pudo traer el stock de Full de ${inventoryId}:`, (err as Error).message);
+  // pasajero) no puede tirar abajo el stock de los otros que sí contestaron
+  // bien. Un 404 es normal (todavía no tiene stock ahí); otro error se
+  // loguea, pero tampoco frena al resto. Se piden de a
+  // `FULL_STOCK_CONCURRENCY` en simultáneo, no todos juntos — con un
+  // catálogo grande (cientos de productos en Full) pedirlos todos de una vez
+  // con un solo Promise.all dispara igual de muchos pedidos simultáneos a la
+  // API de ML, y eso es lo que gatilla el rate limit en vez de acelerar nada.
+  const FULL_STOCK_CONCURRENCY = 10;
+  for (let i = 0; i < uniqueIds.length; i += FULL_STOCK_CONCURRENCY) {
+    const chunk = uniqueIds.slice(i, i + FULL_STOCK_CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (inventoryId) => {
+        let res: any;
+        try {
+          res = await mlFetch(`/inventories/${inventoryId}/stock/fulfillment`, token);
+        } catch (err) {
+          if (!(err instanceof MlApiError && err.status === 404)) {
+            console.warn(`No se pudo traer el stock de Full de ${inventoryId}:`, (err as Error).message);
+          }
+          return;
         }
-        return;
-      }
-      if (typeof res.available_quantity !== "number") {
-        unrecognized += 1;
-        sample = sample ?? res;
-        return;
-      }
-      results.push({
-        inventoryId,
-        availableQuantity: res.available_quantity,
-        unavailableQuantity: Number(res.not_available_quantity ?? 0),
-      });
-    })
-  );
+        if (typeof res.available_quantity !== "number") {
+          unrecognized += 1;
+          sample = sample ?? res;
+          return;
+        }
+        results.push({
+          inventoryId,
+          availableQuantity: res.available_quantity,
+          unavailableQuantity: Number(res.not_available_quantity ?? 0),
+        });
+      })
+    );
+  }
 
   // Diagnóstico: si NINGUNO de los inventory_id consultados trajo un
   // 'available_quantity' reconocible, el nombre real del campo es otro —

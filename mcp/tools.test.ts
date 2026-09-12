@@ -953,4 +953,35 @@ describe("getFullStock", () => {
     expect(warned).toContain("available_quantity");
     expect(warned).toContain("total_quantity");
   });
+
+  it("no pide el mismo inventory_id más de una vez, aunque venga repetido (variaciones que comparten stock de Full)", async () => {
+    // El caso real que motivó esto: varias filas de `products` (variaciones
+    // de una misma publicación) comparten un inventory_id, y antes se le
+    // pedía a ML el mismo dato una vez por cada fila que lo repetía en vez de
+    // una vez por inventory_id real — con un catálogo grande, eso disparaba
+    // decenas de pedidos duplicados en simultáneo y ML terminaba fallando
+    // esas conexiones ("fetch failed").
+    vi.mocked(mlFetch).mockResolvedValueOnce({ available_quantity: 7, not_available_quantity: 1 });
+
+    const rows = await getFullStock("acc1", ["INV1", "INV1", "INV1"]);
+
+    expect(rows).toEqual([{ inventoryId: "INV1", availableQuantity: 7, unavailableQuantity: 1 }]);
+    expect(mlFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("no pierde ningún inventory_id con un catálogo grande, aunque haya más ids únicos que la concurrencia máxima", async () => {
+    // 25 ids únicos, más que FULL_STOCK_CONCURRENCY=10 — antes se pedían
+    // todos juntos con un solo Promise.all; con cientos de productos en Full
+    // reales eso son cientos de pedidos simultáneos a la API de ML.
+    const ids = Array.from({ length: 25 }, (_, i) => `INV${i}`);
+    vi.mocked(mlFetch).mockImplementation(async (path: string) => {
+      const id = path.split("/")[2];
+      return { available_quantity: Number(id.replace("INV", "")), not_available_quantity: 0 };
+    });
+
+    const rows = await getFullStock("acc1", ids);
+
+    expect(rows.map((r) => r.inventoryId).sort()).toEqual([...ids].sort());
+    expect(mlFetch).toHaveBeenCalledTimes(25);
+  });
 });
