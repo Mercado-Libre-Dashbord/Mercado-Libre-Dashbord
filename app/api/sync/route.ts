@@ -3,14 +3,14 @@ import { withScope } from "@/db/client";
 import { hasColumn } from "@/db/schema-capabilities";
 import { syncProductsPage, syncOrders, syncAds, syncFullStock, syncBillingCharges, recalculate, pendingOrderIds, backfillMissingProducts } from "@/sync/sync-service";
 import { appliesIva } from "@/db/accounts";
-import { listOrdersPage, splitIntoWindows, ORDER_SEARCH_WINDOW_DAYS } from "@/mcp/tools";
+import { listOrdersPage } from "@/mcp/tools";
 import { resolveCurrentAccount } from "@/lib/current-account";
 
 export const runtime = "nodejs";
 /** Techo del plan Hobby. Aun así el historial va por lotes: ver abajo. */
 export const maxDuration = 60;
 
-const HISTORY_START = "2020-01-01T00:00:00Z";
+const HISTORY_START_DATE = "2020-01-01";
 
 /**
  * Órdenes que mira cada llamada. Es una página entera de la API, pero solo se
@@ -36,8 +36,8 @@ interface SyncBody {
   productsScrollId?: string;
   /** Si el catálogo ya quedó sincronizado del todo (en esta corrida). */
   productsDone?: boolean;
-  /** En qué ventana de fecha de órdenes seguir (ver `splitIntoWindows`). */
-  ordersWindowIndex?: number;
+  /** Desde qué fecha seguir con las órdenes (ver `listOrdersPage`). */
+  ordersFrom?: string;
   /** Desde qué orden, dentro de esa ventana, seguir. */
   ordersOffsetInWindow?: number;
 }
@@ -55,20 +55,17 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as SyncBody;
   const productsDone = body.productsDone === true;
-  const windowIndex = Math.max(0, Number(body.ordersWindowIndex ?? 0));
+  const ordersFrom = body.ordersFrom ?? HISTORY_START_DATE;
   const offsetInWindow = Math.max(0, Number(body.ordersOffsetInWindow ?? 0));
-  const ordersStarted = windowIndex > 0 || offsetInWindow > 0;
+  const ordersStarted = body.ordersFrom !== undefined || offsetInWindow > 0;
 
   try {
     const result = await withScope({ accountId: account.id }, async (client) => {
       const hasIva = await hasColumn(client, "order_items", "iva_applied");
 
-      const ordersPhase = async (productsSynced: number, wIndex: number, wOffset: number) => {
-        // Ventanas fijas y deterministas (mismo `from`, mismo tamaño): no
-        // hace falta mandarlas de ida y vuelta con el cliente, solo la
-        // posición dentro de ellas.
-        const windows = splitIntoWindows(HISTORY_START.slice(0, 10), new Date().toISOString().slice(0, 10), ORDER_SEARCH_WINDOW_DAYS);
-        const page = await listOrdersPage(account.id, sellerId, windows, wIndex, wOffset, ORDERS_PER_BATCH);
+      const ordersPhase = async (productsSynced: number, from: string, offset: number) => {
+        const today = new Date().toISOString().slice(0, 10);
+        const page = await listOrdersPage(account.id, sellerId, from, today, offset, ORDERS_PER_BATCH);
         const pending = await pendingOrderIds(client, account.id, page.ids);
         const ordersSynced = await syncOrders(client, account.id, pending, hasIva, account.otherTaxRate, appliesIva(account.taxCondition));
 
@@ -80,7 +77,7 @@ export async function POST(request: NextRequest) {
         let billingChargesSynced = 0;
         let fullStockSynced = 0;
         if (done) {
-          adsRowsSynced = await syncAds(client, account.id, sellerId, HISTORY_START);
+          adsRowsSynced = await syncAds(client, account.id, sellerId, `${HISTORY_START_DATE}T00:00:00Z`);
           // Antes del recálculo: le da nombre y foto a las publicaciones dadas
           // de baja que se vendieron, así aparecen en Productos y se les puede
           // cargar el costo.
@@ -101,7 +98,7 @@ export async function POST(request: NextRequest) {
           billingChargesSynced,
           fullStockSynced,
           productsDone: true,
-          ordersWindowIndex: page.nextWindowIndex,
+          ordersFrom: page.nextFrom,
           ordersOffsetInWindow: page.nextOffsetInWindow,
         };
       };
@@ -130,10 +127,10 @@ export async function POST(request: NextRequest) {
             productsDone: false,
           };
         }
-        return ordersPhase(productsSynced, 0, 0);
+        return ordersPhase(productsSynced, HISTORY_START_DATE, 0);
       }
 
-      return ordersPhase(0, windowIndex, offsetInWindow);
+      return ordersPhase(0, ordersFrom, offsetInWindow);
     });
 
     return NextResponse.json(result);

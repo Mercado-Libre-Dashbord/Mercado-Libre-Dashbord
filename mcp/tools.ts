@@ -387,16 +387,22 @@ export async function getOrderDetail(accountId: string, orderId: string): Promis
 }
 
 /**
- * Cuántos días tiene cada ventana de fecha al recorrer `/orders/search`. Ese
- * endpoint tiene el mismo problema que `/items/search`: ML rechaza un offset
- * mayor a 10.000 ("limit.maximum_exceeded"), sin importar cuántas órdenes
- * tenga la cuenta en TODO su historial — a diferencia del catálogo, acá ML no
- * da un modo scroll para esquivarlo. La salida es partir el historial en
- * ventanas de fecha y paginar offset DENTRO de cada una: con 90 días por
- * ventana, hasta una cuenta que hiciera 100 órdenes por día (muy por encima
- * de lo real) quedaría en ~9.000 órdenes por ventana, bien lejos del techo.
+ * `/orders/search` tiene el mismo problema que `/items/search`: ML rechaza
+ * un offset mayor a 10.000 ("limit.maximum_exceeded"), sin importar cuántas
+ * órdenes tenga la cuenta en TODO su historial — a diferencia del catálogo,
+ * acá ML no da un modo scroll para esquivarlo. La salida es partir el
+ * historial en ventanas de fecha y paginar offset DENTRO de cada una.
+ *
+ * El tamaño de ventana no es fijo: una cuenta de altísimo volumen puede
+ * acumular casi 10.000 órdenes en una sola ventana de 90 días (pasó en
+ * producción — no es una hipótesis). Por eso, antes de usar una ventana
+ * candidata se chequea cuántas órdenes tiene de verdad (`limit=1`, sin
+ * traerlas) y, si se pasa del margen seguro, se achica a la mitad y se
+ * vuelve a chequear, hasta encontrar un tamaño que sí entra. No depende de
+ * ninguna suposición sobre cuánto vende el vendedor: se adapta a lo que haya.
  */
-export const ORDER_SEARCH_WINDOW_DAYS = 90;
+const ORDER_SEARCH_MAX_WINDOW_DAYS = 90;
+const ORDER_SEARCH_SAFE_MAX = 9000;
 
 async function searchOrdersWindow(
   sellerId: string,
@@ -416,47 +422,73 @@ async function searchOrdersWindow(
   };
 }
 
+function addDaysStr(date: string, days: number): string {
+  return dateStr(new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86400000));
+}
+
+/**
+ * La ventana más grande (hasta `ORDER_SEARCH_MAX_WINDOW_DAYS`) que arranca en
+ * `from`, sin pasar de `maxTo`, y que tiene una cantidad de órdenes segura
+ * para paginar por offset — ver el comentario de arriba para el porqué.
+ */
+async function findSafeOrderWindow(
+  sellerId: string,
+  token: string,
+  from: string,
+  maxTo: string
+): Promise<{ from: string; to: string }> {
+  let days = ORDER_SEARCH_MAX_WINDOW_DAYS;
+  while (true) {
+    const candidateTo = addDaysStr(from, days - 1);
+    const to = candidateTo > maxTo ? maxTo : candidateTo;
+    if (days <= 1) return { from, to };
+    const probe = await searchOrdersWindow(sellerId, token, { from, to }, 0, 1);
+    if (probe.total <= ORDER_SEARCH_SAFE_MAX) return { from, to };
+    days = Math.max(1, Math.floor(days / 2));
+  }
+}
+
 export interface OrdersWindowPage {
   ids: string[];
-  /** Posición para pedir la próxima página. */
-  nextWindowIndex: number;
+  /** Desde qué fecha seguir (la ventana actual, si no se terminó, o la próxima). */
+  nextFrom: string;
   nextOffsetInWindow: number;
-  /** true cuando ya no queda ninguna ventana con órdenes por traer. */
+  /** true cuando ya no queda ninguna fecha con órdenes por traer. */
   done: boolean;
 }
 
 /**
- * Hasta `limit` ids de orden, cruzando ventanas de fecha si hace falta para
- * completarla. El estado (`windowIndex` + `offsetInWindow`) es justo lo
- * necesario para retomar en la próxima llamada exactamente donde quedó —
- * igual que el offset plano de antes, pero sin pisar el techo de 10.000 de
- * `/orders/search`. Las ventanas las arma el caller (con `splitIntoWindows`)
- * para que sean las mismas en cada llamada sin tener que mandarlas de un
- * lado a otro.
+ * Hasta `limit` ids de orden, arrancando en `from` y sin pasar de `today`,
+ * cruzando a la ventana siguiente si hace falta para completarla. El estado
+ * (`from` + `offsetInWindow`) es justo lo necesario para retomar en la
+ * próxima llamada exactamente donde quedó — la ventana en sí (su tamaño) se
+ * recalcula, y si hace falta se achica, en cada llamada a partir de esa
+ * fecha, así que nunca hay que acordarse de nada más entre llamadas.
  */
 export async function listOrdersPage(
   accountId: string,
   sellerId: string,
-  windows: { from: string; to: string }[],
-  windowIndex: number,
+  from: string,
+  today: string,
   offsetInWindow: number,
   limit: number
 ): Promise<OrdersWindowPage> {
   const token = await getValidAccessToken(accountId);
   const ids: string[] = [];
-  let wi = windowIndex;
+  let currentFrom = from;
   let off = offsetInWindow;
-  while (ids.length < limit && wi < windows.length) {
-    const page = await searchOrdersWindow(sellerId, token, windows[wi], off, limit - ids.length);
+  while (ids.length < limit && currentFrom <= today) {
+    const window = await findSafeOrderWindow(sellerId, token, currentFrom, today);
+    const page = await searchOrdersWindow(sellerId, token, window, off, limit - ids.length);
     ids.push(...page.ids);
     off += page.ids.length;
     if (page.ids.length === 0 || off >= page.total) {
-      // Esta ventana se terminó: seguir con la próxima, no cortar acá.
-      wi += 1;
+      // Esta ventana se terminó: seguir con la que arranca al día siguiente.
+      currentFrom = addDaysStr(window.to, 1);
       off = 0;
     }
   }
-  return { ids, nextWindowIndex: wi, nextOffsetInWindow: off, done: wi >= windows.length };
+  return { ids, nextFrom: currentFrom, nextOffsetInWindow: off, done: currentFrom > today };
 }
 
 /**
@@ -472,10 +504,12 @@ export async function listOrders(
   today: Date = new Date()
 ): Promise<string[]> {
   const token = await getValidAccessToken(accountId);
-  const windows = splitIntoWindows(sinceIso.slice(0, 10), dateStr(today), ORDER_SEARCH_WINDOW_DAYS);
+  const todayStr = dateStr(today);
   const PAGE_SIZE = 50;
   const ids: string[] = [];
-  for (const window of windows) {
+  let from = sinceIso.slice(0, 10);
+  while (from <= todayStr) {
+    const window = await findSafeOrderWindow(sellerId, token, from, todayStr);
     let offset = 0;
     while (true) {
       const page = await searchOrdersWindow(sellerId, token, window, offset, PAGE_SIZE);
@@ -483,6 +517,7 @@ export async function listOrders(
       offset += page.ids.length;
       if (page.ids.length === 0 || offset >= page.total) break;
     }
+    from = addDaysStr(window.to, 1);
   }
   return ids;
 }

@@ -230,7 +230,9 @@ describe("listOrders", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns order ids from the search results", async () => {
-    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: 1 }, { id: 2 }], paging: { total: 2 } });
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: [], paging: { total: 2 } }) // probe de densidad (ver findSafeOrderWindow)
+      .mockResolvedValueOnce({ results: [{ id: 1 }, { id: 2 }], paging: { total: 2 } });
     // `today` cerca de `sinceIso` para que quede en una sola ventana de fecha
     // y el test no dependa de cuántos días separan al reloj real de esa fecha.
     expect(await listOrders("acc1", "123", "2026-01-01T00:00:00Z", new Date("2026-01-10"))).toEqual(["1", "2"]);
@@ -242,6 +244,7 @@ describe("listOrders", () => {
       paging: { total: 120 },
     });
     vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: [], paging: { total: 120 } }) // probe de densidad
       .mockResolvedValueOnce(page(50, 1))
       .mockResolvedValueOnce(page(50, 51))
       .mockResolvedValueOnce(page(20, 101));
@@ -249,7 +252,7 @@ describe("listOrders", () => {
     const ids = await listOrders("acc1", "S1", "2020-01-01T00:00:00Z", new Date("2020-02-01"));
 
     expect(ids).toHaveLength(120);
-    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("offset=50");
+    expect(vi.mocked(mlFetch).mock.calls[2][0]).toContain("offset=50");
   });
 
   it("no pisa el techo de 10.000 de offset de /orders/search: un historial largo se parte en ventanas de fecha, con el offset reiniciado en cada una", async () => {
@@ -260,70 +263,107 @@ describe("listOrders", () => {
     // 90 días — cada una tiene que arrancar con offset=0, no seguir sumando
     // sobre la ventana anterior.
     vi.mocked(mlFetch)
-      .mockResolvedValueOnce({ results: [{ id: "A1" }], paging: { total: 1 } }) // ventana 1
-      .mockResolvedValueOnce({ results: [{ id: "B1" }], paging: { total: 1 } }); // ventana 2
+      .mockResolvedValueOnce({ results: [], paging: { total: 1 } }) // probe ventana 1
+      .mockResolvedValueOnce({ results: [{ id: "A1" }], paging: { total: 1 } }) // fetch ventana 1
+      .mockResolvedValueOnce({ results: [], paging: { total: 1 } }) // probe ventana 2
+      .mockResolvedValueOnce({ results: [{ id: "B1" }], paging: { total: 1 } }); // fetch ventana 2
 
     const ids = await listOrders("acc1", "S1", "2020-01-01T00:00:00Z", new Date("2020-06-20"));
 
     expect(ids).toEqual(["A1", "B1"]);
-    expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("offset=0");
+    expect(vi.mocked(mlFetch)).toHaveBeenCalledTimes(4);
     expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("offset=0");
+    expect(vi.mocked(mlFetch).mock.calls[3][0]).toContain("offset=0");
     // Ventanas de fecha distintas, no la misma repetida.
-    const [firstUrl, secondUrl] = vi.mocked(mlFetch).mock.calls.map((c) => String(c[0]));
-    expect(firstUrl).not.toBe(secondUrl);
+    const [firstFetchUrl, secondFetchUrl] = [vi.mocked(mlFetch).mock.calls[1][0], vi.mocked(mlFetch).mock.calls[3][0]].map(String);
+    expect(firstFetchUrl).not.toBe(secondFetchUrl);
   });
 });
 
 describe("listOrdersPage", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  const windows = [
-    { from: "2020-01-01", to: "2020-03-30" },
-    { from: "2020-03-31", to: "2020-06-28" },
-  ];
+  // Cada ventana nueva (offsetInWindow=0) se chequea primero con un `limit=1`
+  // para saber si es segura (ver `findSafeOrderWindow`) antes de traer datos
+  // de verdad — por eso casi todos los tests acá mockean un probe seguido de
+  // la respuesta real.
+  const safeProbe = { results: [], paging: { total: 10 } };
 
-  it("trae hasta `limit` ids dentro de la ventana actual", async () => {
-    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: "1" }, { id: "2" }], paging: { total: 10 } });
+  it("trae hasta `limit` ids dentro de la ventana actual, después de confirmar que es segura", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce(safeProbe) // probe: limit=1
+      .mockResolvedValueOnce({ results: [{ id: "1" }, { id: "2" }], paging: { total: 10 } });
 
-    const page = await listOrdersPage("acc1", "S1", windows, 0, 0, 2);
+    const page = await listOrdersPage("acc1", "S1", "2020-01-01", "2020-12-31", 0, 2);
 
-    expect(page).toEqual({ ids: ["1", "2"], nextWindowIndex: 0, nextOffsetInWindow: 2, done: false });
-    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain(`order.date_created.from=${windows[0].from}T00:00:00Z`);
-    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain(`order.date_created.to=${windows[0].to}T23:59:59.999Z`);
+    expect(page).toEqual({ ids: ["1", "2"], nextFrom: "2020-01-01", nextOffsetInWindow: 2, done: false });
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("limit=1");
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("order.date_created.from=2020-01-01T00:00:00Z");
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("limit=2");
+  });
+
+  it("achica la ventana a la mitad cuando el probe dice que tiene más órdenes que el margen seguro, y la vuelve a chequear", async () => {
+    // El caso real que motivó esto: una cuenta de altísimo volumen acumuló
+    // casi 10.000 órdenes en una sola ventana de 90 días — el tamaño fijo no
+    // alcanzaba. Acá el probe de la ventana completa (90 días) dice que tiene
+    // 9.500 (por encima del margen seguro), así que se prueba con la mitad
+    // (45 días) antes de traer nada.
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce({ results: [], paging: { total: 9500 } }) // probe de 90 días: densa
+      .mockResolvedValueOnce({ results: [], paging: { total: 4000 } }) // probe de 45 días: segura
+      .mockResolvedValueOnce({ results: [{ id: "1" }], paging: { total: 4000 } });
+
+    // limit=1: alcanza con el primer id para completar el pedido, así el
+    // test no depende de más llamadas que las tres que le importan acá.
+    await listOrdersPage("acc1", "S1", "2020-01-01", "2020-12-31", 0, 1);
+
+    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("order.date_created.to=2020-03-30T23:59:59.999Z"); // 90 días
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("order.date_created.to=2020-02-14T23:59:59.999Z"); // 45 días
+    expect(vi.mocked(mlFetch).mock.calls[2][0]).toContain("order.date_created.to=2020-02-14T23:59:59.999Z");
   });
 
   it("cruza a la ventana siguiente si la actual se termina antes de completar el límite pedido", async () => {
     vi.mocked(mlFetch)
+      .mockResolvedValueOnce(safeProbe) // probe ventana 1
       .mockResolvedValueOnce({ results: [{ id: "last-of-window-1" }], paging: { total: 1 } })
+      .mockResolvedValueOnce(safeProbe) // probe ventana 2
       .mockResolvedValueOnce({ results: [{ id: "first-of-window-2" }], paging: { total: 5 } });
 
-    const page = await listOrdersPage("acc1", "S1", windows, 0, 0, 2);
+    const page = await listOrdersPage("acc1", "S1", "2020-01-01", "2020-12-31", 0, 2);
 
     expect(page.ids).toEqual(["last-of-window-1", "first-of-window-2"]);
-    expect(page.nextWindowIndex).toBe(1);
-    expect(page.nextOffsetInWindow).toBe(1);
     expect(page.done).toBe(false);
-    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain(`order.date_created.from=${windows[1].from}T00:00:00Z`);
+    // La ventana 1 (90 días desde 2020-01-01) termina en 2020-03-30; la
+    // próxima arranca al día siguiente.
+    expect(vi.mocked(mlFetch).mock.calls[2][0]).toContain("order.date_created.from=2020-03-31T00:00:00Z");
+    expect(page.nextFrom).toBe("2020-03-31");
+    expect(page.nextOffsetInWindow).toBe(1);
   });
 
-  it("devuelve done:true cuando ya no queda ninguna ventana con órdenes", async () => {
+  it("devuelve done:true cuando ya no queda ninguna fecha con órdenes por delante de `today`", async () => {
     vi.mocked(mlFetch)
-      .mockResolvedValueOnce({ results: [], paging: { total: 0 } })
-      .mockResolvedValueOnce({ results: [], paging: { total: 0 } });
+      .mockResolvedValueOnce({ results: [], paging: { total: 0 } }) // probe
+      .mockResolvedValueOnce({ results: [], paging: { total: 0 } }); // fetch real, vacío
 
-    const page = await listOrdersPage("acc1", "S1", windows, 0, 0, 50);
+    const page = await listOrdersPage("acc1", "S1", "2020-01-01", "2020-01-01", 0, 50);
 
-    expect(page).toEqual({ ids: [], nextWindowIndex: 2, nextOffsetInWindow: 0, done: true });
+    expect(page).toEqual({ ids: [], nextFrom: "2020-01-02", nextOffsetInWindow: 0, done: true });
   });
 
-  it("retoma desde windowIndex/offsetInWindow en vez de arrancar de cero", async () => {
-    vi.mocked(mlFetch).mockResolvedValueOnce({ results: [{ id: "9" }], paging: { total: 40 } });
+  it("retoma desde el offset pedido en vez de arrancar de cero", async () => {
+    vi.mocked(mlFetch)
+      .mockResolvedValueOnce(safeProbe)
+      // 5 ids de una: cubre el `limit` pedido en un solo pedido, así el
+      // test no depende de si la ventana se termina después o no.
+      .mockResolvedValueOnce({
+        results: [{ id: "9" }, { id: "10" }, { id: "11" }, { id: "12" }, { id: "13" }],
+        paging: { total: 40 },
+      });
 
-    await listOrdersPage("acc1", "S1", windows, 1, 30, 5);
+    await listOrdersPage("acc1", "S1", "2020-04-01", "2020-12-31", 30, 5);
 
-    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain(`order.date_created.from=${windows[1].from}T00:00:00Z`);
-    expect(vi.mocked(mlFetch).mock.calls[0][0]).toContain("offset=30");
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("order.date_created.from=2020-04-01T00:00:00Z");
+    expect(vi.mocked(mlFetch).mock.calls[1][0]).toContain("offset=30");
   });
 });
 

@@ -12,8 +12,8 @@ interface SyncResponse {
   productsScrollId?: string;
   /** Si el catálogo ya quedó sincronizado del todo. */
   productsDone?: boolean;
-  /** En qué ventana de fecha de órdenes seguir. */
-  ordersWindowIndex?: number;
+  /** Desde qué fecha seguir con las órdenes. */
+  ordersFrom?: string;
   /** Desde qué orden, dentro de esa ventana, seguir. */
   ordersOffsetInWindow?: number;
   error?: string;
@@ -22,7 +22,7 @@ interface SyncResponse {
 interface CallBody {
   productsScrollId?: string;
   productsDone?: boolean;
-  ordersWindowIndex?: number;
+  ordersFrom?: string;
   ordersOffsetInWindow?: number;
 }
 
@@ -85,14 +85,14 @@ export function SyncButton() {
       const totals = { products: 0, orders: 0, ads: 0, billing: 0 };
       let productsScrollId: string | undefined;
       let productsDone = false;
-      let ordersWindowIndex = 0;
+      let ordersFrom: string | undefined;
       let ordersOffsetInWindow = 0;
 
       // Cota de seguridad: si el servidor dejara de avanzar (ni el catálogo
       // ni la posición de órdenes), esto corta en vez de quedar girando para
       // siempre.
       for (let batch = 0; batch < 3000; batch += 1) {
-        const data = await call({ productsScrollId, productsDone, ordersWindowIndex, ordersOffsetInWindow });
+        const data = await call({ productsScrollId, productsDone, ordersFrom, ordersOffsetInWindow });
         totals.products += data.productsSynced;
         totals.orders += data.ordersSynced;
         totals.ads += data.adsRowsSynced;
@@ -114,12 +114,12 @@ export function SyncButton() {
         setProgress(`${totals.orders} órdenes sincronizadas…`);
         if (data.done) break;
 
-        const nextWindowIndex = data.ordersWindowIndex ?? ordersWindowIndex;
+        const nextFrom = data.ordersFrom ?? ordersFrom;
         const nextOffsetInWindow = data.ordersOffsetInWindow ?? ordersOffsetInWindow;
-        if (nextWindowIndex === ordersWindowIndex && nextOffsetInWindow === ordersOffsetInWindow) {
+        if (nextFrom === ordersFrom && nextOffsetInWindow === ordersOffsetInWindow) {
           throw new Error("La sincronización dejó de avanzar. Probá de nuevo.");
         }
-        ordersWindowIndex = nextWindowIndex;
+        ordersFrom = nextFrom;
         ordersOffsetInWindow = nextOffsetInWindow;
       }
 
